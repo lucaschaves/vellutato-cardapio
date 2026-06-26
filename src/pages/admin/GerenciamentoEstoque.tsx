@@ -84,7 +84,7 @@ export function GerenciamentoEstoque() {
         .order("nome", { ascending: true });
 
       if (error) throw new Error(error.message);
-      setProdutos(data || []);
+      setProdutos((data as unknown as ProdutoEstoque[]) || []);
     } catch (erro: any) {
       console.error(
         "[ERRO - ESTOQUE] Falha ao carregar produtos:",

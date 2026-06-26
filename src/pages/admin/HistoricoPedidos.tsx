@@ -106,7 +106,7 @@ export function HistoricoPedidos() {
       const { data, error } = await query;
       if (error) throw error;
 
-      setPedidos((data as PedidoHistorico[]) || []);
+      setPedidos((data as unknown as PedidoHistorico[]) || []);
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - HISTÓRICO]", mensagem);
