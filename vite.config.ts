@@ -12,36 +12,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["pwa-192x192.png", "pwa-512x512.png"],
-      manifest: {
-        name: "Vellutato Admin",
-        short_name: "Vellutato",
-        description: "Painel operacional — KDS, caixa e gestão",
-        theme_color: "#5c3a21",
-        background_color: "#fdfbf7",
-        display: "standalone",
-        start_url: "/admin/pedidos",
-        scope: "/",
-        lang: "pt-BR",
-        icons: [
-          {
-            src: "pwa-192x192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "pwa-512x512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any",
-          },
-          {
-            src: "pwa-512x512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable",
-          },
-        ],
-      },
+      manifest: false,
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",

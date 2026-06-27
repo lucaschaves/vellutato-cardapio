@@ -1,44 +1,36 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  aplicarManifestPwa,
+  inscreverPromptPwa,
+  limparPromptPwa,
+  obterPromptPwa,
+  pwaInstalada,
+  type TipoPwa,
+} from "../lib/pwaInstalacao";
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
-
-function appJaInstalada(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (window.navigator as Navigator & { standalone?: boolean }).standalone ===
-      true
+export function useInstalarPwa(tipo: TipoPwa) {
+  const [instalado, setInstalado] = useState(() => pwaInstalada(tipo));
+  const [promptInstalacao, setPromptInstalacao] = useState(() =>
+    obterPromptPwa(tipo),
   );
-}
-
-export function useInstalarPwa() {
-  const [promptInstalacao, setPromptInstalacao] =
-    useState<BeforeInstallPromptEvent | null>(null);
-  const [instalado, setInstalado] = useState(appJaInstalada);
   const [instalando, setInstalando] = useState(false);
 
   useEffect(() => {
-    const aoBeforeInstall = (event: Event) => {
-      event.preventDefault();
-      setPromptInstalacao(event as BeforeInstallPromptEvent);
+    aplicarManifestPwa(tipo);
+
+    const sincronizar = (tipoAtualizado: TipoPwa) => {
+      if (tipoAtualizado === tipo) {
+        setPromptInstalacao(obterPromptPwa(tipo));
+      }
+      setInstalado(pwaInstalada(tipo));
     };
 
-    const aoAppInstalled = () => {
-      setInstalado(true);
-      setPromptInstalacao(null);
-    };
+    const cancelarInscricao = inscreverPromptPwa(sincronizar);
+    setPromptInstalacao(obterPromptPwa(tipo));
+    setInstalado(pwaInstalada(tipo));
 
-    window.addEventListener("beforeinstallprompt", aoBeforeInstall);
-    window.addEventListener("appinstalled", aoAppInstalled);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", aoBeforeInstall);
-      window.removeEventListener("appinstalled", aoAppInstalled);
-    };
-  }, []);
+    return cancelarInscricao;
+  }, [tipo]);
 
   const podeInstalar = !instalado && promptInstalacao !== null;
 
@@ -51,6 +43,7 @@ export function useInstalarPwa() {
       const { outcome } = await promptInstalacao.userChoice;
       if (outcome === "accepted") {
         setInstalado(true);
+        limparPromptPwa(tipo);
         setPromptInstalacao(null);
         return true;
       }
@@ -58,7 +51,7 @@ export function useInstalarPwa() {
     } finally {
       setInstalando(false);
     }
-  }, [promptInstalacao]);
+  }, [promptInstalacao, tipo]);
 
   return { podeInstalar, instalado, instalando, instalar };
 }

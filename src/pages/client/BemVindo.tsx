@@ -119,7 +119,7 @@ export function BemVindo() {
       />
 
       <div className="absolute top-5 left-5 z-20">
-        <BotaoInstalarPwa className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60" />
+        <BotaoInstalarPwa className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60" tipo="cardapio" />
       </div>
 
       <button

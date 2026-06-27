@@ -1,23 +1,36 @@
 import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useInstalarPwa } from "../hooks/useInstalarPwa";
+import { type TipoPwa } from "../lib/pwaInstalacao";
 
 const CLASSE_PADRAO =
   "flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-cookie-primary hover:bg-cookie-primary/10 dark:hover:bg-cookie-primary/20 transition-colors disabled:opacity-60";
 
+const ROTULOS: Record<TipoPwa, string> = {
+  cardapio: "Instalar cardápio",
+  admin: "Instalar app admin",
+};
+
+const MENSAGENS_SUCESSO: Record<TipoPwa, string> = {
+  cardapio: "Cardápio instalado neste dispositivo.",
+  admin: "App admin instalado neste dispositivo.",
+};
+
 type Props = {
+  tipo: TipoPwa;
   className?: string;
 };
 
-export function BotaoInstalarPwa({ className = CLASSE_PADRAO }: Props) {
-  const { podeInstalar, instalado, instalando, instalar } = useInstalarPwa();
+export function BotaoInstalarPwa({ tipo, className = CLASSE_PADRAO }: Props) {
+  const { podeInstalar, instalado, instalando, instalar } =
+    useInstalarPwa(tipo);
 
   if (instalado || !podeInstalar) return null;
 
   const handleInstalar = async () => {
     const aceito = await instalar();
     if (aceito) {
-      toast.success("App instalado neste dispositivo.");
+      toast.success(MENSAGENS_SUCESSO[tipo]);
     }
   };
 
@@ -34,7 +47,7 @@ export function BotaoInstalarPwa({ className = CLASSE_PADRAO }: Props) {
       ) : (
         <Download size={18} className="shrink-0" />
       )}
-      <span>Instalar app</span>
+      <span>{ROTULOS[tipo]}</span>
     </button>
   );
 }

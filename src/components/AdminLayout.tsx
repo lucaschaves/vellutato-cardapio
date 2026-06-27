@@ -109,7 +109,10 @@ export function AdminLayout() {
         </nav>
 
         <div className="border-t border-gray-200 dark:border-gray-800 p-3 shrink-0 space-y-1">
-          <BotaoInstalarPwa />
+          <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+            Configurações
+          </p>
+          <BotaoInstalarPwa tipo="admin" />
           <button
             type="button"
             onClick={() => void handleLogout()}
