@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
+  ClipboardList,
   Home,
   Maximize,
   Minimize,
@@ -19,6 +20,7 @@ import { CarrinhoLateral } from "../../components/CarrinhoLateral";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
+import { produtoEstaEsgotado } from "../../lib/estoque";
 import {
   lerEscalaFonte,
   lerTemaEscuro,
@@ -33,6 +35,7 @@ import { useCartStore } from "../../store/useCartStore";
 interface Categoria {
   id: string;
   nome: string;
+  icone?: string | null;
   quantidade_produtos?: number;
 }
 
@@ -44,6 +47,8 @@ interface Produto {
   categoria_id: string;
   ativo: boolean;
   em_promocao: boolean;
+  controlar_estoque?: boolean;
+  quantidade_estoque?: number;
 }
 
 function ImagemProdutoCard({ src, alt }: { src: string; alt: string }) {
@@ -160,7 +165,9 @@ export function FeedProdutos() {
           .eq("ativo", true);
         if (errProd) throw new Error(errProd.message);
 
-        const produtosDoBanco = dataProd || [];
+        const produtosDoBanco = (dataProd || []).filter(
+          (p) => !produtoEstaEsgotado(p),
+        );
 
         const categoriasComItens = (dataCat || [])
           .map((cat) => ({
@@ -195,23 +202,35 @@ export function FeedProdutos() {
     navigate("/");
   };
 
-  const renderCardProduto = (produto: Produto) => (
+  const renderCardProduto = (produto: Produto) => {
+    const esgotado = produtoEstaEsgotado(produto);
+
+    return (
     <motion.article
       key={produto.id}
       onClick={() => navigate(urlItemProduto(produto.id, location.search))}
-      className="bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer active:scale-[0.98] transition-all group"
+      className={`bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer active:scale-[0.98] transition-all group ${esgotado ? "opacity-75" : ""}`}
     >
       <motion.div
         layoutId={`produto-midia-${produto.id}`}
         className="w-full aspect-square mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative"
       >
-        {produto.em_promocao && (
+        {produto.em_promocao && !esgotado && (
           <div className="absolute top-2 left-2 z-20 bg-[#ff5722] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
             <Tag size={10} strokeWidth={3} />
             PROMO
           </div>
         )}
 
+        {esgotado && (
+          <div className="absolute inset-0 z-30 bg-black/50 flex items-center justify-center">
+            <span className="bg-gray-900 text-white text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg">
+              Esgotado
+            </span>
+          </div>
+        )}
+
+        {!esgotado && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -222,6 +241,7 @@ export function FeedProdutos() {
         >
           <Plus size={18} strokeWidth={3} />
         </button>
+        )}
 
         <ImagemProdutoCard
           src={produto.imagem_url}
@@ -235,11 +255,14 @@ export function FeedProdutos() {
         </h3>
 
         <p className="text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium">
-          {produto.descricao || "Toque para personalizar e ver detalhes."}
+          {esgotado
+            ? "Indisponível no momento."
+            : produto.descricao || "Toque para personalizar e ver detalhes."}
         </p>
       </div>
     </motion.article>
-  );
+    );
+  };
 
   const produtosPorCategoria = categorias
     .map((categoria) => ({
@@ -259,6 +282,14 @@ export function FeedProdutos() {
       <header className="sticky top-0 z-30 bg-white dark:bg-[#181a1b] border-b border-gray-200 dark:border-[#2a2c30] shadow-sm pb-4 pt-4 transition-colors duration-300">
         <div className="px-5 flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(urlCardapio("meus-pedidos", location.search))}
+              className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white active:scale-95 transition-transform"
+              aria-label="Meus pedidos"
+            >
+              <ClipboardList size={20} />
+            </button>
+
             <button
               onClick={() => setModalOpcoesAberto(true)}
               className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white active:scale-95 transition-transform"
@@ -347,6 +378,7 @@ export function FeedProdutos() {
                   : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
               }`}
             >
+              {cat.icone && <span>{cat.icone}</span>}
               {cat.nome}
               <span
                 className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black ${
@@ -387,6 +419,7 @@ export function FeedProdutos() {
               }`}
             >
               <span className="text-sm font-bold whitespace-nowrap">
+                {cat.icone && `${cat.icone} `}
                 {cat.nome}
               </span>
               <span
@@ -524,6 +557,20 @@ export function FeedProdutos() {
                 </div>
 
                 <div className="pt-2 border-t border-gray-100 dark:border-[#323438]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalOpcoesAberto(false);
+                      navigate(urlCardapio("meus-pedidos", location.search));
+                    }}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-[#181a1b] hover:bg-gray-100 dark:hover:bg-[#2a2c30] transition-colors mb-2"
+                  >
+                    <ClipboardList size={20} className="text-[#ff5722]" />
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      Meus pedidos
+                    </span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {

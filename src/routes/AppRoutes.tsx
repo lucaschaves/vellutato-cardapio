@@ -8,7 +8,13 @@ import { AuthProvider, useAuth } from "../context/AuthContext";
 
 // Páginas
 import { DashboardVendas } from "@/pages/admin/DashboardVendas";
+import { DetalheCliente } from "@/pages/admin/DetalheCliente";
 import { GerenciamentoAdicionais } from "@/pages/admin/GerenciamentoAdicionais";
+import { GerenciamentoCategorias } from "@/pages/admin/GerenciamentoCategorias";
+import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
+import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
+import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
+import { GerenciamentoVendasCruzadas } from "@/pages/admin/GerenciamentoVendasCruzadas";
 import { GestaoCaixa } from "@/pages/admin/GestaoCaixa";
 import { HistoricoPedidos } from "@/pages/admin/HistoricoPedidos";
 import { BemVindo } from "@/pages/client/BemVindo";
@@ -16,9 +22,10 @@ import { AdminLayout } from "../components/AdminLayout"; // NOVO IMPORT
 import { GerenciamentoCatalogo } from "../pages/admin/GerenciamentoCatalogo";
 import { GerenciamentoEstoque } from "../pages/admin/GerenciamentoEstoque";
 import { PainelPedidos } from "../pages/admin/PainelPedidos";
+import { ConfirmacaoPedido } from "../pages/client/ConfirmacaoPedido";
 import { FeedProdutos } from "../pages/client/FeedProdutos";
 import { ListaErros } from "../pages/client/ListaErros";
-import { ConfirmacaoPedido } from "../pages/client/ConfirmacaoPedido";
+import { MeusPedidos } from "../pages/client/MeusPedidos";
 import { VisualizadorReels } from "../pages/client/VisualizadorReels";
 import { Login } from "../pages/Login";
 
@@ -55,6 +62,7 @@ const router = createBrowserRouter([
     children: [
       { path: "item/:id", element: <VisualizadorReels /> },
       { path: "pedido-enviado", element: <ConfirmacaoPedido /> },
+      { path: "meus-pedidos", element: <MeusPedidos /> },
       { path: "erros", element: <ListaErros /> },
     ],
   },
@@ -69,8 +77,17 @@ const router = createBrowserRouter([
       { path: "/admin/historico", element: <HistoricoPedidos /> },
       { path: "/admin/pedidos", element: <PainelPedidos /> },
       { path: "/admin/catalogo", element: <GerenciamentoCatalogo /> },
+      { path: "/admin/categorias", element: <GerenciamentoCategorias /> },
+      { path: "/admin/mesas", element: <GerenciamentoMesas /> },
       { path: "/admin/estoque", element: <GerenciamentoEstoque /> },
       { path: "/admin/adicionais", element: <GerenciamentoAdicionais /> },
+      { path: "/admin/clientes", element: <GerenciamentoClientes /> },
+      { path: "/admin/clientes/:clienteId", element: <DetalheCliente /> },
+      { path: "/admin/cupons", element: <GerenciamentoCupons /> },
+      {
+        path: "/admin/vendas-cruzadas",
+        element: <GerenciamentoVendasCruzadas />,
+      },
       { path: "/admin/caixa", element: <GestaoCaixa /> },
       { path: "/admin", element: <Navigate to="/admin/dashboard" replace /> },
     ],
@@ -84,7 +101,7 @@ export function AppRoutes() {
       <RouterProvider router={router} />
       <Toaster
         richColors
-        position="top-center"
+        position="bottom-left"
         expand={false}
         closeButton
         toastOptions={{ style: { fontFamily: "inherit" } }}

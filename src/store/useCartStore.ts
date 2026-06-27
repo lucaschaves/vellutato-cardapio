@@ -1,6 +1,6 @@
 import { create } from "zustand";
+import type { CupomValidado } from "../lib/cupons";
 
-// Tipagens do Carrinho
 export interface AdicionalSelecionado {
   id: string;
   nome: string;
@@ -17,53 +17,55 @@ export interface ItemCarrinho {
   adicionais: AdicionalSelecionado[];
   observacoes?: string;
   imagem?: string;
+  ehBrinde?: boolean;
+}
+
+function calcularSubtotalItens(itens: ItemCarrinho[]): number {
+  return itens.reduce((total, item) => {
+    const custoAdicionais = item.adicionais.reduce(
+      (soma, adc) => soma + adc.preco,
+      0,
+    );
+    return total + (item.precoBase + custoAdicionais) * item.quantidade;
+  }, 0);
 }
 
 interface CartStore {
   itens: ItemCarrinho[];
+  cupomAplicado: CupomValidado | null;
   adicionarItem: (item: Omit<ItemCarrinho, "idUnico">) => void;
   removerItem: (idUnico: string) => void;
   alterarQuantidade: (idUnico: string, novaQuantidade: number) => void;
+  alterarObservacoes: (idUnico: string, observacoes: string) => void;
   limparCarrinho: () => void;
+  aplicarCupom: (cupom: CupomValidado) => void;
+  removerCupom: () => void;
+  obterSubtotal: () => number;
+  obterDescontoCupom: () => number;
   obterTotal: () => number;
   obterQuantidadeTotal: () => number;
 }
 
 export const useCartStore = create<CartStore>((set, get) => ({
   itens: [],
+  cupomAplicado: null,
 
   adicionarItem: (novoItem) => {
-    try {
-      // Cria um ID único combinando o ID do produto e o timestamp para permitir o mesmo produto com configurações diferentes
-      const idUnico = `${novoItem.produtoId}-${Date.now()}`;
-
-      set((state) => ({
-        itens: [...state.itens, { ...novoItem, idUnico }],
-      }));
-
-      console.info(`[CARRINHO] Produto adicionado: ${novoItem.nome}`);
-    } catch (erro: any) {
-      console.error(
-        "[ERRO - CARRINHO] Falha ao adicionar item:",
-        erro.message || erro,
-      );
-    }
+    const idUnico = `${novoItem.produtoId}-${Date.now()}`;
+    set((state) => ({
+      itens: [...state.itens, { ...novoItem, idUnico }],
+    }));
+    console.info(`[CARRINHO] Produto adicionado: ${novoItem.nome}`);
   },
 
   removerItem: (idUnico) => {
     set((state) => ({
       itens: state.itens.filter((item) => item.idUnico !== idUnico),
     }));
-    console.info(`[CARRINHO] Item removido (ID: ${idUnico})`);
   },
 
   alterarQuantidade: (idUnico, novaQuantidade) => {
-    if (novaQuantidade <= 0) {
-      console.warn(
-        "[CARRINHO] Tentativa de alterar quantidade para zero ou menor. Use a função removerItem em vez disso.",
-      );
-      return;
-    }
+    if (novaQuantidade <= 0) return;
 
     set((state) => ({
       itens: state.itens.map((item) =>
@@ -74,25 +76,37 @@ export const useCartStore = create<CartStore>((set, get) => ({
     }));
   },
 
-  limparCarrinho: () => {
-    set({ itens: [] });
-    console.info("[CARRINHO] O carrinho foi totalmente esvaziado.");
+  alterarObservacoes: (idUnico, observacoes) => {
+    set((state) => ({
+      itens: state.itens.map((item) =>
+        item.idUnico === idUnico ? { ...item, observacoes } : item,
+      ),
+    }));
   },
 
+  limparCarrinho: () => {
+    set({ itens: [], cupomAplicado: null });
+  },
+
+  aplicarCupom: (cupom) => {
+    set({ cupomAplicado: cupom });
+  },
+
+  removerCupom: () => {
+    set({ cupomAplicado: null });
+  },
+
+  obterSubtotal: () => calcularSubtotalItens(get().itens),
+
+  obterDescontoCupom: () => get().cupomAplicado?.desconto || 0,
+
   obterTotal: () => {
-    const { itens } = get();
-    return itens.reduce((total, item) => {
-      const custoAdicionais = item.adicionais.reduce(
-        (soma, adc) => soma + adc.preco,
-        0,
-      );
-      const custoItem = (item.precoBase + custoAdicionais) * item.quantidade;
-      return total + custoItem;
-    }, 0);
+    const subtotal = calcularSubtotalItens(get().itens);
+    const desconto = get().cupomAplicado?.desconto || 0;
+    return Math.max(subtotal - desconto, 0);
   },
 
   obterQuantidadeTotal: () => {
-    const { itens } = get();
-    return itens.reduce((total, item) => total + item.quantidade, 0);
+    return get().itens.reduce((total, item) => total + item.quantidade, 0);
   },
 }));

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle2, ChefHat } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChefHat, ClipboardList } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { urlCardapio } from "../../lib/urlCardapio";
@@ -10,9 +10,12 @@ export function ConfirmacaoPedido() {
   const navigate = useNavigate();
   const location = useLocation();
   const mesa = new URLSearchParams(location.search).get("mesa");
-  const nomeCliente =
-    (location.state as { nomeCliente?: string } | null)?.nomeCliente?.trim() ||
-    "";
+  const state = location.state as {
+    nomeCliente?: string;
+    sequenciaPedido?: number;
+  } | null;
+  const nomeCliente = state?.nomeCliente?.trim() || "";
+  const sequenciaPedido = state?.sequenciaPedido;
 
   const [segundosRestantes, setSegundosRestantes] = useState(
     TEMPO_REDIRECIONAMENTO_SEG,
@@ -38,6 +41,12 @@ export function ConfirmacaoPedido() {
     if (redirecionouRef.current) return;
     redirecionouRef.current = true;
     navigate(urlCardapio("", location.search), { replace: true });
+  };
+
+  const irParaMeusPedidos = () => {
+    if (redirecionouRef.current) return;
+    redirecionouRef.current = true;
+    navigate(urlCardapio("meus-pedidos", location.search), { replace: true });
   };
 
   useEffect(() => {
@@ -120,6 +129,12 @@ export function ConfirmacaoPedido() {
           Pedido enviado!
         </h1>
 
+        {sequenciaPedido != null && (
+          <p className="text-sm font-bold text-gray-600 dark:text-gray-300 mb-2">
+            Número do pedido: #{sequenciaPedido}
+          </p>
+        )}
+
         {nomeCliente && (
           <p className="text-base font-semibold text-[#ff5722] mb-3">
             Obrigado, {nomeCliente}!
@@ -129,7 +144,7 @@ export function ConfirmacaoPedido() {
         <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 mb-4">
           <ChefHat size={18} className="text-[#ff5722] shrink-0" />
           <p className="text-sm md:text-base leading-relaxed">
-            Já vamos preparar. Se quiser, veja outros produtos no cardápio.
+            Já vamos preparar. Acompanhe o status em Meus pedidos.
           </p>
         </div>
 
@@ -139,14 +154,25 @@ export function ConfirmacaoPedido() {
             : `Voltando à tela inicial em ${segundosRestantes}s…`}
         </p>
 
-        <button
-          type="button"
-          onClick={voltarAoCardapio}
-          className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/25"
-        >
-          <span>Ver cardápio</span>
-          <ArrowRight size={20} />
-        </button>
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={irParaMeusPedidos}
+            className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/25"
+          >
+            <ClipboardList size={20} />
+            <span>Acompanhar pedido</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={voltarAoCardapio}
+            className="w-full bg-gray-100 dark:bg-[#2a2c30] hover:bg-gray-200 dark:hover:bg-[#323438] text-gray-900 dark:text-white font-bold py-3 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+          >
+            <span>Ver cardápio</span>
+            <ArrowRight size={18} />
+          </button>
+        </div>
       </motion.div>
     </motion.div>
   );

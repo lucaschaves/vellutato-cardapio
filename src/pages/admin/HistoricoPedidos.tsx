@@ -37,11 +37,15 @@ interface PedidoHistorico {
   sequencia_pedido: number;
   cliente_nome: string;
   cliente_celular: string | null;
+  cliente_id: string | null;
   identificador: string;
   origem: string;
   status: string;
   total: number | null;
+  valor_total: number | null;
+  desconto_aplicado: number | null;
   criado_em: string;
+  cupons: { codigo: string; tipo: string; valor: number } | null;
   pedido_itens: ItemHistorico[];
 }
 
@@ -55,7 +59,6 @@ const PERIODOS: { id: PeriodoRelatorio; label: string }[] = [
 const FILTROS_STATUS = [
   { id: "todos", label: "Todos os status" },
   { id: "pendente", label: "Pendente" },
-  { id: "em_preparo", label: "Em preparo" },
   { id: "em_producao", label: "Em produção" },
   { id: "pronto", label: "Pronto" },
   { id: "entregue", label: "Entregue" },
@@ -79,8 +82,10 @@ export function HistoricoPedidos() {
         .from("pedidos")
         .select(
           `
-          id, sequencia_pedido, cliente_nome, cliente_celular, identificador,
-          origem, status, total, criado_em,
+          id, sequencia_pedido, cliente_nome, cliente_celular, cliente_id,
+          identificador, origem, status, total, valor_total, desconto_aplicado,
+          criado_em,
+          cupons ( codigo, tipo, valor ),
           pedido_itens (
             id, quantidade, preco_unitario, observacoes,
             produtos ( nome ),
@@ -130,6 +135,7 @@ export function HistoricoPedidos() {
         pedido.cliente_celular || "",
         pedido.identificador,
         String(pedido.sequencia_pedido),
+        pedido.cupons?.codigo || "",
         pedido.pedido_itens
           .map((item) => item.produtos?.nome || "")
           .join(" "),
@@ -238,6 +244,11 @@ export function HistoricoPedidos() {
                         {STATUS_PEDIDO_LABEL[pedido.status] || pedido.status}
                       </span>
                       <Badge variant="outline">{pedido.identificador}</Badge>
+                      {pedido.cupons && (
+                        <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-0">
+                          Cupom {pedido.cupons.codigo}
+                        </Badge>
+                      )}
                     </div>
                     <p className="font-semibold text-gray-900 dark:text-white truncate">
                       {pedido.cliente_nome}
@@ -267,6 +278,27 @@ export function HistoricoPedidos() {
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         Celular: {pedido.cliente_celular}
                       </p>
+                    )}
+
+                    {(Number(pedido.desconto_aplicado || 0) > 0 ||
+                      pedido.valor_total != null) && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1 bg-gray-50 dark:bg-[#1a1815] rounded-xl p-3">
+                        {pedido.valor_total != null && (
+                          <p>
+                            Subtotal: {formatarMoeda(pedido.valor_total)}
+                          </p>
+                        )}
+                        {Number(pedido.desconto_aplicado || 0) > 0 && (
+                          <p className="text-green-600 dark:text-green-400 font-medium">
+                            Desconto
+                            {pedido.cupons ? ` (${pedido.cupons.codigo})` : ""}:{" "}
+                            -{formatarMoeda(pedido.desconto_aplicado)}
+                          </p>
+                        )}
+                        <p className="font-bold text-gray-900 dark:text-white">
+                          Total: {formatarMoeda(obterValorPedido(pedido))}
+                        </p>
+                      </div>
                     )}
 
                     {pedido.pedido_itens.map((item) => (

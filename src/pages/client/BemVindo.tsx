@@ -13,7 +13,13 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { supabase } from "../../lib/supabase";
-import { aoTeclaTelefone, criarHandlerTelefone, fecharTeclado } from "../../lib/telefone";
+import {
+  aoTeclaTelefone,
+  criarHandlerTelefone,
+  fecharTeclado,
+  lerCelularLocalStorage,
+  salvarCelularLocalStorage,
+} from "../../lib/telefone";
 import { prepararNavegacaoComTelaCheia } from "../../lib/telaCheia";
 const VIDEO_ENV = import.meta.env.VITE_VIDEO_DIVULGACAO as string | undefined;
 
@@ -29,9 +35,7 @@ export function BemVindo() {
   const [nome, setNome] = useState(
     () => localStorage.getItem("cliente_nome") || "",
   );
-  const [celular, setCelular] = useState(
-    () => localStorage.getItem("cliente_celular") || "",
-  );
+  const [celular, setCelular] = useState(() => lerCelularLocalStorage());
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
 
   useEffect(() => {
@@ -80,7 +84,7 @@ export function BemVindo() {
   const prosseguir = async (pular: boolean = false) => {
     if (!pular) {
       localStorage.setItem("cliente_nome", nome);
-      localStorage.setItem("cliente_celular", celular);
+      salvarCelularLocalStorage(celular);
     } else {
       localStorage.removeItem("cliente_nome");
       localStorage.removeItem("cliente_celular");

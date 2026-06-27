@@ -26,7 +26,7 @@ interface Pedido {
   origem: "mesa" | "balcao";
   identificador: string;
   cliente_nome: string;
-  status: "pendente" | "em_preparo" | "pronto" | "entregue" | "cancelado";
+  status: "pendente" | "em_producao" | "pronto" | "entregue" | "cancelado";
   criado_em: string;
   pedido_itens: ItemPedido[];
 }
@@ -108,8 +108,8 @@ export function PainelPedidos() {
           )
         `,
         )
-        // Buscamos tudo que não foi entregue ou cancelado
-        .not("status", "in", '("entregue","cancelado")')
+        // KDS: exclui entregue, cancelado e pago (conta fechada no caixa)
+        .not("status", "in", '("entregue","cancelado","pago")')
         .order("criado_em", { ascending: false }); // Pedidos novos primeiro
 
       if (error) throw new Error(error.message);
@@ -126,7 +126,7 @@ export function PainelPedidos() {
   // Exemplo de como deve estar o seu disparador de status:
   const atualizarStatus = async (
     pedidoId: string,
-    novoStatus: "pendente" | "em_preparo" | "pronto" | "entregue" | "cancelado",
+    novoStatus: "pendente" | "em_producao" | "pronto" | "entregue" | "cancelado",
   ) => {
     console.log("novoStatus", novoStatus);
     const { error } = await supabase
@@ -149,7 +149,7 @@ export function PainelPedidos() {
 
   // Separação em colunas (Kanban)
   const pendentes = pedidos.filter((p) => p.status === "pendente");
-  const emProducao = pedidos.filter((p) => p.status === "em_preparo");
+  const emProducao = pedidos.filter((p) => p.status === "em_producao");
   const prontos = pedidos.filter((p) => p.status === "pronto");
 
   // Subcomponente para renderizar o Card do Pedido
@@ -175,15 +175,14 @@ export function PainelPedidos() {
           <p className="text-sm text-gray-500">{pedido.cliente_nome}</p>
         </div>
         <div className="flex gap-2">
-          {pedido.status === "pendente" ||
-            (pedido.status === "em_preparo" && (
+          {(pedido.status === "pendente" || pedido.status === "em_producao") && (
               <button
                 onClick={() => cancelarPedido(pedido.id)}
                 className="p-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex justify-center items-center gap-2"
               >
                 <Trash2 size={18} className="text-white" />
               </button>
-            ))}
+            )}
           <button
             onClick={() => enviarParaImpressora(pedido)}
             className="p-2 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 transition-colors"
@@ -211,13 +210,13 @@ export function PainelPedidos() {
       <div className="pt-2 flex gap-2 flex-col">
         {pedido.status === "pendente" && (
           <button
-            onClick={() => atualizarStatus(pedido.id, "em_preparo")}
+            onClick={() => atualizarStatus(pedido.id, "em_producao")}
             className="flex-1 bg-yellow-500 text-white py-2 rounded font-bold flex justify-center items-center gap-2"
           >
             <ChefHat size={18} /> Preparar
           </button>
         )}
-        {pedido.status === "em_preparo" && (
+        {pedido.status === "em_producao" && (
           <button
             onClick={() => atualizarStatus(pedido.id, "pronto")}
             className="flex-1 bg-green-500 text-white py-2 rounded font-bold flex justify-center items-center gap-2"

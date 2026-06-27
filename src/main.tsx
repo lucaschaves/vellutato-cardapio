@@ -1,9 +1,12 @@
 // src/main.tsx
 import ReactDOM from "react-dom/client";
+import { registerSW } from "virtual:pwa-register";
 import "./index.css";
 import { inicializarCapturaErros } from "./lib/errorLogger";
 import { aplicarPreferenciasExibicaoSalvas } from "./lib/preferenciasExibicao";
 import { AppRoutes } from "./routes/AppRoutes";
+
+registerSW({ immediate: true });
 
 inicializarCapturaErros();
 aplicarPreferenciasExibicaoSalvas();

@@ -1,9 +1,19 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Minus, Plus, ShoppingBag, Tag, X } from "lucide-react";
+import { Minus, Plus, ShoppingBag, Sparkles, Tag, X } from "lucide-react";
 import { useEffect, useRef, useState, memo } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import { ModalOfertaPosAdicionar } from "../../components/ModalOfertaPosAdicionar";
+import {
+  obterQuantidadeMaxima,
+  produtoEstaEsgotado,
+} from "../../lib/estoque";
+import {
+  buscarOfertasVendaCruzada,
+  calcularPrecoComDescontoVendaCruzada,
+  type OfertaVendaCruzada,
+} from "../../lib/vendasCruzadas";
 import { urlCardapio } from "../../lib/urlCardapio";
 import { useCartStore } from "../../store/useCartStore";
 
@@ -17,6 +27,8 @@ interface ProdutoDetalhe {
   imagem_url: string;
   video_url?: string;
   ativo: boolean;
+  controlar_estoque?: boolean;
+  quantidade_estoque?: number;
 }
 
 interface Adicional {
@@ -163,12 +175,17 @@ export function VisualizadorReels() {
   >([]);
   const [quantidade, setQuantidade] = useState(1);
   const [carregando, setCarregando] = useState(true);
+  const [ofertasCruzadas, setOfertasCruzadas] = useState<OfertaVendaCruzada[]>(
+    [],
+  );
+  const [modalPosAdicionarAberto, setModalPosAdicionarAberto] = useState(false);
 
   useEffect(() => {
     async function carregarDetalhes() {
       try {
         if (!id) return;
         setCarregando(true);
+        setOfertasCruzadas([]);
 
         const { data: prod, error: errProd } = await supabase
           .from("produtos")
@@ -186,20 +203,24 @@ export function VisualizadorReels() {
 
         if (errAdc) throw errAdc;
         if (adcs) setAdicionaisDisponiveis(adcs);
-      } catch (erro: any) {
-        console.error(
-          "[ERRO DO SISTEMA - DETALHES DO PRODUTO]",
-          erro.message || erro,
-        );
+
+        try {
+          const ofertas = await buscarOfertasVendaCruzada(id);
+          setOfertasCruzadas(ofertas);
+        } catch (erroOferta: unknown) {
+          console.warn("[VENDA CRUZADA] Falha ao carregar ofertas:", erroOferta);
+        }
+      } catch (erro: unknown) {
+        const mensagem = erro instanceof Error ? erro.message : String(erro);
+        console.error("[ERRO DO SISTEMA - DETALHES DO PRODUTO]", mensagem);
         toast.error("Não foi possível carregar as informações deste item.");
         navigate(urlCardapio("", location.search));
-        // fechar();
       } finally {
         setCarregando(false);
       }
     }
     carregarDetalhes();
-  }, [id]);
+  }, [id, location.search, navigate]);
 
   const fechar = () => navigate(urlCardapio("", location.search));
 
@@ -224,18 +245,72 @@ export function VisualizadorReels() {
       adicionaisSelecionados.reduce((acc, curr) => acc + curr.preco, 0)) *
     quantidade;
 
+  const esgotado = produto ? produtoEstaEsgotado(produto) : false;
+  const quantidadeMaxima = produto ? obterQuantidadeMaxima(produto) : null;
+
   const confirmarPedido = () => {
     if (!produto) return;
+    if (esgotado) {
+      toast.error("Este produto está esgotado no momento.");
+      return;
+    }
     adicionarAoCarrinho({
       produtoId: produto.id,
       nome: produto.nome,
-      precoBase: precoAtivo, // O valor final (promocional ou não)
-      originalPrice: produto.preco, // O valor cheio (para exibir no carrinho)
+      precoBase: precoAtivo,
+      originalPrice: produto.preco,
       quantidade,
       imagem: produto.imagem_url,
       adicionais: adicionaisSelecionados,
     });
     toast.success("Produto adicionado ao seu pedido!");
+
+    const ofertasPosAdd = ofertasCruzadas.filter(
+      (o) => !produtoEstaEsgotado(o.produto_alvo),
+    );
+    if (ofertasPosAdd.length > 0) {
+      setModalPosAdicionarAberto(true);
+    } else {
+      fechar();
+    }
+  };
+
+  const adicionarOfertaCruzada = (oferta: OfertaVendaCruzada) => {
+    const alvo = oferta.produto_alvo;
+    if (produtoEstaEsgotado(alvo)) {
+      toast.error(`${alvo.nome} está esgotado no momento.`);
+      return;
+    }
+    const precoCheio =
+      alvo.em_promocao && alvo.preco_promocional
+        ? alvo.preco_promocional
+        : alvo.preco;
+    const precoComDesconto = calcularPrecoComDescontoVendaCruzada(
+      precoCheio,
+      oferta.tipo,
+      oferta.valor_desconto,
+    );
+    const ehBrinde = oferta.tipo === "brinde";
+
+    adicionarAoCarrinho({
+      produtoId: alvo.id,
+      nome: alvo.nome,
+      precoBase: precoComDesconto,
+      originalPrice: alvo.preco,
+      quantidade: 1,
+      imagem: alvo.imagem_url || undefined,
+      adicionais: [],
+      ehBrinde,
+    });
+    toast.success(
+      ehBrinde
+        ? `${alvo.nome} adicionado como brinde!`
+        : `${alvo.nome} adicionado com oferta especial!`,
+    );
+  };
+
+  const fecharModalPosAdicionar = () => {
+    setModalPosAdicionarAberto(false);
     fechar();
   };
 
@@ -283,6 +358,89 @@ export function VisualizadorReels() {
             <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base leading-relaxed mb-8 transition-colors">
               {produto.descricao}
             </p>
+
+            {esgotado && (
+              <div className="mb-6 p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-300 text-sm font-semibold">
+                Produto esgotado no momento. Não é possível adicionar ao pedido.
+              </div>
+            )}
+
+            {ofertasCruzadas.length > 0 && (
+              <div className="mb-8 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles size={16} className="text-[#ff5722]" />
+                  <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest">
+                    Aproveite também
+                  </h2>
+                </div>
+                {ofertasCruzadas.map((oferta) => {
+                  const alvo = oferta.produto_alvo;
+                  const precoBase =
+                    alvo.em_promocao && alvo.preco_promocional
+                      ? alvo.preco_promocional
+                      : alvo.preco;
+                  const precoOferta = calcularPrecoComDescontoVendaCruzada(
+                    precoBase,
+                    oferta.tipo,
+                    oferta.valor_desconto,
+                  );
+
+                  return (
+                    <div
+                      key={oferta.id}
+                      className="flex gap-3 p-3 rounded-2xl bg-[#ff5722]/5 border border-[#ff5722]/20"
+                    >
+                      <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                        <img
+                          src={alvo.imagem_url || "/placeholder.jpg"}
+                          alt={alvo.nome}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-gray-900 dark:text-white truncate">
+                          {alvo.nome}
+                        </p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">
+                          {oferta.mensagem_oferta ||
+                            "Combina perfeito com seu pedido!"}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {oferta.tipo === "brinde" ? (
+                            <>
+                              <span className="font-black text-green-600 dark:text-green-400 text-sm">
+                                Brinde grátis
+                              </span>
+                              <span className="text-xs text-gray-400 line-through">
+                                R$ {precoBase.toFixed(2)}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-black text-[#ff5722] text-sm">
+                                R$ {precoOferta.toFixed(2)}
+                              </span>
+                              {precoOferta < precoBase && (
+                                <span className="text-xs text-gray-400 line-through">
+                                  R$ {precoBase.toFixed(2)}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => adicionarOfertaCruzada(oferta)}
+                        className="self-center shrink-0 px-3 py-2 rounded-xl bg-[#ff5722] text-white text-xs font-bold active:scale-95"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {adicionaisDisponiveis.length > 0 && (
               <div className="space-y-4">
@@ -336,8 +494,25 @@ export function VisualizadorReels() {
                   {quantidade}
                 </span>
                 <button
-                  onClick={() => setQuantidade((q) => q + 1)}
-                  className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white active:scale-95 bg-white dark:bg-[#181a1b] rounded-xl shadow-sm dark:shadow-none transition-colors"
+                  onClick={() =>
+                    setQuantidade((q) => {
+                      const proxima = q + 1;
+                      if (
+                        quantidadeMaxima != null &&
+                        proxima > quantidadeMaxima
+                      ) {
+                        toast.error(
+                          quantidadeMaxima === 0
+                            ? "Produto esgotado."
+                            : `Máximo disponível: ${quantidadeMaxima}`,
+                        );
+                        return q;
+                      }
+                      return proxima;
+                    })
+                  }
+                  disabled={esgotado}
+                  className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white active:scale-95 bg-white dark:bg-[#181a1b] rounded-xl shadow-sm dark:shadow-none transition-colors disabled:opacity-40"
                 >
                   <Plus size={18} />
                 </button>
@@ -345,11 +520,14 @@ export function VisualizadorReels() {
 
               <button
                 onClick={confirmarPedido}
-                className="flex-1 bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-5 md:px-6 rounded-2xl flex items-center justify-between active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                disabled={esgotado}
+                className="flex-1 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-5 md:px-6 rounded-2xl flex items-center justify-between active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
               >
                 <span className="flex items-center gap-2 text-sm md:text-base">
                   <ShoppingBag size={20} />{" "}
-                  <span className="hidden md:inline">Adicionar</span>
+                  <span className="hidden md:inline">
+                    {esgotado ? "Esgotado" : "Adicionar"}
+                  </span>
                 </span>
                 <span className="text-lg md:text-xl tracking-tight">
                   R$ {valorTotal.toFixed(2)}
@@ -359,6 +537,13 @@ export function VisualizadorReels() {
           </div>
         </div>
       </motion.div>
+
+      <ModalOfertaPosAdicionar
+        aberto={modalPosAdicionarAberto}
+        ofertas={ofertasCruzadas}
+        aoAdicionar={adicionarOfertaCruzada}
+        aoFechar={fecharModalPosAdicionar}
+      />
     </AnimatePresence>
   );
 }

@@ -1,13 +1,14 @@
 {
   "name": "cardapio-digital",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen-types": "npx supabase gen types typescript --schema public > src/types/supabase.ts --project-id "
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
@@ -41,6 +42,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }

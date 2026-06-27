@@ -2,7 +2,6 @@ export type PeriodoRelatorio = "hoje" | "7dias" | "30dias" | "todos";
 
 export const STATUS_PEDIDO_LABEL: Record<string, string> = {
   pendente: "Pendente",
-  em_preparo: "Em preparo",
   em_producao: "Em produção",
   pronto: "Pronto",
   entregue: "Entregue",
@@ -51,7 +50,6 @@ export function obterClasseStatus(status: string): string {
   switch (status) {
     case "pendente":
       return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-    case "em_preparo":
     case "em_producao":
       return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
     case "pronto":

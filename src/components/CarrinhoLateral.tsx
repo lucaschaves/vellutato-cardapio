@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Gift,
   ArrowLeft,
   ArrowRight,
   Minus,
@@ -7,6 +8,7 @@ import {
   ShieldCheck,
   ShoppingBag,
   Tag,
+  Ticket,
   Trash2,
   X,
 } from "lucide-react";
@@ -14,8 +16,25 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useRevalidarCupomCarrinho } from "../hooks/useRevalidarCupomCarrinho";
+import {
+  buscarClientePorCelular,
+  upsertCliente,
+} from "../lib/clientes";
+import { validarCupom } from "../lib/cupons";
+import {
+  processarPedidoPosCriacao,
+  reverterPedidoFalho,
+} from "../lib/pedidos";
 import { supabase } from "../lib/supabase";
-import { aoTeclaTelefone, criarHandlerTelefone } from "../lib/telefone";
+import {
+  aoTeclaTelefone,
+  criarHandlerTelefone,
+  lerCelularLocalStorage,
+  normalizarTelefoneParaSalvar,
+  salvarCelularLocalStorage,
+  telefoneDigitosCompleto,
+} from "../lib/telefone";
 import { urlCardapio } from "../lib/urlCardapio";
 import { useCartStore } from "../store/useCartStore";
 
@@ -32,8 +51,19 @@ export function CarrinhoLateral({
   aoFechar,
   identificadorMesa,
 }: CarrinhoLateralProps) {
-  const { itens, removerItem, alterarQuantidade, obterTotal, limparCarrinho } =
-    useCartStore();
+  const {
+    itens,
+    removerItem,
+    alterarQuantidade,
+    alterarObservacoes,
+    obterSubtotal,
+    obterDescontoCupom,
+    obterTotal,
+    limparCarrinho,
+    cupomAplicado,
+    aplicarCupom,
+    removerCupom,
+  } = useCartStore();
 
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -41,11 +71,16 @@ export function CarrinhoLateral({
   const [nomeCliente, setNomeCliente] = useState(
     () => localStorage.getItem("cliente_nome") || "",
   );
-  const [celularCliente, setCelularCliente] = useState(
-    () => localStorage.getItem("cliente_celular") || "",
+  const [celularCliente, setCelularCliente] = useState(() =>
+    lerCelularLocalStorage(),
   );
+  const [codigoCupom, setCodigoCupom] = useState("");
+  const [validandoCupom, setValidandoCupom] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [etapaMobile, setEtapaMobile] = useState<EtapaMobileCarrinho>("itens");
+  const [buscandoCliente, setBuscandoCliente] = useState(false);
+
+  useRevalidarCupomCarrinho(celularCliente, nomeCliente, aberto);
 
   useEffect(() => {
     if (!aberto) setEtapaMobile("itens");
@@ -53,10 +88,41 @@ export function CarrinhoLateral({
 
   useEffect(() => {
     localStorage.setItem("cliente_nome", nomeCliente);
-    localStorage.setItem("cliente_celular", celularCliente);
+    salvarCelularLocalStorage(celularCliente);
   }, [nomeCliente, celularCliente]);
 
   const handlePhoneChange = criarHandlerTelefone(setCelularCliente);
+
+  const reconhecerClientePorTelefone = async (celularFormatado: string) => {
+    if (!telefoneDigitosCompleto(celularFormatado)) return;
+
+    try {
+      setBuscandoCliente(true);
+      const cliente = await buscarClientePorCelular(celularFormatado);
+      if (cliente) {
+        setNomeCliente(cliente.nome);
+        toast.success(`Olá de novo, ${cliente.nome.split(" ")[0]}!`);
+      }
+    } catch {
+      /* opcional — não bloqueia checkout */
+    } finally {
+      setBuscandoCliente(false);
+    }
+  };
+
+  const handlePhoneChangeComReconhecimento = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    handlePhoneChange(e);
+    const formatado = e.target.value;
+    if (telefoneDigitosCompleto(formatado)) {
+      void reconhecerClientePorTelefone(formatado);
+    }
+  };
+
+  const subtotal = obterSubtotal();
+  const descontoCupom = obterDescontoCupom();
+  const totalFinal = obterTotal();
 
   const totalOriginal = itens.reduce((acc, item) => {
     const precoCheio = item.originalPrice || item.precoBase;
@@ -65,7 +131,7 @@ export function CarrinhoLateral({
     return acc + (precoCheio + adicionais) * item.quantidade;
   }, 0);
 
-  const totalFinal = obterTotal();
+  const economiaPromocional = Math.max(totalOriginal - subtotal, 0);
   const economia = totalOriginal - totalFinal;
 
   const alterarQuantidadeItem = (idUnico: string, novaQuantidade: number) => {
@@ -74,6 +140,34 @@ export function CarrinhoLateral({
       return;
     }
     alterarQuantidade(idUnico, novaQuantidade);
+  };
+
+  const handleAplicarCupom = async () => {
+    try {
+      setValidandoCupom(true);
+      const celularNorm = normalizarTelefoneParaSalvar(celularCliente);
+      let clienteId: string | null = null;
+
+      if (celularNorm && nomeCliente.trim()) {
+        clienteId = await upsertCliente(nomeCliente, celularNorm);
+      }
+
+      const resultado = await validarCupom(codigoCupom, subtotal, clienteId);
+
+      if (resultado.ok === false) {
+        toast.error(resultado.erro);
+        return;
+      }
+
+      aplicarCupom(resultado.cupom);
+      toast.success(`Cupom ${resultado.cupom.codigo} aplicado!`);
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - CUPOM]", mensagem);
+      toast.error("Não foi possível validar o cupom.");
+    } finally {
+      setValidandoCupom(false);
+    }
   };
 
   const finalizarPedido = async (e: React.FormEvent) => {
@@ -88,22 +182,32 @@ export function CarrinhoLateral({
     try {
       setEnviando(true);
 
+      const celularSalvo = normalizarTelefoneParaSalvar(celularCliente);
+      const clienteId = await upsertCliente(nomeCliente, celularSalvo || null);
+
       const tipoConsumo = localStorage.getItem("tipo_consumo") || "loja";
+      const subtotalPedido = obterSubtotal();
+      const desconto = obterDescontoCupom();
+      const totalPedido = obterTotal();
 
       const { data: pedido, error: errorPedido } = await supabase
         .from("pedidos")
         .insert({
-          cliente_nome: nomeCliente,
-          cliente_celular: celularCliente || null,
+          cliente_nome: nomeCliente.trim(),
+          cliente_celular: celularSalvo || null,
+          cliente_id: clienteId,
+          cupom_id: cupomAplicado?.id || null,
+          desconto_aplicado: desconto > 0 ? desconto : null,
           status: "pendente",
-          origem: tipoConsumo === "viagem" ? "viagem" : "mesa",
+          origem: tipoConsumo === "viagem" ? "balcao" : "mesa",
           identificador:
             tipoConsumo === "viagem"
               ? `${identificadorMesa || "Balcão"} (PARA VIAGEM)`
               : identificadorMesa || "Balcão",
-          total: totalFinal,
+          total: totalPedido,
+          valor_total: subtotalPedido,
         })
-        .select("id")
+        .select("id, sequencia_pedido")
         .single();
 
       if (errorPedido)
@@ -117,6 +221,7 @@ export function CarrinhoLateral({
             produto_id: item.produtoId,
             quantidade: item.quantidade,
             preco_unitario: item.precoBase,
+            observacoes: item.observacoes?.trim() || null,
           })
           .select("id")
           .single();
@@ -139,23 +244,39 @@ export function CarrinhoLateral({
         }
       }
 
+      try {
+        await processarPedidoPosCriacao(pedido.id, cupomAplicado?.id);
+      } catch (erroPos: unknown) {
+        await reverterPedidoFalho(pedido.id);
+        const mensagem =
+          erroPos instanceof Error ? erroPos.message : String(erroPos);
+        throw new Error(mensagem);
+      }
+
       limparCarrinho();
+      setCodigoCupom("");
       setEtapaMobile("itens");
       aoFechar();
 
-      const mesa = new URLSearchParams(window.location.search).get("mesa");
-      if (mesa) {
-        localStorage.setItem("cliente_nome", nomeCliente);
-        localStorage.setItem("cliente_celular", celularCliente);
+      localStorage.setItem("cliente_nome", nomeCliente.trim());
+      if (celularSalvo) {
+        salvarCelularLocalStorage(celularCliente);
       }
 
       navigate(urlCardapio("pedido-enviado", window.location.search), {
-        state: { nomeCliente: nomeCliente.trim() },
+        state: {
+          nomeCliente: nomeCliente.trim(),
+          sequenciaPedido: pedido.sequencia_pedido,
+        },
       });
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO CRÍTICO - CHECKOUT]", mensagem);
-      toast.error("Erro ao processar o pedido. Tente novamente.");
+      toast.error(
+        mensagem.includes("Estoque insuficiente")
+          ? mensagem
+          : "Erro ao processar o pedido. Tente novamente.",
+      );
     } finally {
       setEnviando(false);
     }
@@ -165,7 +286,7 @@ export function CarrinhoLateral({
     tamanhoTotal: "normal" | "grande" = "normal",
   ) => (
     <div className="space-y-3">
-      {economia > 0 && (
+      {economiaPromocional > 0 && (
         <>
           <div className="flex justify-between text-gray-600 dark:text-gray-300 text-sm font-medium">
             <span>Subtotal (sem descontos)</span>
@@ -173,9 +294,16 @@ export function CarrinhoLateral({
           </div>
           <div className="flex justify-between text-green-600 font-bold text-sm">
             <span>Economia Promocional</span>
-            <span>- R$ {economia.toFixed(2)}</span>
+            <span>- R$ {economiaPromocional.toFixed(2)}</span>
           </div>
         </>
+      )}
+
+      {descontoCupom > 0 && cupomAplicado && (
+        <div className="flex justify-between text-green-600 font-bold text-sm">
+          <span>Cupom {cupomAplicado.codigo}</span>
+          <span>- R$ {descontoCupom.toFixed(2)}</span>
+        </div>
       )}
 
       <div className="flex justify-between items-end border-t border-gray-200 dark:border-[#2a2c30] pt-3">
@@ -191,8 +319,54 @@ export function CarrinhoLateral({
     </div>
   );
 
+  const renderCampoCupom = () => (
+    <div className="space-y-2">
+      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+        Cupom de desconto
+      </label>
+      {cupomAplicado ? (
+        <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-bold text-sm">
+            <Ticket size={16} />
+            {cupomAplicado.codigo}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              removerCupom();
+              setCodigoCupom("");
+            }}
+            className="text-xs font-bold text-red-600 hover:text-red-700"
+          >
+            Remover
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={codigoCupom}
+            onChange={(e) => setCodigoCupom(e.target.value.toUpperCase())}
+            placeholder="Código promocional"
+            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white uppercase outline-none focus:ring-2 focus:ring-[#ff5722]"
+          />
+          <button
+            type="button"
+            onClick={() => void handleAplicarCupom()}
+            disabled={!codigoCupom.trim() || validandoCupom}
+            className="px-4 py-3 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold text-sm disabled:opacity-50"
+          >
+            {validandoCupom ? "..." : "Aplicar"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   const renderCamposIdentificacao = () => (
     <div className="space-y-4">
+      {renderCampoCupom()}
+
       <div>
         <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
           Seu Nome *
@@ -223,10 +397,13 @@ export function CarrinhoLateral({
           maxLength={15}
           placeholder="(00) 00000-0000"
           value={celularCliente}
-          onChange={handlePhoneChange}
+          onChange={handlePhoneChangeComReconhecimento}
           onKeyDown={aoTeclaTelefone}
           className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
         />
+        {buscandoCliente && (
+          <p className="text-xs text-gray-500 mt-1">Buscando cadastro...</p>
+        )}
       </div>
     </div>
   );
@@ -263,9 +440,16 @@ export function CarrinhoLateral({
 
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex justify-between items-start mb-1 gap-2">
-                <h3 className="font-extrabold text-gray-950 dark:text-white text-sm md:text-base leading-tight">
-                  {item.nome}
-                </h3>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-gray-950 dark:text-white text-sm md:text-base leading-tight">
+                    {item.nome}
+                  </h3>
+                  {item.ehBrinde && (
+                    <span className="inline-flex items-center gap-1 mt-1 text-[0.625rem] font-black uppercase tracking-wide text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
+                      <Gift size={10} /> Brinde
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => removerItem(item.idUnico)}
@@ -288,6 +472,17 @@ export function CarrinhoLateral({
                   ))}
                 </div>
               )}
+
+              <input
+                type="text"
+                value={item.observacoes || ""}
+                onChange={(e) =>
+                  alterarObservacoes(item.idUnico, e.target.value)
+                }
+                placeholder="Observação (ex: sem cebola)"
+                maxLength={200}
+                className="w-full mb-2 text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] text-gray-800 dark:text-gray-200 placeholder:text-gray-400"
+              />
 
               <div className="mt-auto flex items-center justify-between gap-2">
                 <div className="flex items-center bg-gray-50 dark:bg-[#2a2c30] rounded-lg border border-gray-200 dark:border-transparent">

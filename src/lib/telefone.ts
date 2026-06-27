@@ -1,7 +1,12 @@
 export const TELEFONE_DIGITOS_MAX = 11;
 
-export function extrairDigitosTelefone(valor: string): string {
+/** Apenas dígitos — formato para salvar no banco (clientes.celular, pedidos.cliente_celular). */
+export function normalizarTelefoneParaSalvar(valor: string): string {
   return valor.replace(/\D/g, "").slice(0, TELEFONE_DIGITOS_MAX);
+}
+
+export function extrairDigitosTelefone(valor: string): string {
+  return normalizarTelefoneParaSalvar(valor);
 }
 
 export function formatarTelefoneBr(valor: string): string {
@@ -20,6 +25,12 @@ export function formatarTelefoneBr(valor: string): string {
   }
 
   return "";
+}
+
+/** Converte dígitos salvos no banco para exibição na UI. */
+export function formatarTelefoneDeSalvo(valor: string | null | undefined): string {
+  if (!valor) return "";
+  return formatarTelefoneBr(valor);
 }
 
 export function telefoneDigitosCompleto(valor: string): boolean {
@@ -51,5 +62,19 @@ export function aoTeclaTelefone(evento: React.KeyboardEvent<HTMLInputElement>) {
   if (evento.key === "Enter") {
     evento.preventDefault();
     fecharTeclado(evento.currentTarget);
+  }
+}
+
+export function lerCelularLocalStorage(): string {
+  const salvo = localStorage.getItem("cliente_celular");
+  return formatarTelefoneDeSalvo(salvo);
+}
+
+export function salvarCelularLocalStorage(valorFormatado: string) {
+  const normalizado = normalizarTelefoneParaSalvar(valorFormatado);
+  if (normalizado) {
+    localStorage.setItem("cliente_celular", normalizado);
+  } else {
+    localStorage.removeItem("cliente_celular");
   }
 }

@@ -2,6 +2,7 @@ import {
   BarChart3,
   Loader2,
   ShoppingBag,
+  Ticket,
   TrendingUp,
   Users,
   XCircle,
@@ -35,9 +36,26 @@ interface PedidoDashboard {
   id: string;
   status: string;
   total: number | null;
+  desconto_aplicado: number | null;
   origem: string;
   criado_em: string;
+  cupom_id: string | null;
+  cliente_id: string | null;
+  cupons: { codigo: string } | null;
+  clientes: { nome: string } | null;
   pedido_itens: ItemDashboard[];
+}
+
+interface ClienteRanking {
+  nome: string;
+  pedidos: number;
+  receita: number;
+}
+
+interface CupomRanking {
+  codigo: string;
+  usos: number;
+  descontoTotal: number;
 }
 
 interface ProdutoRanking {
@@ -63,6 +81,9 @@ function obterChaveDia(dataIso: string): string {
 export function DashboardVendas() {
   const [periodo, setPeriodo] = useState<PeriodoRelatorio>("7dias");
   const [pedidos, setPedidos] = useState<PedidoDashboard[]>([]);
+  const [topClientesGeral, setTopClientesGeral] = useState<
+    { nome: string; total_pedidos: number | null; valor_gasto: number | null }[]
+  >([]);
   const [carregando, setCarregando] = useState(true);
 
   const carregarDados = useCallback(async () => {
@@ -73,7 +94,10 @@ export function DashboardVendas() {
         .from("pedidos")
         .select(
           `
-          id, status, total, origem, criado_em,
+          id, status, total, desconto_aplicado, origem, criado_em,
+          cupom_id, cliente_id,
+          cupons ( codigo ),
+          clientes ( nome ),
           pedido_itens (
             quantidade, preco_unitario,
             produtos ( nome )
@@ -87,10 +111,20 @@ export function DashboardVendas() {
         query = query.gte("criado_em", inicio);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
+      const [resPedidos, resClientes] = await Promise.all([
+        query,
+        supabase
+          .from("clientes")
+          .select("nome, total_pedidos, valor_gasto")
+          .order("valor_gasto", { ascending: false, nullsFirst: false })
+          .limit(8),
+      ]);
 
-      setPedidos((data as unknown as PedidoDashboard[]) || []);
+      if (resPedidos.error) throw resPedidos.error;
+      if (resClientes.error) throw resClientes.error;
+
+      setPedidos((resPedidos.data as unknown as PedidoDashboard[]) || []);
+      setTopClientesGeral(resClientes.data || []);
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - DASHBOARD]", mensagem);
@@ -168,6 +202,47 @@ export function DashboardVendas() {
     const taxaCancelamento =
       pedidos.length > 0 ? (cancelados.length / pedidos.length) * 100 : 0;
 
+    const descontoTotal = vendas.reduce(
+      (acc, pedido) => acc + Number(pedido.desconto_aplicado || 0),
+      0,
+    );
+
+    const cupomMap = new Map<string, CupomRanking>();
+    vendas.forEach((pedido) => {
+      if (!pedido.cupons?.codigo) return;
+      const codigo = pedido.cupons.codigo;
+      const atual = cupomMap.get(codigo) || {
+        codigo,
+        usos: 0,
+        descontoTotal: 0,
+      };
+      atual.usos += 1;
+      atual.descontoTotal += Number(pedido.desconto_aplicado || 0);
+      cupomMap.set(codigo, atual);
+    });
+
+    const cuponsMaisUsados = Array.from(cupomMap.values())
+      .sort((a, b) => b.usos - a.usos)
+      .slice(0, 6);
+
+    const clienteMap = new Map<string, ClienteRanking>();
+    vendas.forEach((pedido) => {
+      if (!pedido.clientes?.nome) return;
+      const nome = pedido.clientes.nome;
+      const atual = clienteMap.get(nome) || {
+        nome,
+        pedidos: 0,
+        receita: 0,
+      };
+      atual.pedidos += 1;
+      atual.receita += obterValorPedido(pedido);
+      clienteMap.set(nome, atual);
+    });
+
+    const clientesTopPeriodo = Array.from(clienteMap.values())
+      .sort((a, b) => b.receita - a.receita)
+      .slice(0, 6);
+
     return {
       receitaTotal,
       ticketMedio,
@@ -176,6 +251,9 @@ export function DashboardVendas() {
       pedidosAbertos: emAberto.length,
       cancelados: cancelados.length,
       taxaCancelamento,
+      descontoTotal,
+      cuponsMaisUsados,
+      clientesTopPeriodo,
       produtosMaisVendidos,
       porOrigem,
       porStatus,
@@ -234,6 +312,11 @@ export function DashboardVendas() {
                   <TrendingUp size={14} /> {metricas.pedidosPagos} pedidos
                   concluídos
                 </p>
+                {metricas.descontoTotal > 0 && (
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-2 font-medium">
+                    Descontos (cupons): {formatarMoeda(metricas.descontoTotal)}
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -410,6 +493,117 @@ export function DashboardVendas() {
               )}
             </CardContent>
           </Card>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Ticket size={18} />
+                  Cupons no período
+                </CardTitle>
+                <CardDescription>Mais usados em vendas concluídas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {metricas.cuponsMaisUsados.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-6 text-center">
+                    Nenhum cupom usado no período.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {metricas.cuponsMaisUsados.map((cupom) => (
+                      <div
+                        key={cupom.codigo}
+                        className="flex justify-between items-center p-3 rounded-xl bg-gray-50 dark:bg-[#1a1815] text-sm"
+                      >
+                        <span className="font-bold text-purple-700 dark:text-purple-300">
+                          {cupom.codigo}
+                        </span>
+                        <div className="text-right">
+                          <p className="font-semibold">{cupom.usos} usos</p>
+                          <p className="text-xs text-green-600">
+                            -{formatarMoeda(cupom.descontoTotal)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users size={18} />
+                  Clientes no período
+                </CardTitle>
+                <CardDescription>Maior receita (vendas concluídas)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {metricas.clientesTopPeriodo.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-6 text-center">
+                    Sem clientes identificados no período.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {metricas.clientesTopPeriodo.map((cliente) => (
+                      <div
+                        key={cliente.nome}
+                        className="flex justify-between items-center p-3 rounded-xl bg-gray-50 dark:bg-[#1a1815] text-sm"
+                      >
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-white">
+                            {cliente.nome}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {cliente.pedidos}{" "}
+                            {cliente.pedidos === 1 ? "pedido" : "pedidos"}
+                          </p>
+                        </div>
+                        <span className="font-bold text-cookie-accent">
+                          {formatarMoeda(cliente.receita)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {topClientesGeral.length > 0 && (
+            <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users size={18} />
+                  Top clientes (geral)
+                </CardTitle>
+                <CardDescription>
+                  Ranking histórico por valor gasto cadastrado
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {topClientesGeral.map((cliente, indice) => (
+                    <div
+                      key={`${cliente.nome}-${indice}`}
+                      className="p-3 rounded-xl bg-gray-50 dark:bg-[#1a1815]"
+                    >
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">
+                        {cliente.nome}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {cliente.total_pedidos || 0} pedidos
+                      </p>
+                      <p className="text-sm font-bold text-cookie-accent mt-1">
+                        {formatarMoeda(cliente.valor_gasto)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>
