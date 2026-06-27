@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { supabase } from "../../lib/supabase";
 import {
@@ -116,6 +117,10 @@ export function BemVindo() {
           etapa === 0 ? "bg-black/35" : "bg-black/60 backdrop-blur-sm"
         }`}
       />
+
+      <div className="absolute top-5 left-5 z-20">
+        <BotaoInstalarPwa className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60" />
+      </div>
 
       <button
         onClick={alternarTelaCheia}
