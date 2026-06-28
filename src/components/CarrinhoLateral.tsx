@@ -55,7 +55,6 @@ export function CarrinhoLateral({
     itens,
     removerItem,
     alterarQuantidade,
-    alterarObservacoes,
     obterSubtotal,
     obterDescontoCupom,
     obterTotal,
@@ -472,17 +471,6 @@ export function CarrinhoLateral({
                   ))}
                 </div>
               )}
-
-              <input
-                type="text"
-                value={item.observacoes || ""}
-                onChange={(e) =>
-                  alterarObservacoes(item.idUnico, e.target.value)
-                }
-                placeholder="Observação (ex: sem cebola)"
-                maxLength={200}
-                className="w-full mb-2 text-xs px-2 py-1.5 rounded-lg border border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] text-gray-800 dark:text-gray-200 placeholder:text-gray-400"
-              />
 
               <div className="mt-auto flex items-center justify-between gap-2">
                 <div className="flex items-center bg-gray-50 dark:bg-[#2a2c30] rounded-lg border border-gray-200 dark:border-transparent">

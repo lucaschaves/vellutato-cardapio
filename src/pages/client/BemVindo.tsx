@@ -173,54 +173,67 @@ export function BemVindo() {
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
-              className="w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
+              className="w-full max-w-md bg-white dark:bg-[#181a1b] backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-gray-200 dark:border-[#2a2c30]"
             >
               <div className="text-center mb-8">
-                <h1 className="text-3xl font-black font-serif italic tracking-tight bg-gradient-to-r from-[#ff5722] to-orange-400 bg-clip-text text-transparent mb-2">
+                <h1 className="text-3xl md:text-4xl font-black font-serif italic tracking-tight bg-gradient-to-r from-[#ff5722] to-orange-400 bg-clip-text text-transparent mb-3">
                   Vellutato
                 </h1>
-                <p className="text-gray-500 dark:text-gray-400 text-base">
+                <p className="text-gray-700 dark:text-gray-300 text-lg md:text-xl font-semibold leading-snug">
                   Como podemos te atender hoje?
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-4">
                 <button
+                  type="button"
                   onClick={() => selecionarConsumo("loja")}
-                  className="flex items-center p-5 rounded-2xl border-2 border-gray-100 dark:border-[#2a2c30] bg-transparent text-gray-700 dark:text-gray-300 hover:border-[#ff5722] hover:bg-[#ff5722]/5 transition-all active:scale-95 group"
+                  className="flex items-center gap-4 p-5 md:p-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-white dark:bg-[#242629] text-gray-900 dark:text-gray-100 shadow-sm hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 transition-all active:scale-[0.98] group"
                 >
-                  <div className="bg-gray-100 dark:bg-[#242629] p-3 rounded-xl group-hover:bg-[#ff5722]/10 group-hover:text-[#ff5722] transition-colors">
-                    <Store size={28} />
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#1a1c1e] text-[#ff5722] group-hover:border-[#ff5722]/30 group-hover:bg-[#ff5722]/10 transition-colors">
+                    <Store size={30} strokeWidth={2} />
                   </div>
-                  <div className="ml-4 text-left">
-                    <span className="block font-bold text-lg">
+                  <div className="flex-1 min-w-0 text-left">
+                    <span className="block font-bold text-xl md:text-2xl leading-tight">
                       Comer na Loja
                     </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      Servido em pratos/bandejas
+                    <span className="block mt-1 text-sm md:text-base text-gray-600 dark:text-gray-400 leading-snug">
+                      Servido em pratos e bandejas
                     </span>
                   </div>
+                  <ArrowRight
+                    size={22}
+                    className="shrink-0 text-gray-400 group-hover:text-[#ff5722] transition-colors"
+                  />
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => selecionarConsumo("viagem")}
-                  className="flex items-center p-5 rounded-2xl border-2 border-gray-100 dark:border-[#2a2c30] bg-transparent text-gray-700 dark:text-gray-300 hover:border-[#ff5722] hover:bg-[#ff5722]/5 transition-all active:scale-95 group"
+                  className="flex items-center gap-4 p-5 md:p-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-white dark:bg-[#242629] text-gray-900 dark:text-gray-100 shadow-sm hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 transition-all active:scale-[0.98] group"
                 >
-                  <div className="bg-gray-100 dark:bg-[#242629] p-3 rounded-xl group-hover:bg-[#ff5722]/10 group-hover:text-[#ff5722] transition-colors">
-                    <ShoppingBag size={28} />
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#1a1c1e] text-[#ff5722] group-hover:border-[#ff5722]/30 group-hover:bg-[#ff5722]/10 transition-colors">
+                    <ShoppingBag size={30} strokeWidth={2} />
                   </div>
-                  <div className="ml-4 text-left">
-                    <span className="block font-bold text-lg">Para Levar</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex-1 min-w-0 text-left">
+                    <span className="block font-bold text-xl md:text-2xl leading-tight">
+                      Para Levar
+                    </span>
+                    <span className="block mt-1 text-sm md:text-base text-gray-600 dark:text-gray-400 leading-snug">
                       Embalado para viagem
                     </span>
                   </div>
+                  <ArrowRight
+                    size={22}
+                    className="shrink-0 text-gray-400 group-hover:text-[#ff5722] transition-colors"
+                  />
                 </button>
               </div>
 
               <button
+                type="button"
                 onClick={() => setEtapa(0)}
-                className="w-full mt-6 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                className="w-full mt-6 py-3 text-sm md:text-base font-semibold text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
               >
                 Voltar ao vídeo
               </button>
@@ -285,6 +298,7 @@ export function BemVindo() {
 
               <div className="flex flex-col gap-3">
                 <button
+                  type="button"
                   onClick={() => prosseguir(false)}
                   disabled={!nome}
                   className="w-full bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
@@ -294,12 +308,17 @@ export function BemVindo() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => prosseguir(true)}
-                  className="w-full py-3 text-sm font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center justify-center gap-2 transition-colors"
+                  className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-[#ff5722]/40 hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10"
                 >
-                  <span>Pular identificação por enquanto</span>
-                  <FastForward size={16} />
+                  <span>Continuar sem informar</span>
+                  <FastForward size={20} />
                 </button>
+
+                <p className="text-center text-xs text-gray-500 dark:text-gray-400 px-2">
+                  Nome e telefone são opcionais — você pode informar depois.
+                </p>
               </div>
             </motion.div>
           )}

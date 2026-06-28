@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, ShoppingBag, Sparkles, Tag, X } from "lucide-react";
-import { useEffect, useRef, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
@@ -165,6 +165,7 @@ export function VisualizadorReels() {
   const navigate = useNavigate();
   const location = useLocation();
   const adicionarAoCarrinho = useCartStore((state) => state.adicionarItem);
+  const itensCarrinho = useCartStore((state) => state.itens);
 
   const [produto, setProduto] = useState<ProdutoDetalhe | null>(null);
   const [adicionaisDisponiveis, setAdicionaisDisponiveis] = useState<
@@ -179,6 +180,21 @@ export function VisualizadorReels() {
     [],
   );
   const [modalPosAdicionarAberto, setModalPosAdicionarAberto] = useState(false);
+
+  const idsProdutosNoCarrinho = useMemo(
+    () => new Set(itensCarrinho.map((item) => item.produtoId)),
+    [itensCarrinho],
+  );
+
+  const ofertasPendentes = useMemo(
+    () =>
+      ofertasCruzadas.filter(
+        (o) =>
+          !produtoEstaEsgotado(o.produto_alvo) &&
+          !idsProdutosNoCarrinho.has(o.produto_alvo.id),
+      ),
+    [ofertasCruzadas, idsProdutosNoCarrinho],
+  );
 
   useEffect(() => {
     async function carregarDetalhes() {
@@ -224,6 +240,13 @@ export function VisualizadorReels() {
 
   const fechar = () => navigate(urlCardapio("", location.search));
 
+  useEffect(() => {
+    if (modalPosAdicionarAberto && ofertasPendentes.length === 0) {
+      setModalPosAdicionarAberto(false);
+      fechar();
+    }
+  }, [modalPosAdicionarAberto, ofertasPendentes.length, location.search, navigate]);
+
   const alternarAdicional = (adc: Adicional) => {
     setAdicionaisSelecionados((prev) =>
       prev.some((item) => item.id === adc.id)
@@ -265,9 +288,15 @@ export function VisualizadorReels() {
     });
     toast.success("Produto adicionado ao seu pedido!");
 
-    const ofertasPosAdd = ofertasCruzadas.filter(
-      (o) => !produtoEstaEsgotado(o.produto_alvo),
+    const idsNoCarrinho = new Set(
+      useCartStore.getState().itens.map((item) => item.produtoId),
     );
+    const ofertasPosAdd = ofertasCruzadas.filter(
+      (o) =>
+        !produtoEstaEsgotado(o.produto_alvo) &&
+        !idsNoCarrinho.has(o.produto_alvo.id),
+    );
+
     if (ofertasPosAdd.length > 0) {
       setModalPosAdicionarAberto(true);
     } else {
@@ -365,7 +394,7 @@ export function VisualizadorReels() {
               </div>
             )}
 
-            {ofertasCruzadas.length > 0 && (
+            {ofertasPendentes.length > 0 && (
               <div className="mb-8 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles size={16} className="text-[#ff5722]" />
@@ -373,7 +402,7 @@ export function VisualizadorReels() {
                     Aproveite também
                   </h2>
                 </div>
-                {ofertasCruzadas.map((oferta) => {
+                {ofertasPendentes.map((oferta) => {
                   const alvo = oferta.produto_alvo;
                   const precoBase =
                     alvo.em_promocao && alvo.preco_promocional
@@ -540,7 +569,7 @@ export function VisualizadorReels() {
 
       <ModalOfertaPosAdicionar
         aberto={modalPosAdicionarAberto}
-        ofertas={ofertasCruzadas}
+        ofertas={ofertasPendentes}
         aoAdicionar={adicionarOfertaCruzada}
         aoFechar={fecharModalPosAdicionar}
       />
