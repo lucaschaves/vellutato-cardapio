@@ -202,6 +202,8 @@ export function VisualizadorReels() {
         if (!id) return;
         setCarregando(true);
         setOfertasCruzadas([]);
+        setAdicionaisDisponiveis([]);
+        setAdicionaisSelecionados([]);
 
         const { data: prod, error: errProd } = await supabase
           .from("produtos")
@@ -212,13 +214,29 @@ export function VisualizadorReels() {
         if (errProd) throw errProd;
         setProduto(prod);
 
-        const { data: adcs, error: errAdc } = await supabase
-          .from("adicionais")
-          .select("*")
-          .eq("disponivel", true);
+        const { data: vinculos, error: errAdc } = await supabase
+          .from("produto_adicionais")
+          .select(
+            `
+            adicionais (
+              id, nome, preco, disponivel
+            )
+          `,
+          )
+          .eq("produto_id", id);
 
         if (errAdc) throw errAdc;
-        if (adcs) setAdicionaisDisponiveis(adcs);
+
+        const adicionaisDoProduto = (vinculos || [])
+          .flatMap((vinculo) => {
+            const raw = vinculo.adicionais as Adicional | Adicional[] | null;
+            if (!raw) return [];
+            return Array.isArray(raw) ? raw : [raw];
+          })
+          .filter((adicional) => adicional.disponivel)
+          .sort((a, b) => a.nome.localeCompare(b.nome));
+
+        setAdicionaisDisponiveis(adicionaisDoProduto);
 
         try {
           const ofertas = await buscarOfertasVendaCruzada(id);
