@@ -32,15 +32,28 @@ export function aplicarManifestPwa(tipo: TipoPwa) {
   link.href = MANIFESTS[tipo];
 }
 
-export function pwaInstalada(tipo: TipoPwa): boolean {
+export function estaEmModoStandalone(): boolean {
   if (typeof window === "undefined") return false;
 
-  const emStandalone =
+  return (
     window.matchMedia("(display-mode: standalone)").matches ||
     (window.navigator as Navigator & { standalone?: boolean }).standalone ===
-      true;
+      true
+  );
+}
 
-  if (!emStandalone) return false;
+/** Fullscreen API só faz sentido no desktop; no tablet/celular use o PWA. */
+export function deveUsarFullscreenApi(): boolean {
+  if (typeof window === "undefined") return false;
+  if (estaEmModoStandalone()) return false;
+
+  const pointerFino = window.matchMedia("(pointer: fine)").matches;
+  const semToque = navigator.maxTouchPoints === 0;
+  return pointerFino && semToque;
+}
+
+export function pwaInstalada(tipo: TipoPwa): boolean {
+  if (!estaEmModoStandalone()) return false;
 
   const path = window.location.pathname;
   if (tipo === "admin") return path.startsWith("/admin");

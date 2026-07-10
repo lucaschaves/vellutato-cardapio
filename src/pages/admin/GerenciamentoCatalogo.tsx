@@ -35,6 +35,7 @@ export function GerenciamentoCatalogo() {
   const [quantidadeEstoque, setQuantidadeEstoque] = useState("0");
   const [emPromocao, setEmPromocao] = useState(false);
   const [ativo, setAtivo] = useState(true);
+  const [tipo, setTipo] = useState<"simples" | "combo">("simples");
 
   const [imagemFila, setImagemFila] = useState<File | null>(null);
   const [videoFila, setVideoFila] = useState<File | null>(null);
@@ -93,6 +94,7 @@ export function GerenciamentoCatalogo() {
         setQuantidadeEstoque(String(data.quantidade_estoque ?? 0));
         setEmPromocao(data.em_promocao);
         setAtivo(data.ativo);
+        setTipo(data.tipo === "combo" ? "combo" : "simples");
         setImagemUrlAtual(data.imagem_url);
         setVideoUrlAtual(data.video_url);
         setImagemFila(null);
@@ -119,6 +121,7 @@ export function GerenciamentoCatalogo() {
     setQuantidadeEstoque("0");
     setEmPromocao(false);
     setAtivo(true);
+    setTipo("simples");
     setImagemFila(null);
     setVideoFila(null);
     setImagemUrlAtual(null);
@@ -216,6 +219,7 @@ export function GerenciamentoCatalogo() {
           ? parseInt(quantidadeEstoque, 10)
           : 0,
         ativo,
+        tipo,
       };
 
       if (modoEdicao && produtoEditandoId) {
@@ -227,16 +231,26 @@ export function GerenciamentoCatalogo() {
         if (dbError) throw new Error(dbError.message);
 
         toast.success("Produto atualizado com sucesso!");
-        navigate("/admin/estoque");
+        if (tipo === "combo") {
+          navigate(`/admin/combos?produto=${produtoEditandoId}`);
+        } else {
+          navigate("/admin/estoque");
+        }
       } else {
-        const { error: dbError } = await supabase
+        const { data: criado, error: dbError } = await supabase
           .from("produtos")
-          .insert(payload);
+          .insert(payload)
+          .select("id")
+          .single();
 
         if (dbError) throw new Error(dbError.message);
 
         toast.success("Produto cadastrado com sucesso!");
-        limparFormulario();
+        if (tipo === "combo" && criado?.id) {
+          navigate(`/admin/combos?produto=${criado.id}`);
+        } else {
+          limparFormulario();
+        }
       }
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
@@ -286,6 +300,28 @@ export function GerenciamentoCatalogo() {
         <div className="space-y-5">
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+              Tipo
+            </label>
+            <select
+              value={tipo}
+              onChange={(e) =>
+                setTipo(e.target.value === "combo" ? "combo" : "simples")
+              }
+              className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+            >
+              <option value="simples">Produto simples</option>
+              <option value="combo">Combo (cliente escolhe itens)</option>
+            </select>
+            {tipo === "combo" && (
+              <p className="mt-1 text-xs text-gray-500">
+                Após salvar, você configura os grupos (Cookie, Brownie…) em
+                Combos.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
               Nome do Produto
             </label>
             <input
@@ -308,8 +344,12 @@ export function GerenciamentoCatalogo() {
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
               className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
-              placeholder="Descreva o produto de forma apetitosa..."
+              placeholder="Ex: Cookie crocante # Recheio de Nutella # 90g"
             />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Use <span className="font-bold">#</span> para quebrar a linha na
+              exibição do cardápio.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

@@ -15,7 +15,8 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useIsMobile } from "../hooks/useIsMobile";
+import { InputTelaCheia } from "./InputTelaCheia";
+import { useLayoutCarrinhoSplit } from "../hooks/useLayoutCarrinhoSplit";
 import { useRevalidarCupomCarrinho } from "../hooks/useRevalidarCupomCarrinho";
 import {
   buscarClientePorCelular,
@@ -26,22 +27,26 @@ import {
   processarPedidoPosCriacao,
   reverterPedidoFalho,
 } from "../lib/pedidos";
+import { somarDeltasCombo } from "../lib/combos";
 import { supabase } from "../lib/supabase";
 import {
-  aoTeclaTelefone,
-  criarHandlerTelefone,
   lerCelularLocalStorage,
   normalizarTelefoneParaSalvar,
   salvarCelularLocalStorage,
   telefoneDigitosCompleto,
 } from "../lib/telefone";
 import { urlCardapio } from "../lib/urlCardapio";
+import type { TipoContextoCardapio } from "../lib/modoCardapio";
+import { formatarDescricaoComQuebras } from "../lib/descricaoProduto.tsx";
+import { cn } from "../lib/utils";
 import { useCartStore } from "../store/useCartStore";
 
 interface CarrinhoLateralProps {
   aberto: boolean;
   aoFechar: () => void;
   identificadorMesa: string;
+  modoPedido?: TipoContextoCardapio;
+  rotuloDestino?: string;
 }
 
 type EtapaMobileCarrinho = "itens" | "identificacao";
@@ -50,6 +55,8 @@ export function CarrinhoLateral({
   aberto,
   aoFechar,
   identificadorMesa,
+  modoPedido = "padrao",
+  rotuloDestino,
 }: CarrinhoLateralProps) {
   const {
     itens,
@@ -64,8 +71,26 @@ export function CarrinhoLateral({
     removerCupom,
   } = useCartStore();
 
-  const isMobile = useIsMobile();
+  const layoutSplitMedia = useLayoutCarrinhoSplit();
+  const [layoutSplit, setLayoutSplit] = useState(layoutSplitMedia);
   const navigate = useNavigate();
+  const destinoExibicao =
+    rotuloDestino ||
+    (modoPedido === "retirada"
+      ? "Retirada na loja"
+      : identificadorMesa || "Balcão");
+  const textoDestinoCarrinho =
+    modoPedido === "retirada"
+      ? "Pedido para retirada na loja"
+      : `Entrega em ${destinoExibicao}`;
+  const textoDestinoIdentificacao =
+    modoPedido === "retirada"
+      ? "Pedido para retirada na loja — avise seu nome no balcão"
+      : `Para entregar na ${destinoExibicao}`;
+  const textoPagamento =
+    modoPedido === "retirada"
+      ? "Pagamento na retirada (balcão/caixa)"
+      : "Pagamento no balcão/caixa";
 
   const [nomeCliente, setNomeCliente] = useState(
     () => localStorage.getItem("cliente_nome") || "",
@@ -81,6 +106,14 @@ export function CarrinhoLateral({
 
   useRevalidarCupomCarrinho(celularCliente, nomeCliente, aberto);
 
+  // Congela o layout enquanto o carrinho está aberto — teclado no tablet
+  // altera viewport/orientation e fazia o split piscar.
+  useEffect(() => {
+    if (!aberto) {
+      setLayoutSplit(layoutSplitMedia);
+    }
+  }, [aberto, layoutSplitMedia]);
+
   useEffect(() => {
     if (!aberto) setEtapaMobile("itens");
   }, [aberto]);
@@ -89,8 +122,6 @@ export function CarrinhoLateral({
     localStorage.setItem("cliente_nome", nomeCliente);
     salvarCelularLocalStorage(celularCliente);
   }, [nomeCliente, celularCliente]);
-
-  const handlePhoneChange = criarHandlerTelefone(setCelularCliente);
 
   const reconhecerClientePorTelefone = async (celularFormatado: string) => {
     if (!telefoneDigitosCompleto(celularFormatado)) return;
@@ -109,11 +140,8 @@ export function CarrinhoLateral({
     }
   };
 
-  const handlePhoneChangeComReconhecimento = (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    handlePhoneChange(e);
-    const formatado = e.target.value;
+  const handleCelularChange = (formatado: string) => {
+    setCelularCliente(formatado);
     if (telefoneDigitosCompleto(formatado)) {
       void reconhecerClientePorTelefone(formatado);
     }
@@ -127,7 +155,8 @@ export function CarrinhoLateral({
     const precoCheio = item.originalPrice || item.precoBase;
     const adicionais =
       item.adicionais?.reduce((soma, a) => soma + a.preco, 0) || 0;
-    return acc + (precoCheio + adicionais) * item.quantidade;
+    const deltas = somarDeltasCombo(item.escolhasCombo || []);
+    return acc + (precoCheio + adicionais + deltas) * item.quantidade;
   }, 0);
 
   const economiaPromocional = Math.max(totalOriginal - subtotal, 0);
@@ -178,31 +207,56 @@ export function CarrinhoLateral({
       return;
     }
 
+    if (!telefoneDigitosCompleto(celularCliente)) {
+      toast.error("Informe um celular válido com DDD para enviar o pedido.");
+      return;
+    }
+
     try {
       setEnviando(true);
 
       const celularSalvo = normalizarTelefoneParaSalvar(celularCliente);
-      const clienteId = await upsertCliente(nomeCliente, celularSalvo || null);
+      const clienteId = await upsertCliente(nomeCliente, celularSalvo);
+
+      if (!clienteId) {
+        throw new Error(
+          "Não foi possível vincular seu cadastro. Verifique nome e celular.",
+        );
+      }
 
       const tipoConsumo = localStorage.getItem("tipo_consumo") || "loja";
       const subtotalPedido = obterSubtotal();
       const desconto = obterDescontoCupom();
       const totalPedido = obterTotal();
 
+      let origem: "mesa" | "balcao";
+      let identificador: string;
+
+      if (modoPedido === "retirada") {
+        origem = "balcao";
+        identificador = "Retirada";
+      } else if (modoPedido === "mesa") {
+        origem = "mesa";
+        identificador = identificadorMesa || "Balcão";
+      } else if (tipoConsumo === "viagem") {
+        origem = "balcao";
+        identificador = `${identificadorMesa || "Balcão"} (PARA VIAGEM)`;
+      } else {
+        origem = "mesa";
+        identificador = identificadorMesa || "Balcão";
+      }
+
       const { data: pedido, error: errorPedido } = await supabase
         .from("pedidos")
         .insert({
           cliente_nome: nomeCliente.trim(),
-          cliente_celular: celularSalvo || null,
+          cliente_celular: celularSalvo,
           cliente_id: clienteId,
           cupom_id: cupomAplicado?.id || null,
           desconto_aplicado: desconto > 0 ? desconto : null,
           status: "pendente",
-          origem: tipoConsumo === "viagem" ? "balcao" : "mesa",
-          identificador:
-            tipoConsumo === "viagem"
-              ? `${identificadorMesa || "Balcão"} (PARA VIAGEM)`
-              : identificadorMesa || "Balcão",
+          origem,
+          identificador,
           total: totalPedido,
           valor_total: subtotalPedido,
         })
@@ -241,6 +295,25 @@ export function CarrinhoLateral({
           if (errAdc)
             throw new Error(`Falha ao inserir adicionais: ${errAdc.message}`);
         }
+
+        if (item.escolhasCombo && item.escolhasCombo.length > 0) {
+          const escolhas = item.escolhasCombo.map((escolha) => ({
+            pedido_item_id: pedidoItem.id,
+            grupo_id: escolha.grupoId,
+            produto_escolhido_id: escolha.produtoId,
+            nome_grupo: escolha.grupoNome,
+            nome_produto: escolha.produtoNome,
+            delta_preco: escolha.deltaPreco,
+          }));
+
+          const { error: errCombo } = await supabase
+            .from("pedido_item_combo_escolhas")
+            .insert(escolhas);
+          if (errCombo)
+            throw new Error(
+              `Falha ao inserir escolhas do combo: ${errCombo.message}`,
+            );
+        }
       }
 
       try {
@@ -258,9 +331,7 @@ export function CarrinhoLateral({
       aoFechar();
 
       localStorage.setItem("cliente_nome", nomeCliente.trim());
-      if (celularSalvo) {
-        salvarCelularLocalStorage(celularCliente);
-      }
+      salvarCelularLocalStorage(celularCliente);
 
       navigate(urlCardapio("pedido-enviado", window.location.search), {
         state: {
@@ -342,10 +413,10 @@ export function CarrinhoLateral({
         </div>
       ) : (
         <div className="flex gap-2">
-          <input
-            type="text"
+          <InputTelaCheia
+            modo="cupom"
             value={codigoCupom}
-            onChange={(e) => setCodigoCupom(e.target.value.toUpperCase())}
+            onValorChange={setCodigoCupom}
             placeholder="Código promocional"
             className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white uppercase outline-none focus:ring-2 focus:ring-[#ff5722]"
           />
@@ -370,12 +441,12 @@ export function CarrinhoLateral({
         <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
           Seu Nome *
         </label>
-        <input
-          type="text"
+        <InputTelaCheia
+          modo="texto"
           required
           placeholder="Como devemos te chamar?"
           value={nomeCliente}
-          onChange={(e) => setNomeCliente(e.target.value)}
+          onValorChange={setNomeCliente}
           className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
           autoComplete="off"
         />
@@ -383,21 +454,16 @@ export function CarrinhoLateral({
 
       <div>
         <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-          Celular / WhatsApp{" "}
-          <span className="opacity-60 font-normal normal-case text-[0.6875rem]">
-            (Opcional)
-          </span>
+          Celular / WhatsApp *
         </label>
-        <input
-          type="tel"
-          inputMode="numeric"
+        <InputTelaCheia
+          modo="tel"
+          required
           autoComplete="tel"
-          enterKeyHint="done"
           maxLength={15}
           placeholder="(00) 00000-0000"
           value={celularCliente}
-          onChange={handlePhoneChangeComReconhecimento}
-          onKeyDown={aoTeclaTelefone}
+          onValorChange={handleCelularChange}
           className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
         />
         {buscandoCliente && (
@@ -419,17 +485,18 @@ export function CarrinhoLateral({
         const temDesconto = precoCheio > item.precoBase;
         const totalAdicionais =
           item.adicionais?.reduce((acc, a) => acc + a.preco, 0) || 0;
+        const totalDeltas = somarDeltasCombo(item.escolhasCombo || []);
         const valorExibicaoFinal =
-          (item.precoBase + totalAdicionais) * item.quantidade;
+          (item.precoBase + totalAdicionais + totalDeltas) * item.quantidade;
         const valorExibicaoOriginal =
-          (precoCheio + totalAdicionais) * item.quantidade;
+          (precoCheio + totalAdicionais + totalDeltas) * item.quantidade;
 
         return (
           <div
             key={item.idUnico}
-            className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl flex gap-4 shadow-sm border border-gray-200 dark:border-[#2a2c30]"
+            className="bg-white dark:bg-[#1c1c1e] p-4 md:landscape:p-5 rounded-2xl flex gap-4 md:landscape:gap-5 shadow-sm border border-gray-200 dark:border-[#2a2c30]"
           >
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#121212] shrink-0 relative">
+            <div className="w-20 h-20 md:landscape:w-28 md:landscape:h-28 rounded-xl overflow-hidden bg-gray-100 dark:bg-[#121212] shrink-0 relative">
               <img
                 src={item.imagem || "/placeholder.jpg"}
                 alt={item.nome}
@@ -440,11 +507,16 @@ export function CarrinhoLateral({
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex justify-between items-start mb-1 gap-2">
                 <div className="min-w-0">
-                  <h3 className="font-extrabold text-gray-950 dark:text-white text-sm md:text-base leading-tight">
+                  <h3 className="font-extrabold text-gray-950 dark:text-white text-sm md:landscape:text-lg leading-tight">
                     {item.nome}
                   </h3>
+                  {item.descricao && (
+                    <p className="mt-1 text-xs md:landscape:text-sm text-gray-600 dark:text-gray-400 leading-snug line-clamp-2 whitespace-pre-line">
+                      {formatarDescricaoComQuebras(item.descricao)}
+                    </p>
+                  )}
                   {item.ehBrinde && (
-                    <span className="inline-flex items-center gap-1 mt-1 text-[0.625rem] font-black uppercase tracking-wide text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
+                    <span className="inline-flex items-center gap-1 mt-1 text-[0.625rem] md:landscape:text-xs font-black uppercase tracking-wide text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
                       <Gift size={10} /> Brinde
                     </span>
                   )}
@@ -455,12 +527,28 @@ export function CarrinhoLateral({
                   className="text-gray-400 hover:text-red-500 transition-colors p-1 shrink-0"
                   title="Remover Item"
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={18} className="md:landscape:w-5 md:landscape:h-5" />
                 </button>
               </div>
 
+              {item.escolhasCombo && item.escolhasCombo.length > 0 && (
+                <div className="text-xs md:landscape:text-sm text-gray-700 dark:text-gray-300 mb-2 space-y-0.5 font-medium">
+                  {item.escolhasCombo.map((escolha) => (
+                    <p key={`${escolha.grupoId}-${escolha.opcaoId}`}>
+                      {escolha.grupoNome}: {escolha.produtoNome}
+                      {escolha.deltaPreco > 0 && (
+                        <span className="opacity-80">
+                          {" "}
+                          (+R$ {escolha.deltaPreco.toFixed(2)})
+                        </span>
+                      )}
+                    </p>
+                  ))}
+                </div>
+              )}
+
               {item.adicionais && item.adicionais.length > 0 && (
-                <div className="text-xs text-gray-700 dark:text-gray-300 mb-2 space-y-0.5 font-medium">
+                <div className="text-xs md:landscape:text-sm text-gray-700 dark:text-gray-300 mb-2 space-y-0.5 font-medium">
                   {item.adicionais.map((adc) => (
                     <p key={adc.id}>
                       + {adc.nome}{" "}
@@ -479,11 +567,11 @@ export function CarrinhoLateral({
                     onClick={() =>
                       alterarQuantidadeItem(item.idUnico, item.quantidade - 1)
                     }
-                    className="p-1.5 text-gray-600 dark:text-gray-300 active:scale-95"
+                    className="p-1.5 md:landscape:p-2 text-gray-600 dark:text-gray-300 active:scale-95"
                   >
-                    <Minus size={14} />
+                    <Minus size={14} className="md:landscape:w-4 md:landscape:h-4" />
                   </button>
-                  <span className="w-6 text-center text-sm font-bold text-gray-950 dark:text-white">
+                  <span className="w-6 md:landscape:w-8 text-center text-sm md:landscape:text-base font-bold text-gray-950 dark:text-white">
                     {item.quantidade}
                   </span>
                   <button
@@ -491,19 +579,19 @@ export function CarrinhoLateral({
                     onClick={() =>
                       alterarQuantidadeItem(item.idUnico, item.quantidade + 1)
                     }
-                    className="p-1.5 text-gray-600 dark:text-gray-300 active:scale-95"
+                    className="p-1.5 md:landscape:p-2 text-gray-600 dark:text-gray-300 active:scale-95"
                   >
-                    <Plus size={14} />
+                    <Plus size={14} className="md:landscape:w-4 md:landscape:h-4" />
                   </button>
                 </div>
 
                 <div className="text-right flex items-center gap-2">
                   {temDesconto && (
-                    <span className="text-xs font-medium text-gray-400 line-through hidden sm:inline">
+                    <span className="text-xs md:landscape:text-sm font-medium text-gray-400 line-through hidden sm:inline">
                       R$ {valorExibicaoOriginal.toFixed(2)}
                     </span>
                   )}
-                  <span className="font-black text-gray-950 dark:text-white">
+                  <span className="font-black text-gray-950 dark:text-white md:landscape:text-lg">
                     R$ {valorExibicaoFinal.toFixed(2)}
                   </span>
                 </div>
@@ -514,23 +602,42 @@ export function CarrinhoLateral({
       })
     );
 
-  const mostrarLista = !isMobile || etapaMobile === "itens";
-  const mostrarIdentificacaoMobile =
-    isMobile && etapaMobile === "identificacao";
+  const layoutCompacto = !layoutSplit;
+  const mostrarLista = layoutCompacto ? etapaMobile === "itens" : true;
+  const mostrarIdentificacaoCompacta =
+    layoutCompacto && etapaMobile === "identificacao";
 
   return (
     <AnimatePresence>
       {aberto && (
         <motion.div
-          initial={{ opacity: 0, y: "100%" }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: "100%" }}
+          initial={
+            layoutSplit
+              ? { opacity: 0, x: "100%" }
+              : { opacity: 0, y: "100%" }
+          }
+          animate={{ opacity: 1, x: 0, y: 0 }}
+          exit={
+            layoutSplit
+              ? { opacity: 0, x: "100%" }
+              : { opacity: 0, y: "100%" }
+          }
           transition={{ type: "spring", damping: 25, stiffness: 200 }}
-          className="fixed inset-0 z-50 bg-gray-50 dark:bg-[#121212] flex flex-col md:flex-row overflow-hidden transition-colors duration-300"
+          className={cn(
+            "fixed inset-0 z-50 bg-gray-50 dark:bg-[#121212] flex overflow-hidden transition-colors duration-300",
+            layoutSplit ? "flex-row" : "flex-col",
+          )}
         >
           {mostrarLista && (
-            <div className="flex flex-col flex-1 min-h-0 md:w-[55%] lg:w-[60%] md:h-full bg-gray-50 dark:bg-[#121212] border-b md:border-b-0 md:border-r border-gray-200 dark:border-[#2a2c30]">
-              <div className="flex items-center justify-between p-4 md:p-8 bg-white dark:bg-[#181a1b] shadow-sm z-10 shrink-0">
+            <div
+              className={cn(
+                "flex flex-col flex-1 min-h-0 min-w-0 bg-gray-50 dark:bg-[#121212] border-gray-200 dark:border-[#2a2c30]",
+                layoutSplit
+                  ? "w-[52%] lg:w-[58%] h-full border-b-0 border-r"
+                  : "border-b",
+              )}
+            >
+              <div className="flex items-center justify-between p-4 md:landscape:p-6 lg:landscape:p-8 bg-white dark:bg-[#181a1b] shadow-sm z-10 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                   <button
                     type="button"
@@ -540,12 +647,12 @@ export function CarrinhoLateral({
                     <X size={20} />
                   </button>
                   <div className="min-w-0">
-                    <h2 className="text-lg md:text-2xl font-extrabold text-gray-950 dark:text-white flex items-center gap-2">
+                    <h2 className="text-lg md:landscape:text-2xl font-extrabold text-gray-950 dark:text-white flex items-center gap-2">
                       <ShoppingBag className="text-[#ff5722] shrink-0" /> Meu
                       Pedido
                     </h2>
                     <p className="text-xs text-gray-600 dark:text-gray-300 font-medium truncate">
-                      Entrega em {identificadorMesa}
+                      {textoDestinoCarrinho}
                     </p>
                   </div>
                 </div>
@@ -554,11 +661,12 @@ export function CarrinhoLateral({
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 space-y-4 hide-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 md:landscape:p-6 lg:landscape:p-8 space-y-4 hide-scrollbar">
                 {renderListaItens()}
               </div>
 
-              <div className="md:hidden shrink-0 border-t border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]">
+              {!layoutSplit && (
+              <div className="shrink-0 border-t border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]">
                 {renderResumoFinanceiro()}
                 <button
                   type="button"
@@ -570,11 +678,12 @@ export function CarrinhoLateral({
                   <ArrowRight size={20} />
                 </button>
               </div>
+              )}
             </div>
           )}
 
-          {mostrarIdentificacaoMobile && (
-            <div className="flex flex-col flex-1 min-h-0 md:hidden bg-white dark:bg-[#181a1b]">
+          {mostrarIdentificacaoCompacta && (
+            <div className="flex flex-col flex-1 min-h-0 min-w-0 bg-white dark:bg-[#181a1b]">
               <div className="flex items-center gap-3 p-4 border-b border-gray-200 dark:border-[#2a2c30] shrink-0">
                 <button
                   type="button"
@@ -588,7 +697,7 @@ export function CarrinhoLateral({
                     Identificação
                   </h2>
                   <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">
-                    Para entregar na {identificadorMesa}
+                    {textoDestinoIdentificacao}
                   </p>
                 </div>
               </div>
@@ -636,26 +745,34 @@ export function CarrinhoLateral({
                     )}
                   </button>
                   <div className="mt-3 flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <ShieldCheck size={14} /> Pagamento no balcão/caixa
+                    <ShieldCheck size={14} /> {textoPagamento}
                   </div>
                 </div>
               </form>
             </div>
           )}
 
-          <div className="hidden md:flex md:w-[45%] lg:w-[40%] md:h-full flex-col bg-white dark:bg-[#181a1b] shadow-2xl z-20">
+          <div
+            className={cn(
+              "min-w-0 flex-col bg-white dark:bg-[#181a1b] shadow-2xl z-20",
+              layoutSplit
+                ? "flex w-[48%] lg:w-[42%] h-full"
+                : "hidden",
+            )}
+          >
             <form
               onSubmit={finalizarPedido}
-              className="flex-1 flex flex-col h-full min-h-0"
+              className="flex flex-col flex-1 min-h-0"
             >
-              <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-6 hide-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 md:landscape:p-6 lg:landscape:p-8 space-y-5 hide-scrollbar">
                 <div>
                   <h3 className="text-lg font-extrabold text-gray-950 dark:text-white mb-1">
                     Identificação
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 font-medium">
-                    Para entregar seu pedido corretamente na {identificadorMesa}
-                    .
+                    {modoPedido === "retirada"
+                      ? "Informe seus dados para retirarmos o pedido no balcão."
+                      : `Para entregar seu pedido corretamente na ${destinoExibicao}.`}
                   </p>
                   {renderCamposIdentificacao()}
                 </div>
@@ -679,25 +796,26 @@ export function CarrinhoLateral({
                 )}
               </div>
 
-              <div className="p-6 md:p-10 border-t border-gray-100 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] shrink-0">
+              <div className="shrink-0 p-5 md:landscape:p-6 lg:landscape:p-8 border-t border-gray-100 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b]">
                 {renderResumoFinanceiro("grande")}
                 <button
                   type="submit"
                   disabled={itens.length === 0 || enviando}
-                  className="w-full mt-6 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                  className="w-full mt-4 md:landscape:mt-5 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
                 >
                   {enviando ? (
                     <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
-                      <span>Enviar Pedido para Cozinha</span>
-                      <ArrowRight size={20} />
+                      <span className="text-sm lg:landscape:text-base">
+                        Enviar Pedido para Cozinha
+                      </span>
+                      <ArrowRight size={20} className="shrink-0" />
                     </>
                   )}
                 </button>
-                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  <ShieldCheck size={14} /> Pagamento realizado diretamente no
-                  balcão/caixa.
+                <div className="mt-3 md:landscape:mt-4 flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <ShieldCheck size={14} /> {textoPagamento}.
                 </div>
               </div>
             </form>

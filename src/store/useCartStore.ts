@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { CupomValidado } from "../lib/cupons";
+import type { EscolhaCombo } from "../lib/combos";
+import { somarDeltasCombo } from "../lib/combos";
 
 export interface AdicionalSelecionado {
   id: string;
@@ -11,22 +13,26 @@ export interface ItemCarrinho {
   idUnico: string;
   produtoId: string;
   nome: string;
+  descricao?: string;
   precoBase: number;
   originalPrice: number;
   quantidade: number;
   adicionais: AdicionalSelecionado[];
+  escolhasCombo?: EscolhaCombo[];
   observacoes?: string;
   imagem?: string;
   ehBrinde?: boolean;
 }
 
+function custoExtrasItem(item: ItemCarrinho): number {
+  const adicionais = item.adicionais.reduce((soma, adc) => soma + adc.preco, 0);
+  const deltas = somarDeltasCombo(item.escolhasCombo || []);
+  return adicionais + deltas;
+}
+
 function calcularSubtotalItens(itens: ItemCarrinho[]): number {
   return itens.reduce((total, item) => {
-    const custoAdicionais = item.adicionais.reduce(
-      (soma, adc) => soma + adc.preco,
-      0,
-    );
-    return total + (item.precoBase + custoAdicionais) * item.quantidade;
+    return total + (item.precoBase + custoExtrasItem(item)) * item.quantidade;
   }, 0);
 }
 

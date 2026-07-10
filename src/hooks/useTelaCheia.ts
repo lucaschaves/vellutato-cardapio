@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import {
   entrarTelaCheia,
   estaEmTelaCheia,
-  restaurarTelaCheiaSeNecessario,
   sairTelaCheia,
   sincronizarPreferenciaTelaCheia,
 } from "../lib/telaCheia";
 
 export function useTelaCheia() {
-  const location = useLocation();
   const [telaCheia, setTelaCheia] = useState(() => estaEmTelaCheia());
 
   useEffect(() => {
@@ -24,14 +21,15 @@ export function useTelaCheia() {
       document.removeEventListener("fullscreenchange", onFullScreenChange);
   }, []);
 
-  useEffect(() => {
-    void restaurarTelaCheiaSeNecessario();
-  }, [location.pathname]);
-
   const alternarTelaCheia = async () => {
     try {
       if (!document.fullscreenElement) {
-        await entrarTelaCheia();
+        const ok = await entrarTelaCheia();
+        if (!ok) {
+          toast.error(
+            "Não foi possível ativar a tela cheia neste dispositivo ou navegador.",
+          );
+        }
       } else {
         await sairTelaCheia();
       }
@@ -47,5 +45,22 @@ export function useTelaCheia() {
     }
   };
 
-  return { telaCheia, alternarTelaCheia };
+  return {
+    telaCheia,
+    alternarTelaCheia,
+    /** Sempre disponível — em fullscreen usamos teclado virtual nos inputs. */
+    telaCheiaDisponivel: true,
+  };
+}
+
+export function useEmTelaCheia() {
+  const [ativo, setAtivo] = useState(() => estaEmTelaCheia());
+
+  useEffect(() => {
+    const atualizar = () => setAtivo(estaEmTelaCheia());
+    document.addEventListener("fullscreenchange", atualizar);
+    return () => document.removeEventListener("fullscreenchange", atualizar);
+  }, []);
+
+  return ativo;
 }

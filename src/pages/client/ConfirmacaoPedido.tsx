@@ -9,13 +9,15 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { urlCardapio } from "../../lib/urlCardapio";
+import { lerContextoCardapio } from "../../lib/modoCardapio";
 
 const TEMPO_REDIRECIONAMENTO_SEG = 10;
 
 export function ConfirmacaoPedido() {
   const navigate = useNavigate();
   const location = useLocation();
-  const mesa = new URLSearchParams(location.search).get("mesa");
+  const contexto = lerContextoCardapio(location.search);
+  const sessaoPersistente = contexto.sessaoPersistente;
   const state = location.state as {
     nomeCliente?: string;
     sequenciaPedido?: number;
@@ -32,7 +34,7 @@ export function ConfirmacaoPedido() {
     if (redirecionouRef.current) return;
     redirecionouRef.current = true;
 
-    if (!mesa) {
+    if (!sessaoPersistente) {
       localStorage.removeItem("cliente_nome");
       localStorage.removeItem("cliente_celular");
       localStorage.removeItem("tipo_consumo");
@@ -41,7 +43,7 @@ export function ConfirmacaoPedido() {
     }
 
     navigate(urlCardapio("", location.search), { replace: true });
-  }, [location.search, mesa, navigate]);
+  }, [location.search, sessaoPersistente, navigate]);
 
   const voltarAoCardapio = () => {
     if (redirecionouRef.current) return;
@@ -150,19 +152,21 @@ export function ConfirmacaoPedido() {
         <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 mb-4">
           <ChefHat size={18} className="text-[#ff5722] shrink-0" />
           <p className="text-sm md:text-base leading-relaxed">
-            {mesa
-              ? "Já vamos preparar. Acompanhe o status em Meus pedidos."
-              : "Já vamos preparar seu pedido."}
+            {contexto.tipo === "retirada"
+              ? "Já vamos preparar. Retire na loja quando estiver pronto — acompanhe em Meus pedidos."
+              : sessaoPersistente
+                ? "Já vamos preparar. Acompanhe o status em Meus pedidos."
+                : "Já vamos preparar seu pedido."}
           </p>
         </div>
 
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-6">
-          {mesa
+          {sessaoPersistente
             ? `Voltando ao cardápio em ${segundosRestantes}s…`
             : `Voltando à tela inicial em ${segundosRestantes}s…`}
         </p>
 
-        {mesa ? (
+        {sessaoPersistente ? (
           <div className="space-y-3">
             <button
               type="button"

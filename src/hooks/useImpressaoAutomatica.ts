@@ -15,6 +15,9 @@ const SELECT_PEDIDO_IMPRESSAO = `
     pedido_item_adicionais (
       preco_aplicado,
       adicionais ( nome )
+    ),
+    pedido_item_combo_escolhas (
+      nome_grupo, nome_produto, delta_preco
     )
   )
 `;

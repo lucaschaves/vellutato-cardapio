@@ -9,6 +9,15 @@ import {
   obterQuantidadeMaxima,
   produtoEstaEsgotado,
 } from "../../lib/estoque";
+import { renderizarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
+import {
+  buscarEstruturaCombo,
+  calcularDeltaOpcao,
+  somarDeltasCombo,
+  validarEscolhasCombo,
+  type ComboGrupo,
+  type EscolhaCombo,
+} from "../../lib/combos";
 import {
   buscarOfertasVendaCruzada,
   calcularPrecoComDescontoVendaCruzada,
@@ -29,6 +38,7 @@ interface ProdutoDetalhe {
   ativo: boolean;
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
+  tipo?: "simples" | "combo";
 }
 
 interface Adicional {
@@ -104,6 +114,70 @@ function MidiaProduto({
 
 const MidiaProdutoMemo = memo(MidiaProduto);
 
+function SkeletonColunaMidia({ produtoId }: { produtoId?: string }) {
+  const classesMidia =
+    "w-full h-full md:landscape:rounded-[2rem] md:landscape:border border-gray-200 dark:border-[#2a2c30] overflow-hidden relative md:landscape:shadow-2xl bg-gray-200 dark:bg-gray-800 animate-pulse";
+
+  const conteudo = (
+    <div className="w-full h-full bg-gray-300 dark:bg-gray-700 animate-pulse" />
+  );
+
+  return (
+    <div className="relative w-full h-[38vh] max-h-[320px] md:landscape:max-h-none md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] shrink-0 flex items-center justify-center">
+      {produtoId ? (
+        <motion.div layoutId={`produto-midia-${produtoId}`} className={classesMidia}>
+          {conteudo}
+        </motion.div>
+      ) : (
+        <div className={classesMidia}>{conteudo}</div>
+      )}
+    </div>
+  );
+}
+
+function SkeletonDetalhesProduto() {
+  return (
+    <div className="mb-8 space-y-4 animate-pulse">
+      <div className="h-8 md:landscape:h-10 bg-gray-200 dark:bg-[#2a2c30] rounded-xl w-4/5" />
+      <div className="flex items-end gap-3">
+        <div className="h-9 bg-gray-200 dark:bg-[#2a2c30] rounded-lg w-28" />
+        <div className="h-6 bg-gray-100 dark:bg-[#242629] rounded-lg w-20" />
+      </div>
+      <div className="space-y-2 pt-2">
+        <div className="h-4 bg-gray-100 dark:bg-[#242629] rounded w-full" />
+        <div className="h-4 bg-gray-100 dark:bg-[#242629] rounded w-full" />
+        <div className="h-4 bg-gray-100 dark:bg-[#242629] rounded w-3/4" />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonSecaoAdicionais() {
+  return (
+    <div className="space-y-3 animate-pulse">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="h-4 bg-gray-200 dark:bg-[#2a2c30] rounded w-40" />
+        <div className="h-px flex-1 bg-gray-200 dark:bg-[#2a2c30]" />
+      </div>
+      {Array.from({ length: 3 }).map((_, indice) => (
+        <div
+          key={indice}
+          className="h-14 rounded-2xl bg-gray-100 dark:bg-[#242629] border border-gray-200 dark:border-[#2a2c30]"
+        />
+      ))}
+    </div>
+  );
+}
+
+function SkeletonRodapeProduto() {
+  return (
+    <div className="flex items-center gap-3 md:landscape:gap-4 animate-pulse">
+      <div className="h-14 w-32 rounded-2xl bg-gray-100 dark:bg-[#242629] border border-gray-200 dark:border-[#323438]" />
+      <div className="flex-1 h-14 rounded-2xl bg-gray-200 dark:bg-[#2a2c30]" />
+    </div>
+  );
+}
+
 const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   produto,
 }: {
@@ -122,7 +196,7 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   }, []);
 
   const classesMidia =
-    "w-full h-full md:rounded-[2rem] md:border border-gray-200 dark:border-[#2a2c30] overflow-hidden relative md:shadow-2xl bg-gray-200 dark:bg-black";
+    "w-full h-full md:landscape:rounded-[2rem] md:landscape:border border-gray-200 dark:border-[#2a2c30] overflow-hidden relative md:landscape:shadow-2xl bg-gray-200 dark:bg-black";
 
   const conteudo = (
     <>
@@ -139,12 +213,12 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
         nome={produto.nome}
       />
 
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-50 dark:from-[#181a1b] to-transparent md:hidden pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-50 dark:from-[#181a1b] to-transparent md:landscape:hidden pointer-events-none" />
     </>
   );
 
   return (
-    <div className="relative w-full h-[45vh] md:h-full md:w-1/2 md:p-8 lg:p-12 bg-gray-200 md:bg-gray-100 dark:bg-black dark:md:bg-[#121415] shrink-0 flex items-center justify-center">
+    <div className="relative w-full h-[38vh] max-h-[320px] md:landscape:max-h-none md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] shrink-0 flex items-center justify-center">
       {transicaoEntradaConcluida ? (
         <div className={classesMidia}>{conteudo}</div>
       ) : (
@@ -174,8 +248,13 @@ export function VisualizadorReels() {
   const [adicionaisSelecionados, setAdicionaisSelecionados] = useState<
     Adicional[]
   >([]);
+  const [gruposCombo, setGruposCombo] = useState<ComboGrupo[]>([]);
+  const [escolhasCombo, setEscolhasCombo] = useState<EscolhaCombo[]>([]);
+  const [carregandoCombo, setCarregandoCombo] = useState(false);
   const [quantidade, setQuantidade] = useState(1);
-  const [carregando, setCarregando] = useState(true);
+  const [carregandoProduto, setCarregandoProduto] = useState(true);
+  const [carregandoAdicionais, setCarregandoAdicionais] = useState(true);
+  const [carregandoOfertas, setCarregandoOfertas] = useState(true);
   const [ofertasCruzadas, setOfertasCruzadas] = useState<OfertaVendaCruzada[]>(
     [],
   );
@@ -197,23 +276,76 @@ export function VisualizadorReels() {
   );
 
   useEffect(() => {
-    async function carregarDetalhes() {
-      try {
-        if (!id) return;
-        setCarregando(true);
-        setOfertasCruzadas([]);
-        setAdicionaisDisponiveis([]);
-        setAdicionaisSelecionados([]);
+    if (!id) return;
 
+    const produtoId = id;
+    let cancelado = false;
+
+    setProduto(null);
+    setQuantidade(1);
+    setOfertasCruzadas([]);
+    setAdicionaisDisponiveis([]);
+    setAdicionaisSelecionados([]);
+    setGruposCombo([]);
+    setEscolhasCombo([]);
+    setCarregandoProduto(true);
+    setCarregandoAdicionais(true);
+    setCarregandoOfertas(true);
+    setCarregandoCombo(false);
+
+    async function carregarProduto() {
+      try {
         const { data: prod, error: errProd } = await supabase
           .from("produtos")
           .select("*")
-          .eq("id", id)
+          .eq("id", produtoId)
           .single();
 
+        if (cancelado) return;
         if (errProd) throw errProd;
         setProduto(prod);
 
+        if (prod.tipo === "combo") {
+          setCarregandoCombo(true);
+          try {
+            const grupos = await buscarEstruturaCombo(prod.id);
+            if (cancelado) return;
+            setGruposCombo(grupos);
+            const iniciais: EscolhaCombo[] = [];
+            for (const grupo of grupos) {
+              if (grupo.min_escolhas < 1 || grupo.opcoes.length === 0) continue;
+              const opcao = grupo.opcoes[0];
+              iniciais.push({
+                grupoId: grupo.id,
+                grupoNome: grupo.nome,
+                opcaoId: opcao.id,
+                produtoId: opcao.produto_id,
+                produtoNome: opcao.produto.nome,
+                deltaPreco: calcularDeltaOpcao(opcao, grupo.preco_referencia),
+              });
+            }
+            setEscolhasCombo(iniciais);
+          } catch (erroCombo: unknown) {
+            if (cancelado) return;
+            console.error("[COMBO] Falha ao carregar estrutura:", erroCombo);
+            toast.error("Não foi possível carregar as opções do combo.");
+          } finally {
+            if (!cancelado) setCarregandoCombo(false);
+          }
+        }
+      } catch (erro: unknown) {
+        if (cancelado) return;
+        const mensagem = erro instanceof Error ? erro.message : String(erro);
+        console.error("[ERRO DO SISTEMA - DETALHES DO PRODUTO]", mensagem);
+        toast.error("Não foi possível carregar as informações deste item.");
+        navigate(urlCardapio("", location.search));
+      } finally {
+        if (!cancelado) setCarregandoProduto(false);
+      }
+    }
+
+    async function carregarAdicionais() {
+      try {
         const { data: vinculos, error: errAdc } = await supabase
           .from("produto_adicionais")
           .select(
@@ -223,8 +355,9 @@ export function VisualizadorReels() {
             )
           `,
           )
-          .eq("produto_id", id);
+          .eq("produto_id", produtoId);
 
+        if (cancelado) return;
         if (errAdc) throw errAdc;
 
         const adicionaisDoProduto = (vinculos || [])
@@ -237,23 +370,33 @@ export function VisualizadorReels() {
           .sort((a, b) => a.nome.localeCompare(b.nome));
 
         setAdicionaisDisponiveis(adicionaisDoProduto);
-
-        try {
-          const ofertas = await buscarOfertasVendaCruzada(id);
-          setOfertasCruzadas(ofertas);
-        } catch (erroOferta: unknown) {
-          console.warn("[VENDA CRUZADA] Falha ao carregar ofertas:", erroOferta);
-        }
       } catch (erro: unknown) {
-        const mensagem = erro instanceof Error ? erro.message : String(erro);
-        console.error("[ERRO DO SISTEMA - DETALHES DO PRODUTO]", mensagem);
-        toast.error("Não foi possível carregar as informações deste item.");
-        navigate(urlCardapio("", location.search));
+        if (cancelado) return;
+        console.warn("[ADICIONAIS] Falha ao carregar adicionais:", erro);
       } finally {
-        setCarregando(false);
+        if (!cancelado) setCarregandoAdicionais(false);
       }
     }
-    carregarDetalhes();
+
+    async function carregarOfertas() {
+      try {
+        const ofertas = await buscarOfertasVendaCruzada(produtoId);
+        if (!cancelado) setOfertasCruzadas(ofertas);
+      } catch (erroOferta: unknown) {
+        if (cancelado) return;
+        console.warn("[VENDA CRUZADA] Falha ao carregar ofertas:", erroOferta);
+      } finally {
+        if (!cancelado) setCarregandoOfertas(false);
+      }
+    }
+
+    void carregarProduto();
+    void carregarAdicionais();
+    void carregarOfertas();
+
+    return () => {
+      cancelado = true;
+    };
   }, [id, location.search, navigate]);
 
   const fechar = () => navigate(urlCardapio("", location.search));
@@ -273,6 +416,45 @@ export function VisualizadorReels() {
     );
   };
 
+  const selecionarOpcaoCombo = (grupo: ComboGrupo, opcaoId: string) => {
+    const opcao = grupo.opcoes.find((o) => o.id === opcaoId);
+    if (!opcao) return;
+
+    const escolha: EscolhaCombo = {
+      grupoId: grupo.id,
+      grupoNome: grupo.nome,
+      opcaoId: opcao.id,
+      produtoId: opcao.produto_id,
+      produtoNome: opcao.produto.nome,
+      deltaPreco: calcularDeltaOpcao(opcao, grupo.preco_referencia),
+    };
+
+    setEscolhasCombo((prev) => {
+      const doGrupo = prev.filter((e) => e.grupoId === grupo.id);
+      const jaSelecionada = doGrupo.some((e) => e.opcaoId === opcao.id);
+
+      if (grupo.max_escolhas <= 1) {
+        return [...prev.filter((e) => e.grupoId !== grupo.id), escolha];
+      }
+
+      if (jaSelecionada) {
+        if (doGrupo.length <= grupo.min_escolhas) return prev;
+        return prev.filter(
+          (e) => !(e.grupoId === grupo.id && e.opcaoId === opcao.id),
+        );
+      }
+
+      if (doGrupo.length >= grupo.max_escolhas) {
+        toast.error(
+          `No máximo ${grupo.max_escolhas} opção(ões) em "${grupo.nome}".`,
+        );
+        return prev;
+      }
+
+      return [...prev, escolha];
+    });
+  };
+
   const precoAtivo = produto
     ? produto.em_promocao &&
       produto.preco_promocional &&
@@ -281,13 +463,16 @@ export function VisualizadorReels() {
       : produto.preco
     : 0;
 
+  const deltaCombo = somarDeltasCombo(escolhasCombo);
   const valorTotal =
     (precoAtivo +
-      adicionaisSelecionados.reduce((acc, curr) => acc + curr.preco, 0)) *
+      adicionaisSelecionados.reduce((acc, curr) => acc + curr.preco, 0) +
+      deltaCombo) *
     quantidade;
 
   const esgotado = produto ? produtoEstaEsgotado(produto) : false;
   const quantidadeMaxima = produto ? obterQuantidadeMaxima(produto) : null;
+  const ehCombo = produto?.tipo === "combo";
 
   const confirmarPedido = () => {
     if (!produto) return;
@@ -295,14 +480,23 @@ export function VisualizadorReels() {
       toast.error("Este produto está esgotado no momento.");
       return;
     }
+    if (ehCombo) {
+      const erroCombo = validarEscolhasCombo(gruposCombo, escolhasCombo);
+      if (erroCombo) {
+        toast.error(erroCombo);
+        return;
+      }
+    }
     adicionarAoCarrinho({
       produtoId: produto.id,
       nome: produto.nome,
+      descricao: produto.descricao || undefined,
       precoBase: precoAtivo,
       originalPrice: produto.preco,
       quantidade,
       imagem: produto.imagem_url,
       adicionais: adicionaisSelecionados,
+      escolhasCombo: ehCombo ? escolhasCombo : undefined,
     });
     toast.success("Produto adicionado ao seu pedido!");
 
@@ -342,6 +536,7 @@ export function VisualizadorReels() {
     adicionarAoCarrinho({
       produtoId: alvo.id,
       nome: alvo.nome,
+      descricao: alvo.descricao || undefined,
       precoBase: precoComDesconto,
       originalPrice: alvo.preco,
       quantidade: 1,
@@ -361,7 +556,7 @@ export function VisualizadorReels() {
     fechar();
   };
 
-  if (carregando || !produto) return null;
+  const exibirConteudoProduto = Boolean(produto) && !carregandoProduto;
 
   return (
     <AnimatePresence>
@@ -369,50 +564,161 @@ export function VisualizadorReels() {
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
-        className="fixed inset-0 z-50 bg-gray-50 dark:bg-[#181a1b] flex flex-col md:flex-row overflow-hidden transition-colors duration-300"
+        className="fixed inset-0 z-50 bg-gray-50 dark:bg-[#181a1b] flex flex-col md:landscape:flex-row overflow-hidden transition-colors duration-300"
       >
         <button
           onClick={fechar}
           aria-label="Fechar detalhes do produto"
-          className="absolute top-4 left-4 md:top-8 md:left-8 z-50 flex items-center gap-2 bg-gray-900/90 dark:bg-white/95 backdrop-blur-md text-white dark:text-gray-900 font-bold text-sm pl-3 pr-4 py-3 rounded-full shadow-xl shadow-black/30 ring-2 ring-white/25 dark:ring-black/10 hover:bg-gray-900 dark:hover:bg-white hover:scale-105 active:scale-95 transition-all"
+          className="absolute top-4 left-4 md:landscape:top-8 md:landscape:left-8 z-50 flex items-center gap-2 bg-gray-900/90 dark:bg-white/95 backdrop-blur-md text-white dark:text-gray-900 font-bold text-sm pl-3 pr-4 py-3 rounded-full shadow-xl shadow-black/30 ring-2 ring-white/25 dark:ring-black/10 hover:bg-gray-900 dark:hover:bg-white hover:scale-105 active:scale-95 transition-all"
         >
           <X size={22} strokeWidth={2.5} />
           <span className="hidden sm:inline tracking-wide">Fechar</span>
         </button>
 
-        <ColunaMidiaProduto key={produto.id} produto={produto} />
+        {exibirConteudoProduto && produto ? (
+          <ColunaMidiaProduto key={produto.id} produto={produto} />
+        ) : (
+          <SkeletonColunaMidia produtoId={id} />
+        )}
 
-        {/* LADO DIREITO (Detalhes) */}
-        <div className="relative w-full h-[55vh] md:h-full md:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-8 md:mt-0 rounded-t-[2.5rem] md:rounded-none z-10 transition-colors duration-300">
-          <div className="flex-1 overflow-y-auto px-6 pt-10 pb-32 hide-scrollbar">
-            <div className="mb-4">
-              <h1 className="text-2xl md:text-4xl font-bold text-gray-900 dark:text-white mb-2 leading-tight transition-colors">
-                {produto.nome}
-              </h1>
+        <div className="relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-8 md:landscape:mt-0 rounded-t-[2.5rem] md:landscape:rounded-none z-10 transition-colors duration-300 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pt-8 pb-4 hide-scrollbar">
+            {exibirConteudoProduto && produto ? (
+              <>
+                <div className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-4 mb-2 bg-gray-50/95 dark:bg-[#181a1b]/95 backdrop-blur-md">
+                  <h1 className="text-2xl md:landscape:text-4xl font-bold text-gray-900 dark:text-white mb-2 leading-tight transition-colors">
+                    {produto.nome}
+                  </h1>
 
-              <div className="flex items-end gap-3">
-                <span className="text-3xl font-black text-[#ff5722]">
-                  R$ {precoAtivo.toFixed(2)}
-                </span>
-                {produto.em_promocao && (
-                  <span className="text-lg font-medium text-gray-500 dark:text-gray-500 line-through mb-1">
-                    R$ {produto.preco.toFixed(2)}
-                  </span>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <span className="text-3xl font-black text-[#ff5722]">
+                      R$ {(precoAtivo + deltaCombo).toFixed(2)}
+                    </span>
+                    {produto.em_promocao && (
+                      <span className="text-lg font-medium text-gray-500 dark:text-gray-500 line-through mb-1">
+                        R$ {produto.preco.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-gray-600 dark:text-gray-400 text-sm md:landscape:text-base leading-relaxed mb-8 transition-colors">
+                  {renderizarDescricaoComQuebras(produto.descricao)}
+                </p>
+
+                {esgotado && (
+                  <div className="mb-6 p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-300 text-sm font-semibold">
+                    Produto esgotado no momento. Não é possível adicionar ao pedido.
+                  </div>
                 )}
-              </div>
-            </div>
+              </>
+            ) : (
+              <SkeletonDetalhesProduto />
+            )}
 
-            <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base leading-relaxed mb-8 transition-colors">
-              {produto.descricao}
-            </p>
-
-            {esgotado && (
-              <div className="mb-6 p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-300 text-sm font-semibold">
-                Produto esgotado no momento. Não é possível adicionar ao pedido.
+            {carregandoCombo && (
+              <div className="mb-8 space-y-3 animate-pulse">
+                <div className="h-4 bg-gray-200 dark:bg-[#2a2c30] rounded w-28" />
+                <div className="h-24 rounded-2xl bg-gray-100 dark:bg-[#242629] border border-gray-200 dark:border-[#2a2c30]" />
+                <div className="h-24 rounded-2xl bg-gray-100 dark:bg-[#242629] border border-gray-200 dark:border-[#2a2c30]" />
               </div>
             )}
 
-            {ofertasPendentes.length > 0 && (
+            {!carregandoCombo && gruposCombo.length > 0 && (
+              <div className="mb-8 space-y-6">
+                {gruposCombo.map((grupo) => (
+                  <div key={grupo.id} className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest">
+                          {grupo.nome}
+                        </h2>
+                        {grupo.descricao && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {grupo.descricao}
+                          </p>
+                        )}
+                      </div>
+                      <div className="h-[1px] flex-1 bg-gray-200 dark:bg-[#2a2c30]" />
+                    </div>
+
+                    {grupo.opcoes.length === 0 ? (
+                      <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                        Nenhuma opção disponível neste grupo no momento.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-2">
+                        {grupo.opcoes.map((opcao) => {
+                          const selecionada = escolhasCombo.some(
+                            (e) =>
+                              e.grupoId === grupo.id && e.opcaoId === opcao.id,
+                          );
+                          const delta = calcularDeltaOpcao(
+                            opcao,
+                            grupo.preco_referencia,
+                          );
+                          return (
+                            <button
+                              key={opcao.id}
+                              type="button"
+                              onClick={() =>
+                                selecionarOpcaoCombo(grupo, opcao.id)
+                              }
+                              className={`flex justify-between items-center gap-3 p-4 rounded-2xl border-2 transition-all active:scale-[0.98] text-left ${
+                                selecionada
+                                  ? "border-[#ff5722] bg-[#ff5722]/10"
+                                  : "border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b]"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                {opcao.produto.imagem_url && (
+                                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                                    <img
+                                      src={opcao.produto.imagem_url}
+                                      alt={opcao.produto.nome}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                )}
+                                <span
+                                  className={`font-bold truncate ${
+                                    selecionada
+                                      ? "text-[#ff5722]"
+                                      : "text-gray-900 dark:text-white"
+                                  }`}
+                                >
+                                  {opcao.produto.nome}
+                                </span>
+                              </div>
+                              <span
+                                className={`shrink-0 text-sm font-bold ${
+                                  delta > 0
+                                    ? "text-[#ff5722]"
+                                    : "text-gray-400 dark:text-gray-500"
+                                }`}
+                              >
+                                {delta > 0
+                                  ? `+ R$ ${delta.toFixed(2)}`
+                                  : "Incluso"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {carregandoOfertas && (
+              <div className="mb-8 space-y-3 animate-pulse">
+                <div className="h-4 bg-gray-200 dark:bg-[#2a2c30] rounded w-36" />
+                <div className="h-20 rounded-2xl bg-gray-100 dark:bg-[#242629] border border-gray-200 dark:border-[#2a2c30]" />
+              </div>
+            )}
+
+            {!carregandoOfertas && ofertasPendentes.length > 0 && (
               <div className="mb-8 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles size={16} className="text-[#ff5722]" />
@@ -489,7 +795,9 @@ export function VisualizadorReels() {
               </div>
             )}
 
-            {adicionaisDisponiveis.length > 0 && (
+            {carregandoAdicionais && <SkeletonSecaoAdicionais />}
+
+            {!carregandoAdicionais && adicionaisDisponiveis.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-4">
                   <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest transition-colors">
@@ -528,59 +836,66 @@ export function VisualizadorReels() {
           </div>
 
           {/* Rodapé Fixo */}
-          <div className="absolute bottom-0 left-0 right-0 bg-white/90 dark:bg-[#1a1c1e]/90 backdrop-blur-xl border-t border-gray-200 dark:border-[#2a2c30] p-4 px-6 pb-6 transition-colors duration-300">
-            <div className="flex items-center gap-3 md:gap-4">
-              <div className="flex items-center bg-gray-50 dark:bg-[#242629] rounded-2xl p-2 gap-3 md:gap-4 border border-gray-200 dark:border-[#323438] transition-colors">
+          <div className="shrink-0 bg-white/90 dark:bg-[#1a1c1e]/90 backdrop-blur-xl border-t border-gray-200 dark:border-[#2a2c30] p-4 px-6 pb-6 transition-colors duration-300">
+            {exibirConteudoProduto && produto ? (
+              <div className="flex items-center gap-3 md:landscape:gap-4">
+                <div className="flex items-center bg-gray-50 dark:bg-[#242629] rounded-2xl p-2 gap-3 md:landscape:gap-4 border border-gray-200 dark:border-[#323438] transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
+                    className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white active:scale-95 bg-white dark:bg-[#181a1b] rounded-xl shadow-sm dark:shadow-none transition-colors"
+                  >
+                    <Minus size={18} />
+                  </button>
+                  <span className="font-bold text-gray-900 dark:text-white text-lg w-4 text-center transition-colors">
+                    {quantidade}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuantidade((q) => {
+                        const proxima = q + 1;
+                        if (
+                          quantidadeMaxima != null &&
+                          proxima > quantidadeMaxima
+                        ) {
+                          toast.error(
+                            quantidadeMaxima === 0
+                              ? "Produto esgotado."
+                              : `Máximo disponível: ${quantidadeMaxima}`,
+                          );
+                          return q;
+                        }
+                        return proxima;
+                      })
+                    }
+                    disabled={esgotado}
+                    className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white active:scale-95 bg-white dark:bg-[#181a1b] rounded-xl shadow-sm dark:shadow-none transition-colors disabled:opacity-40"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => setQuantidade((q) => Math.max(1, q - 1))}
-                  className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white active:scale-95 bg-white dark:bg-[#181a1b] rounded-xl shadow-sm dark:shadow-none transition-colors"
-                >
-                  <Minus size={18} />
-                </button>
-                <span className="font-bold text-gray-900 dark:text-white text-lg w-4 text-center transition-colors">
-                  {quantidade}
-                </span>
-                <button
-                  onClick={() =>
-                    setQuantidade((q) => {
-                      const proxima = q + 1;
-                      if (
-                        quantidadeMaxima != null &&
-                        proxima > quantidadeMaxima
-                      ) {
-                        toast.error(
-                          quantidadeMaxima === 0
-                            ? "Produto esgotado."
-                            : `Máximo disponível: ${quantidadeMaxima}`,
-                        );
-                        return q;
-                      }
-                      return proxima;
-                    })
-                  }
+                  type="button"
+                  onClick={confirmarPedido}
                   disabled={esgotado}
-                  className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white active:scale-95 bg-white dark:bg-[#181a1b] rounded-xl shadow-sm dark:shadow-none transition-colors disabled:opacity-40"
+                  className="flex-1 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-5 md:landscape:px-6 rounded-2xl flex items-center justify-between active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
                 >
-                  <Plus size={18} />
+                  <span className="flex items-center gap-2 text-sm md:landscape:text-base">
+                    <ShoppingBag size={20} />{" "}
+                    <span className="hidden md:landscape:inline">
+                      {esgotado ? "Esgotado" : "Adicionar"}
+                    </span>
+                  </span>
+                  <span className="text-lg md:landscape:text-xl tracking-tight">
+                    R$ {valorTotal.toFixed(2)}
+                  </span>
                 </button>
               </div>
-
-              <button
-                onClick={confirmarPedido}
-                disabled={esgotado}
-                className="flex-1 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-5 md:px-6 rounded-2xl flex items-center justify-between active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
-              >
-                <span className="flex items-center gap-2 text-sm md:text-base">
-                  <ShoppingBag size={20} />{" "}
-                  <span className="hidden md:inline">
-                    {esgotado ? "Esgotado" : "Adicionar"}
-                  </span>
-                </span>
-                <span className="text-lg md:text-xl tracking-tight">
-                  R$ {valorTotal.toFixed(2)}
-                </span>
-              </button>
-            </div>
+            ) : (
+              <SkeletonRodapeProduto />
+            )}
           </div>
         </div>
       </motion.div>

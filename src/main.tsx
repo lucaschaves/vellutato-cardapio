@@ -18,6 +18,16 @@ registerSW({ immediate: true });
 inicializarCapturaErros();
 aplicarPreferenciasExibicaoSalvas();
 
+// Teclado do Chrome sobrepõe o conteúdo em vez de redimensionar (menos flash)
+const tecladoVirtual = (
+  navigator as Navigator & {
+    virtualKeyboard?: { overlaysContent: boolean };
+  }
+).virtualKeyboard;
+if (tecladoVirtual) {
+  tecladoVirtual.overlaysContent = true;
+}
+
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {

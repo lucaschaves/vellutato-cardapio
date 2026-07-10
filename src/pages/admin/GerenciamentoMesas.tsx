@@ -1,4 +1,4 @@
-import { Copy, Loader2, Pencil, PlusCircle, QrCode, Trash2 } from "lucide-react";
+import { Copy, Loader2, Package, Pencil, PlusCircle, QrCode, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table";
+import { urlCardapioRetirada } from "../../lib/modoCardapio";
 import { supabase } from "../../lib/supabase";
 
 interface Mesa {
@@ -166,16 +167,55 @@ export function GerenciamentoMesas() {
     }
   };
 
+  const copiarLinkRetirada = async () => {
+    try {
+      await navigator.clipboard.writeText(urlCardapioRetirada());
+      toast.success("Link de retirada copiado!");
+    } catch {
+      toast.error("Não foi possível copiar.");
+    }
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
           <QrCode size={28} className="text-cookie-primary" />
-          Mesas
+          Mesas e links
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Cadastre mesas e use o link/QR com <code className="text-xs">?mesa=NUMERO</code> no cardápio.
+          Links do cardápio: mesa (<code className="text-xs">?mesa=NUMERO</code>)
+          ou retirada em casa (<code className="text-xs">?retirada=1</code>).
         </p>
+      </div>
+
+      <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="p-2.5 rounded-xl bg-[#ff5722]/10 text-[#ff5722] shrink-0">
+            <Package size={22} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="font-bold text-gray-900 dark:text-white">
+              Pedido para retirada
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Envie este link ao cliente que vai pedir de casa e retirar na loja.
+              Abre o cardápio direto, sem escolher mesa.
+            </p>
+            <p className="text-xs text-gray-400 mt-2 font-mono truncate">
+              {urlCardapioRetirada()}
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="shrink-0"
+          onClick={() => void copiarLinkRetirada()}
+        >
+          <Copy size={16} className="mr-2" />
+          Copiar link
+        </Button>
       </div>
 
       <form

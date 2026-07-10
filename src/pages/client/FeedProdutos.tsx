@@ -16,11 +16,14 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { version } from "../../../package.json";
 import { CarrinhoLateral } from "../../components/CarrinhoLateral";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
+import { formatarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import { lerContextoCardapio } from "../../lib/modoCardapio";
 import {
   lerEscalaFonte,
   lerTemaEscuro,
@@ -125,7 +128,7 @@ export function FeedProdutos() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const mesaParam = new URLSearchParams(location.search).get("mesa");
+  const contextoCardapio = lerContextoCardapio(location.search);
   const quantidadeTotalCarrinho = useCartStore((state) =>
     state.obterQuantidadeTotal(),
   );
@@ -133,6 +136,12 @@ export function FeedProdutos() {
   const [quantidadeErros, setQuantidadeErros] = useState(() =>
     obterQuantidadeErros(),
   );
+
+  useEffect(() => {
+    if (contextoCardapio.tipoConsumoForcado) {
+      localStorage.setItem("tipo_consumo", contextoCardapio.tipoConsumoForcado);
+    }
+  }, [contextoCardapio.tipoConsumoForcado]);
 
   useEffect(() => {
     salvarTemaEscuro(temaEscuro);
@@ -206,61 +215,59 @@ export function FeedProdutos() {
     const esgotado = produtoEstaEsgotado(produto);
 
     return (
-    <motion.article
-      key={produto.id}
-      onClick={() => navigate(urlItemProduto(produto.id, location.search))}
-      className={`bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer active:scale-[0.98] transition-all group ${esgotado ? "opacity-75" : ""}`}
-    >
-      <motion.div
-        layoutId={`produto-midia-${produto.id}`}
-        className="w-full aspect-square mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative"
+      <motion.article
+        key={produto.id}
+        onClick={() => navigate(urlItemProduto(produto.id, location.search))}
+        className={`bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer active:scale-[0.98] transition-all group ${esgotado ? "opacity-75" : ""}`}
       >
-        {produto.em_promocao && !esgotado && (
-          <div className="absolute top-2 left-2 z-20 bg-[#ff5722] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
-            <Tag size={10} strokeWidth={3} />
-            PROMO
-          </div>
-        )}
-
-        {esgotado && (
-          <div className="absolute inset-0 z-30 bg-black/50 flex items-center justify-center">
-            <span className="bg-gray-900 text-white text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg">
-              Esgotado
-            </span>
-          </div>
-        )}
-
-        {!esgotado && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            navigate(urlItemProduto(produto.id, location.search));
-          }}
-          className="absolute top-2 right-2 z-20 bg-[#ff5722] p-2 rounded-full text-white shadow-md hover:bg-[#e64a19] active:scale-90 transition-all"
-          aria-label="Adicionar item"
+        <motion.div
+          layoutId={`produto-midia-${produto.id}`}
+          className="w-full aspect-square mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative"
         >
-          <Plus size={18} strokeWidth={3} />
-        </button>
-        )}
+          {produto.em_promocao && !esgotado && (
+            <div className="absolute top-2 left-2 z-20 bg-[#ff5722] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
+              <Tag size={10} strokeWidth={3} />
+              PROMO
+            </div>
+          )}
 
-        <ImagemProdutoCard
-          src={produto.imagem_url}
-          alt={produto.nome}
-        />
-      </motion.div>
+          {esgotado && (
+            <div className="absolute inset-0 z-30 bg-black/50 flex items-center justify-center">
+              <span className="bg-gray-900 text-white text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg">
+                Esgotado
+              </span>
+            </div>
+          )}
 
-      <div className="flex-1 flex flex-col px-1.5 pb-1.5">
-        <h3 className="text-sm md:text-base font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-2 leading-snug">
-          {produto.nome}
-        </h3>
+          {!esgotado && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(urlItemProduto(produto.id, location.search));
+              }}
+              className="absolute top-2 right-2 z-20 bg-[#ff5722] p-2 rounded-full text-white shadow-md hover:bg-[#e64a19] active:scale-90 transition-all"
+              aria-label="Adicionar item"
+            >
+              <Plus size={18} strokeWidth={3} />
+            </button>
+          )}
 
-        <p className="text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium">
-          {esgotado
-            ? "Indisponível no momento."
-            : produto.descricao || "Toque para personalizar e ver detalhes."}
-        </p>
-      </div>
-    </motion.article>
+          <ImagemProdutoCard src={produto.imagem_url} alt={produto.nome} />
+        </motion.div>
+
+        <div className="flex-1 flex flex-col px-1.5 pb-1.5">
+          <h3 className="text-sm md:text-base font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-2 leading-snug">
+            {produto.nome}
+          </h3>
+
+          <p className="text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium whitespace-pre-line">
+            {esgotado
+              ? "Indisponível no momento."
+              : formatarDescricaoComQuebras(produto.descricao) ||
+                "Toque para personalizar e ver detalhes."}
+          </p>
+        </div>
+      </motion.article>
     );
   };
 
@@ -283,7 +290,9 @@ export function FeedProdutos() {
         <div className="px-5 flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate(urlCardapio("meus-pedidos", location.search))}
+              onClick={() =>
+                navigate(urlCardapio("meus-pedidos", location.search))
+              }
               className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white active:scale-95 transition-transform"
               aria-label="Meus pedidos"
             >
@@ -298,7 +307,7 @@ export function FeedProdutos() {
               <Settings size={20} />
             </button>
 
-            {!mesaParam && (
+            {!contextoCardapio.sessaoPersistente && (
               <button
                 onClick={() => setModalVoltarHomeAberto(true)}
                 className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-[#ff5722] active:scale-95 transition-transform"
@@ -310,9 +319,21 @@ export function FeedProdutos() {
             )}
           </div>
 
-          <h1 className="text-xl md:text-2xl font-extrabold tracking-wide text-gray-950 dark:text-white flex-1 text-center">
-            Cardápio
-          </h1>
+          <div className="flex-1 text-center min-w-0 px-2">
+            <h1 className="text-xl md:text-2xl font-extrabold tracking-wide text-gray-950 dark:text-white">
+              Cardápio
+            </h1>
+            {contextoCardapio.tipo === "retirada" && (
+              <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
+                Retirada na loja
+              </p>
+            )}
+            {contextoCardapio.tipo === "mesa" && (
+              <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
+                {contextoCardapio.rotuloDestino}
+              </p>
+            )}
+          </div>
 
           <button
             onClick={() => setCarrinhoAberto(true)}
@@ -343,92 +364,92 @@ export function FeedProdutos() {
         </div>
 
         {/* Abas de Navegação */}
-        <nav className="flex overflow-x-auto hide-scrollbar gap-2 px-4 pb-1 max-w-full snap-x snap-mandatory">
+        <nav className="flex overflow-x-auto hide-scrollbar gap-2 max-lg:landscape:gap-1.5 px-4 max-lg:landscape:px-3 pb-1 max-w-full snap-x snap-mandatory">
           {carregando ? (
             <SkeletonCategorias />
           ) : (
             <>
               <button
-            onClick={() => setCategoriaAtiva("all")}
-            className={`shrink-0 snap-start inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors md:hidden ${
-              categoriaAtiva === "all"
-                ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
-            }`}
-          >
-            Todos
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black ${
-                categoriaAtiva === "all"
-                  ? "bg-white/20 text-white"
-                  : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
-              }`}
-            >
-              {produtos.length}
-            </span>
-          </button>
-
-          {categorias.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCategoriaAtiva(cat.id)}
-              className={`shrink-0 snap-start inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors md:hidden ${
-                categoriaAtiva === cat.id
-                  ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                  : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
-              }`}
-            >
-              {cat.icone && <span>{cat.icone}</span>}
-              {cat.nome}
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black ${
-                  categoriaAtiva === cat.id
-                    ? "bg-white/20 text-white"
-                    : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
+                onClick={() => setCategoriaAtiva("all")}
+                className={`shrink-0 snap-start inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors lg:landscape:hidden max-lg:landscape:px-2.5 max-lg:landscape:py-1.5 max-lg:landscape:text-[0.6875rem] max-lg:landscape:gap-1 ${
+                  categoriaAtiva === "all"
+                    ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
+                    : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
                 }`}
               >
-                {cat.quantidade_produtos}
-              </span>
-            </button>
-          ))}
+                Todos
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black max-lg:landscape:px-1 max-lg:landscape:py-0 ${
+                    categoriaAtiva === "all"
+                      ? "bg-white/20 text-white"
+                      : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
+                  }`}
+                >
+                  {produtos.length}
+                </span>
+              </button>
 
-          <button
-            onClick={() => setCategoriaAtiva("all")}
-            className={`hidden md:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[6.25rem] transition-colors border ${
-              categoriaAtiva === "all"
-                ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#ff5722]/40"
-            }`}
-          >
-            <span className="text-sm font-bold">Todos</span>
-            <span
-              className={`text-xs font-semibold ${categoriaAtiva === "all" ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}
-            >
-              {produtos.length} Itens
-            </span>
-          </button>
+              {categorias.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategoriaAtiva(cat.id)}
+                  className={`shrink-0 snap-start inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors lg:landscape:hidden max-lg:landscape:px-2.5 max-lg:landscape:py-1.5 max-lg:landscape:text-[0.6875rem] max-lg:landscape:gap-1 ${
+                    categoriaAtiva === cat.id
+                      ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
+                      : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
+                  }`}
+                >
+                  {cat.icone && <span>{cat.icone}</span>}
+                  {cat.nome}
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black max-lg:landscape:px-1 max-lg:landscape:py-0 ${
+                      categoriaAtiva === cat.id
+                        ? "bg-white/20 text-white"
+                        : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
+                    }`}
+                  >
+                    {cat.quantidade_produtos}
+                  </span>
+                </button>
+              ))}
 
-          {categorias.map((cat) => (
-            <button
-              key={`desktop-${cat.id}`}
-              onClick={() => setCategoriaAtiva(cat.id)}
-              className={`hidden md:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[7.5rem] transition-colors border ${
-                categoriaAtiva === cat.id
-                  ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                  : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#ff5722]/40"
-              }`}
-            >
-              <span className="text-sm font-bold whitespace-nowrap">
-                {cat.icone && `${cat.icone} `}
-                {cat.nome}
-              </span>
-              <span
-                className={`text-xs font-semibold ${categoriaAtiva === cat.id ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}
+              <button
+                onClick={() => setCategoriaAtiva("all")}
+                className={`hidden lg:landscape:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[6.25rem] transition-colors border ${
+                  categoriaAtiva === "all"
+                    ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
+                    : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#ff5722]/40"
+                }`}
               >
-                {cat.quantidade_produtos} Itens
-              </span>
-            </button>
-          ))}
+                <span className="text-sm font-bold">Todos</span>
+                <span
+                  className={`text-xs font-semibold ${categoriaAtiva === "all" ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}
+                >
+                  {produtos.length} Itens
+                </span>
+              </button>
+
+              {categorias.map((cat) => (
+                <button
+                  key={`desktop-${cat.id}`}
+                  onClick={() => setCategoriaAtiva(cat.id)}
+                  className={`hidden lg:landscape:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[7.5rem] transition-colors border ${
+                    categoriaAtiva === cat.id
+                      ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
+                      : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#ff5722]/40"
+                  }`}
+                >
+                  <span className="text-sm font-bold whitespace-nowrap">
+                    {cat.icone && `${cat.icone} `}
+                    {cat.nome}
+                  </span>
+                  <span
+                    className={`text-xs font-semibold ${categoriaAtiva === cat.id ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}
+                  >
+                    {cat.quantidade_produtos} Itens
+                  </span>
+                </button>
+              ))}
             </>
           )}
         </nav>
@@ -440,29 +461,31 @@ export function FeedProdutos() {
           <SkeletonGridProdutos />
         ) : categoriaAtiva === "all" ? (
           <div className="space-y-10">
-            {produtosPorCategoria.map(({ categoria, produtos: itens }, indice) => (
-              <section
-                key={categoria.id}
-                id={`categoria-${categoria.id}`}
-                className={`scroll-mt-36 ${indice > 0 ? "pt-2 border-t-2 border-gray-200 dark:border-[#2f3135]" : ""}`}
-              >
-                <div className="flex items-center justify-between gap-4 mb-5 px-1">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-1.5 h-8 rounded-full bg-[#ff5722] shrink-0" />
-                    <h2 className="text-lg md:text-xl font-black text-gray-950 dark:text-white truncate">
-                      {categoria.nome}
-                    </h2>
+            {produtosPorCategoria.map(
+              ({ categoria, produtos: itens }, indice) => (
+                <section
+                  key={categoria.id}
+                  id={`categoria-${categoria.id}`}
+                  className={`scroll-mt-36 ${indice > 0 ? "pt-2 border-t-2 border-gray-200 dark:border-[#2f3135]" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-4 mb-5 px-1">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-1.5 h-8 rounded-full bg-[#ff5722] shrink-0" />
+                      <h2 className="text-lg md:text-xl font-black text-gray-950 dark:text-white truncate">
+                        {categoria.nome}
+                      </h2>
+                    </div>
+                    <span className="shrink-0 text-xs md:text-sm font-bold text-gray-700 dark:text-gray-200 bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] px-3 py-1.5 rounded-full">
+                      {itens.length} {itens.length === 1 ? "item" : "itens"}
+                    </span>
                   </div>
-                  <span className="shrink-0 text-xs md:text-sm font-bold text-gray-700 dark:text-gray-200 bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] px-3 py-1.5 rounded-full">
-                    {itens.length} {itens.length === 1 ? "item" : "itens"}
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {itens.map((produto) => renderCardProduto(produto))}
-                </div>
-              </section>
-            ))}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {itens.map((produto) => renderCardProduto(produto))}
+                  </div>
+                </section>
+              ),
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -488,7 +511,10 @@ export function FeedProdutos() {
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Opções
+                  Opções -{" "}
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {version}
+                  </span>
                 </h2>
                 <button
                   onClick={() => setModalOpcoesAberto(false)}
@@ -522,7 +548,8 @@ export function FeedProdutos() {
                     <span className="font-medium">Tela Cheia</span>
                   </div>
                   <button
-                    onClick={alternarTelaCheia}
+                    type="button"
+                    onClick={() => void alternarTelaCheia()}
                     className="px-4 py-2 bg-gray-100 dark:bg-[#181a1b] rounded-xl text-sm font-bold text-gray-900 dark:text-white active:scale-95 transition-transform"
                   >
                     {telaCheia ? "Sair" : "Ativar"}
@@ -601,9 +628,9 @@ export function FeedProdutos() {
       <CarrinhoLateral
         aberto={carrinhoAberto}
         aoFechar={() => setCarrinhoAberto(false)}
-        identificadorMesa={
-          new URLSearchParams(window.location.search).get("mesa") || "Balcão"
-        }
+        identificadorMesa={contextoCardapio.identificador}
+        modoPedido={contextoCardapio.tipo}
+        rotuloDestino={contextoCardapio.rotuloDestino}
       />
 
       <ModalConfirmacao

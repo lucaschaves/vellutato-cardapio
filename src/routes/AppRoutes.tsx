@@ -5,6 +5,8 @@ import {
 } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "../context/AuthContext";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { TecladoVirtualHost } from "../components/TecladoVirtual";
 
 // Páginas
 import { DashboardVendas } from "@/pages/admin/DashboardVendas";
@@ -12,6 +14,7 @@ import { DetalheCliente } from "@/pages/admin/DetalheCliente";
 import { GerenciamentoAdicionais } from "@/pages/admin/GerenciamentoAdicionais";
 import { GerenciamentoCategorias } from "@/pages/admin/GerenciamentoCategorias";
 import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
+import { GerenciamentoCombos } from "@/pages/admin/GerenciamentoCombos";
 import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
 import { GerenciamentoVendasCruzadas } from "@/pages/admin/GerenciamentoVendasCruzadas";
@@ -81,6 +84,7 @@ const router = createBrowserRouter([
       { path: "/admin/mesas", element: <GerenciamentoMesas /> },
       { path: "/admin/estoque", element: <GerenciamentoEstoque /> },
       { path: "/admin/adicionais", element: <GerenciamentoAdicionais /> },
+      { path: "/admin/combos", element: <GerenciamentoCombos /> },
       { path: "/admin/clientes", element: <GerenciamentoClientes /> },
       { path: "/admin/clientes/:clienteId", element: <DetalheCliente /> },
       { path: "/admin/cupons", element: <GerenciamentoCupons /> },
@@ -96,16 +100,20 @@ const router = createBrowserRouter([
 ]);
 
 export function AppRoutes() {
+  const isMobile = useIsMobile();
+
   return (
     <AuthProvider>
       <RouterProvider router={router} />
       <Toaster
         richColors
-        position="bottom-left"
+        position={isMobile ? "bottom-left" : "top-left"}
         expand={false}
         closeButton
         toastOptions={{ style: { fontFamily: "inherit" } }}
+        duration={isMobile ? 1500 : 3000}
       />
+      <TecladoVirtualHost />
     </AuthProvider>
   );
 }

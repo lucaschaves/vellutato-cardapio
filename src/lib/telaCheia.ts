@@ -1,7 +1,5 @@
 const CHAVE_PREFERENCIA = "preferencia_tela_cheia";
 
-let restaurandoTelaCheia = false;
-
 export function marcarPreferenciaTelaCheia(ativa: boolean) {
   if (ativa) {
     sessionStorage.setItem(CHAVE_PREFERENCIA, "1");
@@ -41,49 +39,19 @@ export async function sairTelaCheia(): Promise<void> {
   }
 }
 
-export async function restaurarTelaCheiaSeNecessario(): Promise<void> {
-  if (!preferenciaTelaCheiaAtiva() || document.fullscreenElement || restaurandoTelaCheia) {
-    return;
-  }
-
-  restaurandoTelaCheia = true;
-
-  await new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-
-  try {
-    await document.documentElement.requestFullscreen();
-  } catch {
-    marcarPreferenciaTelaCheia(false);
-  } finally {
-    restaurandoTelaCheia = false;
-  }
-}
-
 export async function prepararNavegacaoComTelaCheia(): Promise<void> {
   if (document.fullscreenElement) {
     marcarPreferenciaTelaCheia(true);
   }
-
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
-  }
-
-  await new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 80);
-  });
 }
 
 export function sincronizarPreferenciaTelaCheia() {
   if (document.fullscreenElement) {
     marcarPreferenciaTelaCheia(true);
-    return;
   }
+}
 
-  if (restaurandoTelaCheia || !preferenciaTelaCheiaAtiva()) {
-    return;
-  }
-
-  void restaurarTelaCheiaSeNecessario();
+/** Teclado do sistema em fullscreen causa flash preto — use teclado virtual. */
+export function deveUsarTecladoVirtual(): boolean {
+  return estaEmTelaCheia();
 }

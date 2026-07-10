@@ -352,6 +352,150 @@ export type Database = {
           },
         ]
       }
+      combo_grupos: {
+        Row: {
+          id: string
+          combo_produto_id: string
+          nome: string
+          descricao: string | null
+          min_escolhas: number
+          max_escolhas: number
+          preco_referencia: number
+          ordem: number
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          combo_produto_id: string
+          nome: string
+          descricao?: string | null
+          min_escolhas?: number
+          max_escolhas?: number
+          preco_referencia?: number
+          ordem?: number
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          combo_produto_id?: string
+          nome?: string
+          descricao?: string | null
+          min_escolhas?: number
+          max_escolhas?: number
+          preco_referencia?: number
+          ordem?: number
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "combo_grupos_combo_produto_id_fkey"
+            columns: ["combo_produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      combo_opcoes: {
+        Row: {
+          id: string
+          grupo_id: string
+          produto_id: string
+          delta_preco: number | null
+          ordem: number
+          ativo: boolean
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          grupo_id: string
+          produto_id: string
+          delta_preco?: number | null
+          ordem?: number
+          ativo?: boolean
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          grupo_id?: string
+          produto_id?: string
+          delta_preco?: number | null
+          ordem?: number
+          ativo?: boolean
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "combo_opcoes_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "combo_grupos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "combo_opcoes_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedido_item_combo_escolhas: {
+        Row: {
+          id: string
+          pedido_item_id: string
+          grupo_id: string | null
+          produto_escolhido_id: string | null
+          nome_grupo: string
+          nome_produto: string
+          delta_preco: number
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          pedido_item_id: string
+          grupo_id?: string | null
+          produto_escolhido_id?: string | null
+          nome_grupo: string
+          nome_produto: string
+          delta_preco?: number
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          pedido_item_id?: string
+          grupo_id?: string | null
+          produto_escolhido_id?: string | null
+          nome_grupo?: string
+          nome_produto?: string
+          delta_preco?: number
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedido_item_combo_escolhas_pedido_item_id_fkey"
+            columns: ["pedido_item_id"]
+            isOneToOne: false
+            referencedRelation: "pedido_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedido_item_combo_escolhas_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "combo_grupos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedido_item_combo_escolhas_produto_escolhido_id_fkey"
+            columns: ["produto_escolhido_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       produtos: {
         Row: {
           ativo: boolean
@@ -366,6 +510,7 @@ export type Database = {
           preco: number
           preco_promocional: number | null
           quantidade_estoque: number
+          tipo: Database["public"]["Enums"]["tipo_produto"]
           video_url: string | null
         }
         Insert: {
@@ -381,6 +526,7 @@ export type Database = {
           preco: number
           preco_promocional?: number | null
           quantidade_estoque?: number
+          tipo?: Database["public"]["Enums"]["tipo_produto"]
           video_url?: string | null
         }
         Update: {
@@ -396,6 +542,7 @@ export type Database = {
           preco?: number
           preco_promocional?: number | null
           quantidade_estoque?: number
+          tipo?: Database["public"]["Enums"]["tipo_produto"]
           video_url?: string | null
         }
         Relationships: [
@@ -492,9 +639,14 @@ export type Database = {
         Args: { p_celular: string }
         Returns: Json
       }
+      calcular_delta_combo_opcao: {
+        Args: { p_opcao_id: string }
+        Returns: number
+      }
     }
     Enums: {
       tipo_origem_pedido: "mesa" | "balcao"
+      tipo_produto: "simples" | "combo"
       tipo_status_pedido:
         | "pendente"
         | "em_producao"
@@ -630,6 +782,7 @@ export const Constants = {
   public: {
     Enums: {
       tipo_origem_pedido: ["mesa", "balcao"],
+      tipo_produto: ["simples", "combo"],
       tipo_status_pedido: [
         "pendente",
         "em_producao",

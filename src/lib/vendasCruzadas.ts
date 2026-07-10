@@ -17,6 +17,7 @@ export const ROTULOS_TIPO_VENDA_CRUZADA: Record<TipoVendaCruzada, string> = {
 export interface ProdutoOferta {
   id: string;
   nome: string;
+  descricao?: string | null;
   preco: number;
   preco_promocional: number | null;
   em_promocao: boolean;
@@ -92,7 +93,7 @@ export async function buscarOfertasVendaCruzada(
       `
       id, tipo, valor_desconto, mensagem_oferta, alvo_produto_id,
       produtos!vendas_cruzadas_alvo_produto_id_fkey (
-        id, nome, preco, preco_promocional, em_promocao, imagem_url,
+        id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url,
         controlar_estoque, quantidade_estoque
       )
     `,

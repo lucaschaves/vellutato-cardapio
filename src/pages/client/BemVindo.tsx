@@ -7,21 +7,24 @@ import {
   Play,
   ShoppingBag,
   Store,
+  Tag,
   UserCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
+import { InputTelaCheia } from "../../components/InputTelaCheia";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
+import { buscarClientePorCelular } from "../../lib/clientes";
 import { supabase } from "../../lib/supabase";
+import { prepararNavegacaoComTelaCheia } from "../../lib/telaCheia";
 import {
-  aoTeclaTelefone,
-  criarHandlerTelefone,
-  fecharTeclado,
   lerCelularLocalStorage,
   salvarCelularLocalStorage,
+  telefoneDigitosCompleto,
 } from "../../lib/telefone";
-import { prepararNavegacaoComTelaCheia } from "../../lib/telaCheia";
+import { lerContextoCardapio } from "../../lib/modoCardapio";
 const VIDEO_ENV = import.meta.env.VITE_VIDEO_DIVULGACAO as string | undefined;
 
 export function BemVindo() {
@@ -37,14 +40,19 @@ export function BemVindo() {
     () => localStorage.getItem("cliente_nome") || "",
   );
   const [celular, setCelular] = useState(() => lerCelularLocalStorage());
+  const [buscandoCliente, setBuscandoCliente] = useState(false);
+  const [clienteReconhecido, setClienteReconhecido] = useState(false);
+  const ultimoCelularBuscado = useRef("");
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
 
   useEffect(() => {
-    const mesa = new URLSearchParams(location.search).get("mesa");
-    if (mesa) {
-      localStorage.setItem("tipo_consumo", "loja");
-      navigate(`/cardapio${location.search}`, { replace: true });
+    const contexto = lerContextoCardapio(location.search);
+    if (contexto.tipo === "padrao") return;
+
+    if (contexto.tipoConsumoForcado) {
+      localStorage.setItem("tipo_consumo", contexto.tipoConsumoForcado);
     }
+    navigate(`/cardapio${location.search}`, { replace: true });
   }, [location.search, navigate]);
 
   useEffect(() => {
@@ -75,23 +83,63 @@ export function BemVindo() {
     carregarVideoDivulgacao();
   }, []);
 
-  const handlePhoneChange = criarHandlerTelefone(setCelular);
+  const reconhecerClientePorTelefone = async (celularFormatado: string) => {
+    if (!telefoneDigitosCompleto(celularFormatado)) {
+      setClienteReconhecido(false);
+      return;
+    }
+    if (ultimoCelularBuscado.current === celularFormatado) return;
+    ultimoCelularBuscado.current = celularFormatado;
+
+    try {
+      setBuscandoCliente(true);
+      const cliente = await buscarClientePorCelular(celularFormatado);
+      if (cliente) {
+        setNome(cliente.nome);
+        setClienteReconhecido(true);
+        const primeiroNome = cliente.nome.split(" ")[0];
+        toast.success(`Bem-vindo(a) de volta, ${primeiroNome}!`);
+      } else {
+        setClienteReconhecido(false);
+      }
+    } catch {
+      setClienteReconhecido(false);
+    } finally {
+      setBuscandoCliente(false);
+    }
+  };
+
+  const handleCelularChange = (valor: string) => {
+    setCelular(valor);
+    if (!telefoneDigitosCompleto(valor)) {
+      setClienteReconhecido(false);
+      ultimoCelularBuscado.current = "";
+      return;
+    }
+    void reconhecerClientePorTelefone(valor);
+  };
 
   const selecionarConsumo = (tipo: "loja" | "viagem") => {
     localStorage.setItem("tipo_consumo", tipo);
     setEtapa(2);
   };
 
+  const podeContinuar =
+    nome.trim().length > 0 && telefoneDigitosCompleto(celular);
+
   const prosseguir = async (pular: boolean = false) => {
     if (!pular) {
-      localStorage.setItem("cliente_nome", nome);
+      if (!podeContinuar) {
+        toast.error("Informe celular e nome para continuar.");
+        return;
+      }
+      localStorage.setItem("cliente_nome", nome.trim());
       salvarCelularLocalStorage(celular);
     } else {
       localStorage.removeItem("cliente_nome");
       localStorage.removeItem("cliente_celular");
     }
 
-    fecharTeclado();
     await prepararNavegacaoComTelaCheia();
     navigate(`/cardapio${location.search}`);
   };
@@ -119,11 +167,15 @@ export function BemVindo() {
       />
 
       <div className="absolute top-5 left-5 z-20">
-        <BotaoInstalarPwa className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60" tipo="cardapio" />
+        <BotaoInstalarPwa
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60"
+          tipo="cardapio"
+        />
       </div>
 
       <button
-        onClick={alternarTelaCheia}
+        type="button"
+        onClick={() => void alternarTelaCheia()}
         className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white active:scale-95 transition-all border border-white/10"
         aria-label={telaCheia ? "Sair da tela cheia" : "Ativar tela cheia"}
         title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
@@ -154,11 +206,7 @@ export function BemVindo() {
                 aria-label="Iniciar pedido"
               >
                 <span className="absolute inset-0 rounded-full bg-[#ff5722] animate-ping opacity-20" />
-                <Play
-                  size={40}
-                  className="ml-1 fill-white"
-                  strokeWidth={0}
-                />
+                <Play size={40} className="ml-1 fill-white" strokeWidth={0} />
               </button>
 
               <span className="mt-6 text-sm font-bold uppercase tracking-[0.2em] text-white/90">
@@ -248,49 +296,67 @@ export function BemVindo() {
               exit={{ opacity: 0, x: 50 }}
               className="w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30] mt-[-10vh]"
             >
-              <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-start gap-3 mb-2">
                 <button
+                  type="button"
                   onClick={() => setEtapa(1)}
-                  className="p-2 bg-gray-100 dark:bg-[#242629] rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                  className="p-2 bg-gray-100 dark:bg-[#242629] rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0 mt-0.5"
                 >
                   <ArrowRight size={20} className="rotate-180" />
                 </button>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <UserCircle className="text-[#ff5722]" /> Quem é você?
-                </h2>
+                <div className="min-w-0">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <UserCircle className="text-[#ff5722] shrink-0" /> Quem é
+                    você?
+                  </h2>
+                  <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400 leading-snug flex items-start gap-1.5">
+                    <Tag
+                      size={14}
+                      className="text-[#ff5722] shrink-0 mt-0.5"
+                    />
+                    <span>
+                      Identifique-se para desbloquear cupons e descontos
+                      exclusivos.
+                    </span>
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-4 mb-8">
+              <div className="space-y-4 mb-8 mt-5">
                 <div>
                   <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1.5">
-                    Seu Nome *
+                    Celular / WhatsApp *
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Como devemos te chamar?"
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
+                  <InputTelaCheia
+                    modo="tel"
+                    autoComplete="tel"
+                    maxLength={15}
+                    placeholder="(00) 00000-0000"
+                    value={celular}
+                    onValorChange={handleCelularChange}
                     className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
                   />
+                  {buscandoCliente && (
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Buscando seu cadastro...
+                    </p>
+                  )}
+                  {clienteReconhecido && nome && !buscandoCliente && (
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-400 mt-2">
+                      Bem-vindo(a) de volta, {nome.split(" ")[0]}!
+                    </p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1.5">
-                    Celular / WhatsApp{" "}
-                    <span className="opacity-50 font-normal text-[0.625rem]">
-                      (Opcional)
-                    </span>
+                    Seu Nome *
                   </label>
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    enterKeyHint="done"
-                    maxLength={15}
-                    placeholder="(00) 00000-0000"
-                    value={celular}
-                    onChange={handlePhoneChange}
-                    onKeyDown={aoTeclaTelefone}
+                  <InputTelaCheia
+                    modo="texto"
+                    placeholder="Como devemos te chamar?"
+                    value={nome}
+                    onValorChange={setNome}
                     className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
                   />
                 </div>
@@ -299,8 +365,8 @@ export function BemVindo() {
               <div className="flex flex-col gap-3">
                 <button
                   type="button"
-                  onClick={() => prosseguir(false)}
-                  disabled={!nome}
+                  onClick={() => void prosseguir(false)}
+                  disabled={!podeContinuar}
                   className="w-full bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
                 >
                   <span>Ver Cardápio</span>
@@ -309,7 +375,7 @@ export function BemVindo() {
 
                 <button
                   type="button"
-                  onClick={() => prosseguir(true)}
+                  onClick={() => void prosseguir(true)}
                   className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-[#ff5722]/40 hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10"
                 >
                   <span>Continuar sem informar</span>
@@ -317,7 +383,8 @@ export function BemVindo() {
                 </button>
 
                 <p className="text-center text-xs text-gray-500 dark:text-gray-400 px-2">
-                  Nome e telefone são opcionais — você pode informar depois.
+                  Sem identificação, cupons e descontos exclusivos podem ficar
+                  indisponíveis.
                 </p>
               </div>
             </motion.div>

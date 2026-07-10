@@ -37,32 +37,12 @@ export function telefoneDigitosCompleto(valor: string): boolean {
   return extrairDigitosTelefone(valor).length === TELEFONE_DIGITOS_MAX;
 }
 
-export function fecharTeclado(input?: HTMLElement | null) {
-  input?.blur();
-
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
-  }
-}
-
 export function criarHandlerTelefone(
   aoAtualizar: (valor: string) => void,
 ) {
   return (evento: React.ChangeEvent<HTMLInputElement>) => {
-    const formatado = formatarTelefoneBr(evento.target.value);
-    aoAtualizar(formatado);
-
-    if (telefoneDigitosCompleto(formatado)) {
-      fecharTeclado(evento.target);
-    }
+    aoAtualizar(formatarTelefoneBr(evento.target.value));
   };
-}
-
-export function aoTeclaTelefone(evento: React.KeyboardEvent<HTMLInputElement>) {
-  if (evento.key === "Enter") {
-    evento.preventDefault();
-    fecharTeclado(evento.currentTarget);
-  }
 }
 
 export function lerCelularLocalStorage(): string {

@@ -13,11 +13,18 @@ import { useImpressaoAutomatica } from "../../hooks/useImpressaoAutomatica";
 import { supabase } from "../../lib/supabase";
 
 // Tipagens
+interface EscolhaComboPedido {
+  nome_grupo: string;
+  nome_produto: string;
+  delta_preco: number;
+}
+
 interface ItemPedido {
   id: string;
   quantidade: number;
   observacoes: string;
-  produtos: { nome: string }; // Join com a tabela produtos
+  produtos: { nome: string };
+  pedido_item_combo_escolhas?: EscolhaComboPedido[];
 }
 
 interface Pedido {
@@ -104,7 +111,10 @@ export function PainelPedidos() {
           id, sequencia_pedido, origem, identificador, cliente_nome, status, criado_em,
           pedido_itens (
             id, quantidade, observacoes,
-            produtos ( nome )
+            produtos ( nome ),
+            pedido_item_combo_escolhas (
+              nome_grupo, nome_produto, delta_preco
+            )
           )
         `,
         )
@@ -198,6 +208,21 @@ export function PainelPedidos() {
           <li key={item.id} className="text-sm">
             <span className="font-bold">{item.quantidade}x</span>{" "}
             {item.produtos.nome}
+            {item.pedido_item_combo_escolhas &&
+              item.pedido_item_combo_escolhas.length > 0 && (
+                <ul className="ml-4 mt-0.5 space-y-0.5">
+                  {item.pedido_item_combo_escolhas.map((escolha, idx) => (
+                    <li
+                      key={`${item.id}-combo-${idx}`}
+                      className="text-xs text-gray-600 dark:text-gray-400"
+                    >
+                      {escolha.nome_grupo}: {escolha.nome_produto}
+                      {Number(escolha.delta_preco) > 0 &&
+                        ` (+R$ ${Number(escolha.delta_preco).toFixed(2)})`}
+                    </li>
+                  ))}
+                </ul>
+              )}
             {item.observacoes && (
               <p className="text-xs text-red-500 font-medium ml-4">
                 Obs: {item.observacoes}

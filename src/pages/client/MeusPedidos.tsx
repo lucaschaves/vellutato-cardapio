@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { InputTelaCheia } from "../../components/InputTelaCheia";
 import {
   buscarMeusPedidos,
   STATUS_PEDIDO_CLIENTE,
@@ -21,8 +22,6 @@ import {
 } from "../../lib/pedidosAdmin";
 import { supabase } from "../../lib/supabase";
 import {
-  aoTeclaTelefone,
-  criarHandlerTelefone,
   lerCelularLocalStorage,
   normalizarTelefoneParaSalvar,
   salvarCelularLocalStorage,
@@ -152,12 +151,10 @@ export function MeusPedidos() {
                 Digite o celular usado no pedido para ver o histórico.
               </p>
             </div>
-            <input
-              type="tel"
-              inputMode="numeric"
+            <InputTelaCheia
+              modo="tel"
               value={celular}
-              onChange={criarHandlerTelefone(setCelular)}
-              onKeyDown={aoTeclaTelefone}
+              onValorChange={setCelular}
               placeholder="(11) 98765-4321"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-[#2a2c30] bg-gray-50 dark:bg-[#242629] text-gray-900 dark:text-white"
             />
