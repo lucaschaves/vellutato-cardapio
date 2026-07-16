@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useImpressaoAutomatica } from "../../hooks/useImpressaoAutomatica";
+import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
 import { supabase } from "../../lib/supabase";
 
 // Tipagens
@@ -45,7 +45,7 @@ export function PainelPedidos() {
   const [statusConexao, setStatusConexao] = useState<
     "conectado" | "desconectado"
   >("desconectado");
-  const { impressoraOffline, imprimirPedido } = useImpressaoAutomatica();
+  const { impressoraOffline, imprimirPedido } = useImpressaoAdmin();
 
   // Carrega os dados iniciais e monta o listener do Realtime
   useEffect(() => {

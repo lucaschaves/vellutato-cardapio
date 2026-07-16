@@ -19,6 +19,7 @@ import {
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { ImpressaoAdminProvider } from "../context/ImpressaoAdminContext";
 import { useAuth } from "../context/AuthContext";
 import { BotaoInstalarPwa } from "./BotaoInstalarPwa";
 
@@ -64,6 +65,7 @@ export function AdminLayout() {
   const fecharMenuMobile = () => setMenuMobileAberto(false);
 
   return (
+    <ImpressaoAdminProvider>
     <div className="min-h-screen bg-gray-50 dark:bg-background-dark flex">
       {menuMobileAberto && (
         <button
@@ -146,5 +148,6 @@ export function AdminLayout() {
         </main>
       </div>
     </div>
+    </ImpressaoAdminProvider>
   );
 }
