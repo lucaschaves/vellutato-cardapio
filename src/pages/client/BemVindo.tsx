@@ -15,7 +15,6 @@ import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
-import { supabase } from "../../lib/supabase";
 import { prepararNavegacaoComTelaCheia } from "../../lib/telaCheia";
 import {
   lerCelularLocalStorage,
@@ -23,16 +22,37 @@ import {
   telefoneDigitosCompleto,
 } from "../../lib/telefone";
 
+const VIDEOS_DIVULGACAO_PADRAO = [
+  "/primeiro.mp4",
+  "/segundo.mp4",
+  "/terceiro.mp4",
+  "/quarto.mp4",
+] as const;
+
 const VIDEO_ENV = import.meta.env.VITE_VIDEO_DIVULGACAO as string | undefined;
+
+function playlistDivulgacao(): readonly string[] {
+  const bruto = VIDEO_ENV?.trim();
+  if (!bruto) return VIDEOS_DIVULGACAO_PADRAO;
+  if (bruto.includes(",")) {
+    const lista = bruto
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return lista.length > 0 ? lista : VIDEOS_DIVULGACAO_PADRAO;
+  }
+  return [bruto];
+}
+
+const PLAYLIST_DIVULGACAO = playlistDivulgacao();
 
 export function BemVindo() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const [etapa, setEtapa] = useState(0);
-  const [videoDivulgacao, setVideoDivulgacao] = useState<string | null>(
-    VIDEO_ENV || null,
-  );
+  const [indiceVideo, setIndiceVideo] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const [nome, setNome] = useState(
     () => localStorage.getItem("cliente_nome") || "",
@@ -43,33 +63,34 @@ export function BemVindo() {
   const ultimoCelularBuscado = useRef("");
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
 
+  const indiceAtual = indiceVideo % PLAYLIST_DIVULGACAO.length;
+  const srcVideoAtual = PLAYLIST_DIVULGACAO[indiceAtual];
+  const srcProximoVideo =
+    PLAYLIST_DIVULGACAO[(indiceAtual + 1) % PLAYLIST_DIVULGACAO.length];
+  const playlistEmSequencia = PLAYLIST_DIVULGACAO.length > 1;
+
   useEffect(() => {
-    if (VIDEO_ENV) return;
+    const el = videoRef.current;
+    if (!el) return;
+    el.load();
+    void el.play().catch(() => {});
+  }, [srcVideoAtual]);
 
-    async function carregarVideoDivulgacao() {
-      try {
-        const { data, error } = await supabase
-          .from("produtos")
-          .select("video_url")
-          .eq("ativo", true)
-          .not("video_url", "is", null)
-          .order("em_promocao", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+  useEffect(() => {
+    if (!playlistEmSequencia || srcProximoVideo === srcVideoAtual) return;
+    const link = document.createElement("link");
+    link.rel = "prefetch";
+    link.as = "video";
+    link.href = srcProximoVideo;
+    document.head.appendChild(link);
+    return () => {
+      link.remove();
+    };
+  }, [playlistEmSequencia, srcProximoVideo, srcVideoAtual]);
 
-        if (error) throw error;
-        if (data?.video_url) setVideoDivulgacao(data.video_url);
-      } catch (erro: unknown) {
-        const mensagem = erro instanceof Error ? erro.message : String(erro);
-        console.error(
-          "[ERRO - TELA INICIAL] Falha ao carregar vídeo de divulgação:",
-          mensagem,
-        );
-      }
-    }
-
-    void carregarVideoDivulgacao();
-  }, []);
+  const aoTerminarVideo = () => {
+    setIndiceVideo((i) => (i + 1) % PLAYLIST_DIVULGACAO.length);
+  };
 
   const reconhecerClientePorTelefone = async (celularFormatado: string) => {
     if (!telefoneDigitosCompleto(celularFormatado)) {
@@ -130,19 +151,18 @@ export function BemVindo() {
 
   return (
     <div className="relative min-h-screen overflow-hidden selection:bg-[#ff5722]/30">
-      {videoDivulgacao ? (
-        <video
-          key={videoDivulgacao}
-          src={videoDivulgacao}
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] via-[#2d1810] to-[#ff5722]/40" />
-      )}
+      <video
+        ref={videoRef}
+        key={srcVideoAtual}
+        src={srcVideoAtual}
+        autoPlay
+        loop={!playlistEmSequencia}
+        muted
+        playsInline
+        preload="auto"
+        onEnded={playlistEmSequencia ? aoTerminarVideo : undefined}
+        className="absolute inset-0 w-full h-full object-cover"
+      />
 
       <div
         className={`absolute inset-0 transition-colors duration-500 ${

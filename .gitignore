@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Backup local de vídeos da tela inicial (originais antes da compressão)
+public/_originais-divulgacao/
