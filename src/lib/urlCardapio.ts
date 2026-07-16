@@ -1,4 +1,4 @@
-/** Monta URL do cardápio preservando query string (ex.: ?mesa=1 ou ?retirada=1). */
+/** Monta URL do cardápio preservando query string (ex.: ?mesa=1). */
 export function urlCardapio(subcaminho = "", search = ""): string {
   const caminho = subcaminho.startsWith("/")
     ? subcaminho

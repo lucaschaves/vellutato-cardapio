@@ -30,7 +30,7 @@ const ITENS_NAVEGACAO = [
   { to: "/admin/estoque", rotulo: "Estoque", icone: Package },
   { to: "/admin/catalogo", rotulo: "Catálogo", icone: ChefHat },
   { to: "/admin/categorias", rotulo: "Categorias", icone: FolderTree },
-  { to: "/admin/mesas", rotulo: "Mesas e links", icone: QrCode },
+  { to: "/admin/mesas", rotulo: "Mesas", icone: QrCode },
   { to: "/admin/adicionais", rotulo: "Adicionais", icone: IceCream },
   { to: "/admin/combos", rotulo: "Combos", icone: Layers },
   { to: "/admin/clientes", rotulo: "Clientes", icone: Users },

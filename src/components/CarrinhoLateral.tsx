@@ -36,7 +36,14 @@ import {
   telefoneDigitosCompleto,
 } from "../lib/telefone";
 import { urlCardapio } from "../lib/urlCardapio";
-import type { TipoContextoCardapio } from "../lib/modoCardapio";
+import {
+  itensComConflitoConsumo,
+  montarOrigemIdentificadorPedido,
+  modoConsumoPermitido,
+  rotuloDisponibilidade,
+  rotuloModoConsumo,
+  type ModoConsumoItem,
+} from "../lib/disponibilidadeProduto";
 import { formatarDescricaoComQuebras } from "../lib/descricaoProduto.tsx";
 import { cn } from "../lib/utils";
 import { useCartStore } from "../store/useCartStore";
@@ -44,8 +51,8 @@ import { useCartStore } from "../store/useCartStore";
 interface CarrinhoLateralProps {
   aberto: boolean;
   aoFechar: () => void;
-  identificadorMesa: string;
-  modoPedido?: TipoContextoCardapio;
+  /** Número da mesa na URL (só identificação na cozinha) */
+  mesa: string | null;
   rotuloDestino?: string;
 }
 
@@ -54,14 +61,14 @@ type EtapaMobileCarrinho = "itens" | "identificacao";
 export function CarrinhoLateral({
   aberto,
   aoFechar,
-  identificadorMesa,
-  modoPedido = "padrao",
+  mesa,
   rotuloDestino,
 }: CarrinhoLateralProps) {
   const {
     itens,
     removerItem,
     alterarQuantidade,
+    alterarModoConsumo,
     obterSubtotal,
     obterDescontoCupom,
     obterTotal,
@@ -74,23 +81,11 @@ export function CarrinhoLateral({
   const layoutSplitMedia = useLayoutCarrinhoSplit();
   const [layoutSplit, setLayoutSplit] = useState(layoutSplitMedia);
   const navigate = useNavigate();
-  const destinoExibicao =
-    rotuloDestino ||
-    (modoPedido === "retirada"
-      ? "Retirada na loja"
-      : identificadorMesa || "Balcão");
-  const textoDestinoCarrinho =
-    modoPedido === "retirada"
-      ? "Pedido para retirada na loja"
-      : `Entrega em ${destinoExibicao}`;
-  const textoDestinoIdentificacao =
-    modoPedido === "retirada"
-      ? "Pedido para retirada na loja — avise seu nome no balcão"
-      : `Para entregar na ${destinoExibicao}`;
-  const textoPagamento =
-    modoPedido === "retirada"
-      ? "Pagamento na retirada (balcão/caixa)"
-      : "Pagamento no balcão/caixa";
+  const destinoExibicao = rotuloDestino || (mesa ? `Mesa ${mesa}` : "Balcão");
+  const textoDestinoCarrinho = mesa
+    ? `Pedido · ${destinoExibicao}`
+    : "Pedido · escolha comer ou levar em cada item";
+  const textoPagamento = "Pagamento no balcão/caixa";
 
   const [nomeCliente, setNomeCliente] = useState(
     () => localStorage.getItem("cliente_nome") || "",
@@ -171,14 +166,19 @@ export function CarrinhoLateral({
   };
 
   const handleAplicarCupom = async () => {
+    if (!telefoneDigitosCompleto(celularCliente)) {
+      toast.error("Informe o celular antes de aplicar o cupom.");
+      return;
+    }
+    if (!nomeCliente.trim()) {
+      toast.error("Informe o nome para vincular o cupom ao seu cadastro.");
+      return;
+    }
+
     try {
       setValidandoCupom(true);
       const celularNorm = normalizarTelefoneParaSalvar(celularCliente);
-      let clienteId: string | null = null;
-
-      if (celularNorm && nomeCliente.trim()) {
-        clienteId = await upsertCliente(nomeCliente, celularNorm);
-      }
+      const clienteId = await upsertCliente(nomeCliente, celularNorm);
 
       const resultado = await validarCupom(codigoCupom, subtotal, clienteId);
 
@@ -198,18 +198,47 @@ export function CarrinhoLateral({
     }
   };
 
+  const solicitarModoConsumo = (idUnico: string, modo: ModoConsumoItem) => {
+    const item = itens.find((i) => i.idUnico === idUnico);
+    if (!item) return;
+
+    if (!modoConsumoPermitido(item.disponibilidade, modo)) {
+      const rotulo = rotuloDisponibilidade(item.disponibilidade);
+      const ok = window.confirm(
+        `"${item.nome}" ${rotulo ? `é marcado como: ${rotulo}.` : "não permite esse modo."}\n\nDeseja continuar mesmo assim com "${rotuloModoConsumo(modo)}"?`,
+      );
+      if (!ok) return;
+    }
+
+    alterarModoConsumo(idUnico, modo);
+  };
+
   const finalizarPedido = async (e: React.FormEvent) => {
     e.preventDefault();
     if (itens.length === 0) return;
+
+    if (!telefoneDigitosCompleto(celularCliente)) {
+      toast.error("Informe um celular válido com DDD para enviar o pedido.");
+      return;
+    }
 
     if (!nomeCliente.trim()) {
       toast.error("Informe seu nome para enviar o pedido.");
       return;
     }
 
-    if (!telefoneDigitosCompleto(celularCliente)) {
-      toast.error("Informe um celular válido com DDD para enviar o pedido.");
-      return;
+    const conflitos = itensComConflitoConsumo(itens);
+    if (conflitos.length > 0) {
+      const lista = conflitos
+        .map(
+          (item) =>
+            `• ${item.nome} (${rotuloDisponibilidade(item.disponibilidade) || "restrito"} → ${rotuloModoConsumo(item.modoConsumo)})`,
+        )
+        .join("\n");
+      const ok = window.confirm(
+        `Alguns itens não combinam com o modo escolhido:\n\n${lista}\n\nDeseja enviar o pedido mesmo assim?`,
+      );
+      if (!ok) return;
     }
 
     try {
@@ -224,27 +253,13 @@ export function CarrinhoLateral({
         );
       }
 
-      const tipoConsumo = localStorage.getItem("tipo_consumo") || "loja";
       const subtotalPedido = obterSubtotal();
       const desconto = obterDescontoCupom();
       const totalPedido = obterTotal();
-
-      let origem: "mesa" | "balcao";
-      let identificador: string;
-
-      if (modoPedido === "retirada") {
-        origem = "balcao";
-        identificador = "Retirada";
-      } else if (modoPedido === "mesa") {
-        origem = "mesa";
-        identificador = identificadorMesa || "Balcão";
-      } else if (tipoConsumo === "viagem") {
-        origem = "balcao";
-        identificador = `${identificadorMesa || "Balcão"} (PARA VIAGEM)`;
-      } else {
-        origem = "mesa";
-        identificador = identificadorMesa || "Balcão";
-      }
+      const { origem, identificador } = montarOrigemIdentificadorPedido({
+        mesa,
+        modos: itens.map((item) => item.modoConsumo),
+      });
 
       const { data: pedido, error: errorPedido } = await supabase
         .from("pedidos")
@@ -275,6 +290,7 @@ export function CarrinhoLateral({
             quantidade: item.quantidade,
             preco_unitario: item.precoBase,
             observacoes: item.observacoes?.trim() || null,
+            modo_consumo: item.modoConsumo,
           })
           .select("id")
           .single();
@@ -435,23 +451,6 @@ export function CarrinhoLateral({
 
   const renderCamposIdentificacao = () => (
     <div className="space-y-4">
-      {renderCampoCupom()}
-
-      <div>
-        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-          Seu Nome *
-        </label>
-        <InputTelaCheia
-          modo="texto"
-          required
-          placeholder="Como devemos te chamar?"
-          value={nomeCliente}
-          onValorChange={setNomeCliente}
-          className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
-          autoComplete="off"
-        />
-      </div>
-
       <div>
         <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
           Celular / WhatsApp *
@@ -470,6 +469,23 @@ export function CarrinhoLateral({
           <p className="text-xs text-gray-500 mt-1">Buscando cadastro...</p>
         )}
       </div>
+
+      <div>
+        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
+          Seu Nome *
+        </label>
+        <InputTelaCheia
+          modo="texto"
+          required
+          placeholder="Como devemos te chamar?"
+          value={nomeCliente}
+          onValorChange={setNomeCliente}
+          className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
+          autoComplete="off"
+        />
+      </div>
+
+      {renderCampoCupom()}
     </div>
   );
 
@@ -520,6 +536,11 @@ export function CarrinhoLateral({
                       <Gift size={10} /> Brinde
                     </span>
                   )}
+                  {rotuloDisponibilidade(item.disponibilidade) && (
+                    <span className="inline-flex mt-1 text-[0.625rem] md:landscape:text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                      {rotuloDisponibilidade(item.disponibilidade)}
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -559,6 +580,33 @@ export function CarrinhoLateral({
                   ))}
                 </div>
               )}
+
+              <div className="mb-3 grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-gray-50 dark:bg-[#2a2c30] border border-gray-200 dark:border-transparent">
+                {(["loja", "levar"] as const).map((modo) => {
+                  const selecionado = item.modoConsumo === modo;
+                  const permitido = modoConsumoPermitido(
+                    item.disponibilidade,
+                    modo,
+                  );
+                  return (
+                    <button
+                      key={modo}
+                      type="button"
+                      onClick={() => solicitarModoConsumo(item.idUnico, modo)}
+                      className={cn(
+                        "py-2 px-2 rounded-lg text-[0.6875rem] md:landscape:text-xs font-bold transition-all",
+                        selecionado
+                          ? "bg-[#ff5722] text-white shadow-sm"
+                          : permitido
+                            ? "text-gray-600 dark:text-gray-300 hover:bg-white/70 dark:hover:bg-[#323438]"
+                            : "text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20",
+                      )}
+                    >
+                      {rotuloModoConsumo(modo)}
+                    </button>
+                  );
+                })}
+              </div>
 
               <div className="mt-auto flex items-center justify-between gap-2">
                 <div className="flex items-center bg-gray-50 dark:bg-[#2a2c30] rounded-lg border border-gray-200 dark:border-transparent">
@@ -697,7 +745,9 @@ export function CarrinhoLateral({
                     Identificação
                   </h2>
                   <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">
-                    {textoDestinoIdentificacao}
+                    Celular primeiro — cupom e cadastro usam ele como
+                    identificador
+                    {mesa ? ` · ${destinoExibicao}` : ""}
                   </p>
                 </div>
               </div>
@@ -770,9 +820,9 @@ export function CarrinhoLateral({
                     Identificação
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 font-medium">
-                    {modoPedido === "retirada"
-                      ? "Informe seus dados para retirarmos o pedido no balcão."
-                      : `Para entregar seu pedido corretamente na ${destinoExibicao}.`}
+                    Informe o celular (identificador) e o nome. Cupom exige os
+                    dois.
+                    {mesa ? ` Pedido vinculado à ${destinoExibicao}.` : ""}
                   </p>
                   {renderCamposIdentificacao()}
                 </div>

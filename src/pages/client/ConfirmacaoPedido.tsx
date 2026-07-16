@@ -152,11 +152,9 @@ export function ConfirmacaoPedido() {
         <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 mb-4">
           <ChefHat size={18} className="text-[#ff5722] shrink-0" />
           <p className="text-sm md:text-base leading-relaxed">
-            {contexto.tipo === "retirada"
-              ? "Já vamos preparar. Retire na loja quando estiver pronto — acompanhe em Meus pedidos."
-              : sessaoPersistente
-                ? "Já vamos preparar. Acompanhe o status em Meus pedidos."
-                : "Já vamos preparar seu pedido."}
+            {sessaoPersistente
+              ? "Já vamos preparar. Acompanhe o status em Meus pedidos."
+              : "Já vamos preparar seu pedido."}
           </p>
         </div>
 

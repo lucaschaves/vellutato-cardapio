@@ -21,6 +21,11 @@ import { CarrinhoLateral } from "../../components/CarrinhoLateral";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { formatarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
+import {
+  normalizarDisponibilidade,
+  rotuloDisponibilidade,
+  type DisponibilidadeProduto,
+} from "../../lib/disponibilidadeProduto";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { lerContextoCardapio } from "../../lib/modoCardapio";
@@ -52,6 +57,7 @@ interface Produto {
   em_promocao: boolean;
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
+  disponibilidade?: DisponibilidadeProduto;
 }
 
 function ImagemProdutoCard({ src, alt }: { src: string; alt: string }) {
@@ -138,12 +144,6 @@ export function FeedProdutos() {
   );
 
   useEffect(() => {
-    if (contextoCardapio.tipoConsumoForcado) {
-      localStorage.setItem("tipo_consumo", contextoCardapio.tipoConsumoForcado);
-    }
-  }, [contextoCardapio.tipoConsumoForcado]);
-
-  useEffect(() => {
     salvarTemaEscuro(temaEscuro);
   }, [temaEscuro]);
 
@@ -213,6 +213,9 @@ export function FeedProdutos() {
 
   const renderCardProduto = (produto: Produto) => {
     const esgotado = produtoEstaEsgotado(produto);
+    const etiquetaDisp = rotuloDisponibilidade(
+      normalizarDisponibilidade(produto.disponibilidade),
+    );
 
     return (
       <motion.article
@@ -228,6 +231,12 @@ export function FeedProdutos() {
             <div className="absolute top-2 left-2 z-20 bg-[#ff5722] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
               <Tag size={10} strokeWidth={3} />
               PROMO
+            </div>
+          )}
+
+          {etiquetaDisp && !esgotado && (
+            <div className="absolute bottom-2 left-2 z-20 bg-black/75 text-white text-[0.625rem] font-bold px-2 py-1 rounded-md max-w-[90%] truncate">
+              {etiquetaDisp}
             </div>
           )}
 
@@ -323,11 +332,6 @@ export function FeedProdutos() {
             <h1 className="text-xl md:text-2xl font-extrabold tracking-wide text-gray-950 dark:text-white">
               Cardápio
             </h1>
-            {contextoCardapio.tipo === "retirada" && (
-              <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
-                Retirada na loja
-              </p>
-            )}
             {contextoCardapio.tipo === "mesa" && (
               <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
                 {contextoCardapio.rotuloDestino}
@@ -628,8 +632,7 @@ export function FeedProdutos() {
       <CarrinhoLateral
         aberto={carrinhoAberto}
         aoFechar={() => setCarrinhoAberto(false)}
-        identificadorMesa={contextoCardapio.identificador}
-        modoPedido={contextoCardapio.tipo}
+        mesa={contextoCardapio.mesa}
         rotuloDestino={contextoCardapio.rotuloDestino}
       />
 

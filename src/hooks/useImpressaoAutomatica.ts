@@ -8,9 +8,9 @@ import { supabase } from "../lib/supabase";
 
 const SELECT_PEDIDO_IMPRESSAO = `
   id, sequencia_pedido, origem, identificador, cliente_nome, cliente_celular,
-  status, criado_em, total, impresso,
+  status, criado_em, total, valor_total, desconto_aplicado, impresso,
   pedido_itens (
-    id, quantidade, observacoes, preco_unitario,
+    id, quantidade, observacoes, preco_unitario, modo_consumo,
     produtos ( nome ),
     pedido_item_adicionais (
       preco_aplicado,
@@ -96,8 +96,10 @@ export function useImpressaoAutomatica() {
 
       if (!pedido) return;
 
+      // Aguarda itens + escolhas de combo (checkout grava em sequência)
       const itensPendentes =
-        pedido.pedido_itens.length === 0 && tentativa < MAX_TENTATIVAS_ITENS;
+        (pedido.pedido_itens?.length ?? 0) === 0 &&
+        tentativa < MAX_TENTATIVAS_ITENS;
 
       if (itensPendentes) {
         agendarImpressaoPedido(pedidoId, tentativa + 1);

@@ -23,6 +23,7 @@ interface ItemPedido {
   id: string;
   quantidade: number;
   observacoes: string;
+  modo_consumo?: string | null;
   produtos: { nome: string };
   pedido_item_combo_escolhas?: EscolhaComboPedido[];
 }
@@ -110,7 +111,7 @@ export function PainelPedidos() {
           `
           id, sequencia_pedido, origem, identificador, cliente_nome, status, criado_em,
           pedido_itens (
-            id, quantidade, observacoes,
+            id, quantidade, observacoes, modo_consumo,
             produtos ( nome ),
             pedido_item_combo_escolhas (
               nome_grupo, nome_produto, delta_preco
@@ -208,6 +209,16 @@ export function PainelPedidos() {
           <li key={item.id} className="text-sm">
             <span className="font-bold">{item.quantidade}x</span>{" "}
             {item.produtos.nome}
+            {item.modo_consumo === "levar" && (
+              <span className="ml-1 text-[0.625rem] font-black uppercase tracking-wide text-orange-600 dark:text-orange-400">
+                · LEVAR
+              </span>
+            )}
+            {item.modo_consumo === "loja" && (
+              <span className="ml-1 text-[0.625rem] font-black uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                · LOJA
+              </span>
+            )}
             {item.pedido_item_combo_escolhas &&
               item.pedido_item_combo_escolhas.length > 0 && (
                 <ul className="ml-4 mt-0.5 space-y-0.5">

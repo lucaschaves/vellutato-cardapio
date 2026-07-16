@@ -2,6 +2,14 @@ import { create } from "zustand";
 import type { CupomValidado } from "../lib/cupons";
 import type { EscolhaCombo } from "../lib/combos";
 import { somarDeltasCombo } from "../lib/combos";
+import type {
+  DisponibilidadeProduto,
+  ModoConsumoItem,
+} from "../lib/disponibilidadeProduto";
+import {
+  modoConsumoPadrao,
+  normalizarDisponibilidade,
+} from "../lib/disponibilidadeProduto";
 
 export interface AdicionalSelecionado {
   id: string;
@@ -22,6 +30,8 @@ export interface ItemCarrinho {
   observacoes?: string;
   imagem?: string;
   ehBrinde?: boolean;
+  disponibilidade: DisponibilidadeProduto;
+  modoConsumo: ModoConsumoItem;
 }
 
 function custoExtrasItem(item: ItemCarrinho): number {
@@ -39,10 +49,16 @@ function calcularSubtotalItens(itens: ItemCarrinho[]): number {
 interface CartStore {
   itens: ItemCarrinho[];
   cupomAplicado: CupomValidado | null;
-  adicionarItem: (item: Omit<ItemCarrinho, "idUnico">) => void;
+  adicionarItem: (
+    item: Omit<ItemCarrinho, "idUnico" | "disponibilidade" | "modoConsumo"> & {
+      disponibilidade?: DisponibilidadeProduto;
+      modoConsumo?: ModoConsumoItem;
+    },
+  ) => void;
   removerItem: (idUnico: string) => void;
   alterarQuantidade: (idUnico: string, novaQuantidade: number) => void;
   alterarObservacoes: (idUnico: string, observacoes: string) => void;
+  alterarModoConsumo: (idUnico: string, modo: ModoConsumoItem) => void;
   limparCarrinho: () => void;
   aplicarCupom: (cupom: CupomValidado) => void;
   removerCupom: () => void;
@@ -57,9 +73,15 @@ export const useCartStore = create<CartStore>((set, get) => ({
   cupomAplicado: null,
 
   adicionarItem: (novoItem) => {
+    const disponibilidade = normalizarDisponibilidade(novoItem.disponibilidade);
+    const modoConsumo =
+      novoItem.modoConsumo || modoConsumoPadrao(disponibilidade);
     const idUnico = `${novoItem.produtoId}-${Date.now()}`;
     set((state) => ({
-      itens: [...state.itens, { ...novoItem, idUnico }],
+      itens: [
+        ...state.itens,
+        { ...novoItem, idUnico, disponibilidade, modoConsumo },
+      ],
     }));
     console.info(`[CARRINHO] Produto adicionado: ${novoItem.nome}`);
   },
@@ -86,6 +108,14 @@ export const useCartStore = create<CartStore>((set, get) => ({
     set((state) => ({
       itens: state.itens.map((item) =>
         item.idUnico === idUnico ? { ...item, observacoes } : item,
+      ),
+    }));
+  },
+
+  alterarModoConsumo: (idUnico, modo) => {
+    set((state) => ({
+      itens: state.itens.map((item) =>
+        item.idUnico === idUnico ? { ...item, modoConsumo: modo } : item,
       ),
     }));
   },

@@ -11,6 +11,11 @@ import {
 } from "../../lib/estoque";
 import { renderizarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
 import {
+  normalizarDisponibilidade,
+  rotuloDisponibilidade,
+  type DisponibilidadeProduto,
+} from "../../lib/disponibilidadeProduto";
+import {
   buscarEstruturaCombo,
   calcularDeltaOpcao,
   somarDeltasCombo,
@@ -39,6 +44,7 @@ interface ProdutoDetalhe {
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
   tipo?: "simples" | "combo";
+  disponibilidade?: DisponibilidadeProduto;
 }
 
 interface Adicional {
@@ -114,7 +120,13 @@ function MidiaProduto({
 
 const MidiaProdutoMemo = memo(MidiaProduto);
 
-function SkeletonColunaMidia({ produtoId }: { produtoId?: string }) {
+function SkeletonColunaMidia({
+  produtoId,
+  compacta = false,
+}: {
+  produtoId?: string;
+  compacta?: boolean;
+}) {
   const classesMidia =
     "w-full h-full md:landscape:rounded-[2rem] md:landscape:border border-gray-200 dark:border-[#2a2c30] overflow-hidden relative md:landscape:shadow-2xl bg-gray-200 dark:bg-gray-800 animate-pulse";
 
@@ -123,7 +135,11 @@ function SkeletonColunaMidia({ produtoId }: { produtoId?: string }) {
   );
 
   return (
-    <div className="relative w-full h-[38vh] max-h-[320px] md:landscape:max-h-none md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] shrink-0 flex items-center justify-center">
+    <div
+      className={`relative w-full shrink-0 flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] transition-[height] duration-300 ease-out md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 ${
+        compacta ? "h-[30%]" : "h-[50%]"
+      }`}
+    >
       {produtoId ? (
         <motion.div layoutId={`produto-midia-${produtoId}`} className={classesMidia}>
           {conteudo}
@@ -180,8 +196,10 @@ function SkeletonRodapeProduto() {
 
 const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   produto,
+  compacta = false,
 }: {
   produto: ProdutoDetalhe;
+  compacta?: boolean;
 }) {
   const [transicaoEntradaConcluida, setTransicaoEntradaConcluida] =
     useState(false);
@@ -218,7 +236,11 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   );
 
   return (
-    <div className="relative w-full h-[38vh] max-h-[320px] md:landscape:max-h-none md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] shrink-0 flex items-center justify-center">
+    <div
+      className={`relative w-full shrink-0 flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] transition-[height] duration-300 ease-out md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 ${
+        compacta ? "h-[30%]" : "h-[50%]"
+      }`}
+    >
       {transicaoEntradaConcluida ? (
         <div className={classesMidia}>{conteudo}</div>
       ) : (
@@ -259,6 +281,8 @@ export function VisualizadorReels() {
     [],
   );
   const [modalPosAdicionarAberto, setModalPosAdicionarAberto] = useState(false);
+  const [midiaCompacta, setMidiaCompacta] = useState(false);
+  const painelScrollRef = useRef<HTMLDivElement>(null);
 
   const idsProdutosNoCarrinho = useMemo(
     () => new Set(itensCarrinho.map((item) => item.produtoId)),
@@ -497,6 +521,7 @@ export function VisualizadorReels() {
       imagem: produto.imagem_url,
       adicionais: adicionaisSelecionados,
       escolhasCombo: ehCombo ? escolhasCombo : undefined,
+      disponibilidade: normalizarDisponibilidade(produto.disponibilidade),
     });
     toast.success("Produto adicionado ao seu pedido!");
 
@@ -543,6 +568,9 @@ export function VisualizadorReels() {
       imagem: alvo.imagem_url || undefined,
       adicionais: [],
       ehBrinde,
+      disponibilidade: normalizarDisponibilidade(
+        (alvo as { disponibilidade?: DisponibilidadeProduto }).disponibilidade,
+      ),
     });
     toast.success(
       ehBrinde
@@ -557,6 +585,46 @@ export function VisualizadorReels() {
   };
 
   const exibirConteudoProduto = Boolean(produto) && !carregandoProduto;
+
+  useEffect(() => {
+    setMidiaCompacta(false);
+  }, [id]);
+
+  useEffect(() => {
+    const painel = painelScrollRef.current;
+    if (!painel) return;
+
+    const atualizarCompactacao = () => {
+      const temScroll = painel.scrollHeight > painel.clientHeight + 8;
+      if (!temScroll) {
+        setMidiaCompacta(false);
+        return;
+      }
+      setMidiaCompacta((atual) =>
+        atual ? painel.scrollTop > 8 : painel.scrollTop > 24,
+      );
+    };
+
+    atualizarCompactacao();
+    painel.addEventListener("scroll", atualizarCompactacao, { passive: true });
+
+    const observer = new ResizeObserver(atualizarCompactacao);
+    observer.observe(painel);
+
+    return () => {
+      painel.removeEventListener("scroll", atualizarCompactacao);
+      observer.disconnect();
+    };
+  }, [
+    id,
+    exibirConteudoProduto,
+    gruposCombo.length,
+    adicionaisDisponiveis.length,
+    ofertasPendentes.length,
+    carregandoCombo,
+    carregandoAdicionais,
+    carregandoOfertas,
+  ]);
 
   return (
     <AnimatePresence>
@@ -576,19 +644,36 @@ export function VisualizadorReels() {
         </button>
 
         {exibirConteudoProduto && produto ? (
-          <ColunaMidiaProduto key={produto.id} produto={produto} />
+          <ColunaMidiaProduto
+            key={produto.id}
+            produto={produto}
+            compacta={midiaCompacta}
+          />
         ) : (
-          <SkeletonColunaMidia produtoId={id} />
+          <SkeletonColunaMidia produtoId={id} compacta={midiaCompacta} />
         )}
 
         <div className="relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-8 md:landscape:mt-0 rounded-t-[2.5rem] md:landscape:rounded-none z-10 transition-colors duration-300 overflow-hidden">
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pt-8 pb-4 hide-scrollbar">
+          <div
+            ref={painelScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pt-8 pb-4 hide-scrollbar"
+          >
             {exibirConteudoProduto && produto ? (
               <>
                 <div className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-4 mb-2 bg-gray-50/95 dark:bg-[#181a1b]/95 backdrop-blur-md">
                   <h1 className="text-2xl md:landscape:text-4xl font-bold text-gray-900 dark:text-white mb-2 leading-tight transition-colors">
                     {produto.nome}
                   </h1>
+
+                  {rotuloDisponibilidade(
+                    normalizarDisponibilidade(produto.disponibilidade),
+                  ) && (
+                    <p className="mb-2 text-xs font-bold text-amber-700 dark:text-amber-400">
+                      {rotuloDisponibilidade(
+                        normalizarDisponibilidade(produto.disponibilidade),
+                      )}
+                    </p>
+                  )}
 
                   <div className="flex items-end gap-3 flex-wrap">
                     <span className="text-3xl font-black text-[#ff5722]">

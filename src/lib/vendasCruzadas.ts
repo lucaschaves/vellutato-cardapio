@@ -24,6 +24,7 @@ export interface ProdutoOferta {
   imagem_url: string | null;
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
+  disponibilidade?: string | null;
 }
 
 export interface OfertaVendaCruzada {
@@ -94,7 +95,7 @@ export async function buscarOfertasVendaCruzada(
       id, tipo, valor_desconto, mensagem_oferta, alvo_produto_id,
       produtos!vendas_cruzadas_alvo_produto_id_fkey (
         id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url,
-        controlar_estoque, quantidade_estoque
+        controlar_estoque, quantidade_estoque, disponibilidade
       )
     `,
     )

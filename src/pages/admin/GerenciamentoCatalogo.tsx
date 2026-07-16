@@ -36,6 +36,9 @@ export function GerenciamentoCatalogo() {
   const [emPromocao, setEmPromocao] = useState(false);
   const [ativo, setAtivo] = useState(true);
   const [tipo, setTipo] = useState<"simples" | "combo">("simples");
+  const [disponibilidade, setDisponibilidade] = useState<
+    "loja" | "levar" | "ambos"
+  >("ambos");
 
   const [imagemFila, setImagemFila] = useState<File | null>(null);
   const [videoFila, setVideoFila] = useState<File | null>(null);
@@ -95,6 +98,11 @@ export function GerenciamentoCatalogo() {
         setEmPromocao(data.em_promocao);
         setAtivo(data.ativo);
         setTipo(data.tipo === "combo" ? "combo" : "simples");
+        setDisponibilidade(
+          data.disponibilidade === "loja" || data.disponibilidade === "levar"
+            ? data.disponibilidade
+            : "ambos",
+        );
         setImagemUrlAtual(data.imagem_url);
         setVideoUrlAtual(data.video_url);
         setImagemFila(null);
@@ -122,6 +130,7 @@ export function GerenciamentoCatalogo() {
     setEmPromocao(false);
     setAtivo(true);
     setTipo("simples");
+    setDisponibilidade("ambos");
     setImagemFila(null);
     setVideoFila(null);
     setImagemUrlAtual(null);
@@ -220,6 +229,7 @@ export function GerenciamentoCatalogo() {
           : 0,
         ativo,
         tipo,
+        disponibilidade,
       };
 
       if (modoEdicao && produtoEditandoId) {
@@ -318,6 +328,26 @@ export function GerenciamentoCatalogo() {
                 Combos.
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+              Disponibilidade
+            </label>
+            <select
+              value={disponibilidade}
+              onChange={(e) => {
+                const valor = e.target.value;
+                setDisponibilidade(
+                  valor === "loja" || valor === "levar" ? valor : "ambos",
+                );
+              }}
+              className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+            >
+              <option value="ambos">Loja e levar</option>
+              <option value="loja">Só para comer aqui</option>
+              <option value="levar">Só para levar</option>
+            </select>
           </div>
 
           <div>

@@ -5,8 +5,6 @@ import {
   Maximize,
   Minimize,
   Play,
-  ShoppingBag,
-  Store,
   Tag,
   UserCircle,
 } from "lucide-react";
@@ -24,7 +22,7 @@ import {
   salvarCelularLocalStorage,
   telefoneDigitosCompleto,
 } from "../../lib/telefone";
-import { lerContextoCardapio } from "../../lib/modoCardapio";
+
 const VIDEO_ENV = import.meta.env.VITE_VIDEO_DIVULGACAO as string | undefined;
 
 export function BemVindo() {
@@ -44,16 +42,6 @@ export function BemVindo() {
   const [clienteReconhecido, setClienteReconhecido] = useState(false);
   const ultimoCelularBuscado = useRef("");
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
-
-  useEffect(() => {
-    const contexto = lerContextoCardapio(location.search);
-    if (contexto.tipo === "padrao") return;
-
-    if (contexto.tipoConsumoForcado) {
-      localStorage.setItem("tipo_consumo", contexto.tipoConsumoForcado);
-    }
-    navigate(`/cardapio${location.search}`, { replace: true });
-  }, [location.search, navigate]);
 
   useEffect(() => {
     if (VIDEO_ENV) return;
@@ -80,7 +68,7 @@ export function BemVindo() {
       }
     }
 
-    carregarVideoDivulgacao();
+    void carregarVideoDivulgacao();
   }, []);
 
   const reconhecerClientePorTelefone = async (celularFormatado: string) => {
@@ -119,11 +107,6 @@ export function BemVindo() {
     void reconhecerClientePorTelefone(valor);
   };
 
-  const selecionarConsumo = (tipo: "loja" | "viagem") => {
-    localStorage.setItem("tipo_consumo", tipo);
-    setEtapa(2);
-  };
-
   const podeContinuar =
     nome.trim().length > 0 && telefoneDigitosCompleto(celular);
 
@@ -140,6 +123,7 @@ export function BemVindo() {
       localStorage.removeItem("cliente_celular");
     }
 
+    localStorage.removeItem("tipo_consumo");
     await prepararNavegacaoComTelaCheia();
     navigate(`/cardapio${location.search}`);
   };
@@ -218,88 +202,15 @@ export function BemVindo() {
           {etapa === 1 && (
             <motion.div
               key="etapa-1"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              className="w-full max-w-md bg-white dark:bg-[#181a1b] backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-gray-200 dark:border-[#2a2c30]"
-            >
-              <div className="text-center mb-8">
-                <h1 className="text-3xl md:text-4xl font-black font-serif italic tracking-tight bg-gradient-to-r from-[#ff5722] to-orange-400 bg-clip-text text-transparent mb-3">
-                  Vellutato
-                </h1>
-                <p className="text-gray-700 dark:text-gray-300 text-lg md:text-xl font-semibold leading-snug">
-                  Como podemos te atender hoje?
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                <button
-                  type="button"
-                  onClick={() => selecionarConsumo("loja")}
-                  className="flex items-center gap-4 p-5 md:p-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-white dark:bg-[#242629] text-gray-900 dark:text-gray-100 shadow-sm hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 transition-all active:scale-[0.98] group"
-                >
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#1a1c1e] text-[#ff5722] group-hover:border-[#ff5722]/30 group-hover:bg-[#ff5722]/10 transition-colors">
-                    <Store size={30} strokeWidth={2} />
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <span className="block font-bold text-xl md:text-2xl leading-tight">
-                      Comer na Loja
-                    </span>
-                    <span className="block mt-1 text-sm md:text-base text-gray-600 dark:text-gray-400 leading-snug">
-                      Servido em pratos e bandejas
-                    </span>
-                  </div>
-                  <ArrowRight
-                    size={22}
-                    className="shrink-0 text-gray-400 group-hover:text-[#ff5722] transition-colors"
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => selecionarConsumo("viagem")}
-                  className="flex items-center gap-4 p-5 md:p-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-white dark:bg-[#242629] text-gray-900 dark:text-gray-100 shadow-sm hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 transition-all active:scale-[0.98] group"
-                >
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#1a1c1e] text-[#ff5722] group-hover:border-[#ff5722]/30 group-hover:bg-[#ff5722]/10 transition-colors">
-                    <ShoppingBag size={30} strokeWidth={2} />
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <span className="block font-bold text-xl md:text-2xl leading-tight">
-                      Para Levar
-                    </span>
-                    <span className="block mt-1 text-sm md:text-base text-gray-600 dark:text-gray-400 leading-snug">
-                      Embalado para viagem
-                    </span>
-                  </div>
-                  <ArrowRight
-                    size={22}
-                    className="shrink-0 text-gray-400 group-hover:text-[#ff5722] transition-colors"
-                  />
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setEtapa(0)}
-                className="w-full mt-6 py-3 text-sm md:text-base font-semibold text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-              >
-                Voltar ao vídeo
-              </button>
-            </motion.div>
-          )}
-
-          {etapa === 2 && (
-            <motion.div
-              key="etapa-2"
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
-              className="w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30] mt-[-10vh]"
+              className="w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
             >
               <div className="flex items-start gap-3 mb-2">
                 <button
                   type="button"
-                  onClick={() => setEtapa(1)}
+                  onClick={() => setEtapa(0)}
                   className="p-2 bg-gray-100 dark:bg-[#242629] rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0 mt-0.5"
                 >
                   <ArrowRight size={20} className="rotate-180" />
@@ -316,7 +227,7 @@ export function BemVindo() {
                     />
                     <span>
                       Identifique-se para desbloquear cupons e descontos
-                      exclusivos.
+                      exclusivos. Opcional.
                     </span>
                   </p>
                 </div>

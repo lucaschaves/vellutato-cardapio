@@ -217,6 +217,7 @@ export type Database = {
           preco_unitario: number
           produto_id: string
           quantidade: number
+          modo_consumo: string
         }
         Insert: {
           criado_em?: string
@@ -226,6 +227,7 @@ export type Database = {
           preco_unitario: number
           produto_id: string
           quantidade: number
+          modo_consumo?: string
         }
         Update: {
           criado_em?: string
@@ -235,6 +237,7 @@ export type Database = {
           preco_unitario?: number
           produto_id?: string
           quantidade?: number
+          modo_consumo?: string
         }
         Relationships: [
           {
@@ -511,6 +514,7 @@ export type Database = {
           preco_promocional: number | null
           quantidade_estoque: number
           tipo: Database["public"]["Enums"]["tipo_produto"]
+          disponibilidade: Database["public"]["Enums"]["disponibilidade_produto"]
           video_url: string | null
         }
         Insert: {
@@ -527,6 +531,7 @@ export type Database = {
           preco_promocional?: number | null
           quantidade_estoque?: number
           tipo?: Database["public"]["Enums"]["tipo_produto"]
+          disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           video_url?: string | null
         }
         Update: {
@@ -543,6 +548,7 @@ export type Database = {
           preco_promocional?: number | null
           quantidade_estoque?: number
           tipo?: Database["public"]["Enums"]["tipo_produto"]
+          disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           video_url?: string | null
         }
         Relationships: [
@@ -647,6 +653,7 @@ export type Database = {
     Enums: {
       tipo_origem_pedido: "mesa" | "balcao"
       tipo_produto: "simples" | "combo"
+      disponibilidade_produto: "loja" | "levar" | "ambos"
       tipo_status_pedido:
         | "pendente"
         | "em_producao"
@@ -783,6 +790,7 @@ export const Constants = {
     Enums: {
       tipo_origem_pedido: ["mesa", "balcao"],
       tipo_produto: ["simples", "combo"],
+      disponibilidade_produto: ["loja", "levar", "ambos"],
       tipo_status_pedido: [
         "pendente",
         "em_producao",
