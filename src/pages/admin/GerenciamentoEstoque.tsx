@@ -41,6 +41,7 @@ interface ProdutoEstoque {
   quantidade_estoque: number;
   categoria_id: string;
   video_url: string | null;
+  adicional_obrigatorio: boolean;
   categorias: { nome: string } | null;
 }
 
@@ -78,6 +79,7 @@ export function GerenciamentoEstoque() {
           `
           id, nome, descricao, imagem_url, preco, preco_promocional, em_promocao,
           ativo, controlar_estoque, quantidade_estoque, categoria_id, video_url,
+          adicional_obrigatorio,
           categorias ( nome )
         `,
         )
@@ -194,6 +196,41 @@ export function GerenciamentoEstoque() {
       setProdutoAtivo(null); // Aborta a abertura
     } finally {
       setCarregandoModal(false);
+    }
+  };
+
+  const alternarAdicionalObrigatorio = async () => {
+    if (!produtoAtivo) return;
+
+    const novoValor = !produtoAtivo.adicional_obrigatorio;
+
+    try {
+      const { error } = await supabase
+        .from("produtos")
+        .update({ adicional_obrigatorio: novoValor })
+        .eq("id", produtoAtivo.id);
+
+      if (error) throw new Error(error.message);
+
+      setProdutoAtivo({ ...produtoAtivo, adicional_obrigatorio: novoValor });
+      setProdutos((prev) =>
+        prev.map((p) =>
+          p.id === produtoAtivo.id
+            ? { ...p, adicional_obrigatorio: novoValor }
+            : p,
+        ),
+      );
+      toast.success(
+        novoValor
+          ? "Escolha de adicional agora é obrigatória neste produto."
+          : "Escolha de adicional voltou a ser opcional.",
+      );
+    } catch (erro: any) {
+      console.error(
+        "[ERRO - VÍNCULOS] Falha ao atualizar obrigatoriedade:",
+        erro.message || erro,
+      );
+      toast.error("Erro ao salvar. Tente novamente.");
     }
   };
 
@@ -480,6 +517,23 @@ export function GerenciamentoEstoque() {
               </div>
 
               <div className="p-5 overflow-y-auto flex-1">
+                <div className="mb-4 flex items-center justify-between p-3 rounded-xl border border-cookie-primary/30 bg-cookie-primary/5">
+                  <div>
+                    <p className="font-semibold text-sm dark:text-gray-200">
+                      Escolha obrigatória
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Cliente precisa escolher 1 adicional para pedir este
+                      produto.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={produtoAtivo.adicional_obrigatorio}
+                    onCheckedChange={() => void alternarAdicionalObrigatorio()}
+                    className="data-[state=checked]:bg-cookie-primary"
+                  />
+                </div>
+
                 {carregandoModal ? (
                   <div className="flex justify-center py-10">
                     <Loader2

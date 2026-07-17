@@ -1,4 +1,15 @@
-import { Copy, Loader2, Pencil, PlusCircle, QrCode, Trash2 } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Loader2,
+  Pencil,
+  PlusCircle,
+  Printer,
+  QrCode,
+  Trash2,
+  X,
+} from "lucide-react";
+import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
@@ -35,6 +46,9 @@ export function GerenciamentoMesas() {
   const [numero, setNumero] = useState("");
   const [apelido, setApelido] = useState("");
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [mesaQr, setMesaQr] = useState<Mesa | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [gerandoQr, setGerandoQr] = useState(false);
 
   useEffect(() => {
     void carregarMesas();
@@ -167,6 +181,92 @@ export function GerenciamentoMesas() {
     }
   };
 
+  const abrirQrCode = async (mesa: Mesa) => {
+    try {
+      setGerandoQr(true);
+      setMesaQr(mesa);
+      setQrDataUrl(null);
+      const url = urlCardapioMesa(mesa.numero);
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 512,
+        margin: 2,
+        errorCorrectionLevel: "M",
+        color: { dark: "#111111", light: "#ffffff" },
+      });
+      setQrDataUrl(dataUrl);
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - QR CODE]", mensagem);
+      toast.error("Não foi possível gerar o QR Code.");
+      setMesaQr(null);
+    } finally {
+      setGerandoQr(false);
+    }
+  };
+
+  const fecharQrCode = () => {
+    setMesaQr(null);
+    setQrDataUrl(null);
+  };
+
+  const baixarQrCode = () => {
+    if (!mesaQr || !qrDataUrl) return;
+    const link = document.createElement("a");
+    link.href = qrDataUrl;
+    link.download = `mesa-${mesaQr.numero}-qrcode.png`;
+    link.click();
+    toast.success("QR Code baixado!");
+  };
+
+  const imprimirQrCode = () => {
+    if (!mesaQr || !qrDataUrl) return;
+    const titulo = mesaQr.apelido
+      ? `Mesa ${mesaQr.numero} — ${mesaQr.apelido}`
+      : `Mesa ${mesaQr.numero}`;
+    const url = urlCardapioMesa(mesaQr.numero);
+    const janela = window.open("", "_blank", "noopener,noreferrer,width=480,height=720");
+    if (!janela) {
+      toast.error("Permita pop-ups para imprimir o QR Code.");
+      return;
+    }
+    janela.document.write(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>${titulo}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      text-align: center;
+      color: #111;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    p.sub { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    img { width: 280px; height: 280px; }
+    p.url { margin-top: 1rem; font-size: 0.7rem; color: #888; word-break: break-all; max-width: 320px; }
+    @media print {
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${titulo}</h1>
+  <p class="sub">Escaneie para abrir o cardápio</p>
+  <img src="${qrDataUrl}" alt="QR Code ${titulo}" />
+  <p class="url">${url}</p>
+  <script>window.onload = () => { window.print(); };<\/script>
+</body>
+</html>`);
+    janela.document.close();
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
@@ -270,6 +370,15 @@ export function GerenciamentoMesas() {
                           type="button"
                           variant="ghost"
                           size="icon"
+                          title="Gerar QR Code"
+                          onClick={() => void abrirQrCode(mesa)}
+                        >
+                          <QrCode size={16} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => iniciarEdicao(mesa)}
                         >
                           <Pencil size={16} />
@@ -290,6 +399,89 @@ export function GerenciamentoMesas() {
               )}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {mesaQr && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={fecharQrCode}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`QR Code da mesa ${mesaQr.numero}`}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Mesa {mesaQr.numero}
+                </h2>
+                {mesaQr.apelido && (
+                  <p className="text-sm text-gray-500">{mesaQr.apelido}</p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={fecharQrCode}
+                aria-label="Fechar"
+              >
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="flex flex-col items-center gap-3">
+              {gerandoQr || !qrDataUrl ? (
+                <div className="flex h-64 w-64 items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-900">
+                  <Loader2 className="animate-spin text-cookie-primary" size={32} />
+                </div>
+              ) : (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR Code mesa ${mesaQr.numero}`}
+                  className="h-64 w-64 rounded-xl border border-gray-200 dark:border-gray-700 bg-white"
+                />
+              )}
+              <p className="text-xs text-gray-500 text-center break-all px-2">
+                {urlCardapioMesa(mesaQr.numero)}
+              </p>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!qrDataUrl}
+                onClick={baixarQrCode}
+              >
+                <Download size={16} className="mr-2" />
+                Baixar PNG
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!qrDataUrl}
+                onClick={imprimirQrCode}
+              >
+                <Printer size={16} className="mr-2" />
+                Imprimir
+              </Button>
+              <Button
+                type="button"
+                className="col-span-2"
+                disabled={!qrDataUrl}
+                onClick={() => void copiarLink(mesaQr.numero)}
+              >
+                <Copy size={16} className="mr-2" />
+                Copiar link
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

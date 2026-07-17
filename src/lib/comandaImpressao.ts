@@ -255,49 +255,76 @@ function cabecalhoComum(opts: {
   return linhas;
 }
 
+function linhasDeUmItem(
+  item: ItemComandaImpressao,
+  { destacarPreco }: { destacarPreco: boolean },
+): string[] {
+  const linhas: string[] = [];
+
+  linhas.push(...envolver(`${item.quantidade}x ${item.nome.toUpperCase()}`));
+
+  for (const escolha of item.combo_escolhas) {
+    const delta =
+      escolha.delta_preco > 0
+        ? ` (+${formatarMoeda(escolha.delta_preco)})`
+        : "";
+    linhas.push(...envolver(`  ${escolha.grupo}: ${escolha.produto}${delta}`));
+  }
+
+  for (const adc of item.adicionais) {
+    const preco = adc.preco > 0 ? ` (+${formatarMoeda(adc.preco)})` : "";
+    linhas.push(...envolver(`  + ${adc.nome}${preco}`));
+  }
+
+  if (item.observacoes) {
+    linhas.push(...envolver(`  OBS: ${item.observacoes.toUpperCase()}`));
+  }
+
+  if (destacarPreco) {
+    linhas.push(linhaDoisLados("  ", formatarMoeda(item.preco_linha)));
+  }
+
+  return linhas;
+}
+
 function linhasDosItens(
   itens: ItemComandaImpressao[],
   { destacarPreco }: { destacarPreco: boolean },
 ): string[] {
   const linhas: string[] = [];
-  const ordenados = [
-    ...itens.filter((i) => i.para_levar),
-    ...itens.filter((i) => !i.para_levar),
+  const grupos: Array<{
+    paraLevar: boolean;
+    titulo: string[];
+    itens: ItemComandaImpressao[];
+  }> = [
+    {
+      paraLevar: true,
+      titulo: [
+        repetir("*"),
+        centralizar(">>> PARA LEVAR <<<"),
+        repetir("*"),
+      ],
+      itens: itens.filter((i) => i.para_levar),
+    },
+    {
+      paraLevar: false,
+      titulo: [centralizar("-- COMER NA LOJA --"), repetir("-")],
+      itens: itens.filter((i) => !i.para_levar),
+    },
   ];
 
-  for (const item of ordenados) {
-    if (item.para_levar) {
-      linhas.push(repetir("*"));
-      linhas.push(centralizar(">>> PARA LEVAR <<<"));
-      linhas.push(repetir("*"));
-    } else {
-      linhas.push(centralizar("-- COMER NA LOJA --"));
-    }
+  for (const grupo of grupos) {
+    if (grupo.itens.length === 0) continue;
 
-    linhas.push(...envolver(`${item.quantidade}x ${item.nome.toUpperCase()}`));
+    linhas.push(...grupo.titulo);
 
-    for (const escolha of item.combo_escolhas) {
-      const delta =
-        escolha.delta_preco > 0
-          ? ` (+${formatarMoeda(escolha.delta_preco)})`
-          : "";
-      linhas.push(
-        ...envolver(`  ${escolha.grupo}: ${escolha.produto}${delta}`),
-      );
-    }
+    grupo.itens.forEach((item, indice) => {
+      linhas.push(...linhasDeUmItem(item, { destacarPreco }));
+      if (indice < grupo.itens.length - 1) {
+        linhas.push(repetir("."));
+      }
+    });
 
-    for (const adc of item.adicionais) {
-      const preco = adc.preco > 0 ? ` (+${formatarMoeda(adc.preco)})` : "";
-      linhas.push(...envolver(`  + ${adc.nome}${preco}`));
-    }
-
-    if (item.observacoes) {
-      linhas.push(...envolver(`  OBS: ${item.observacoes.toUpperCase()}`));
-    }
-
-    if (destacarPreco) {
-      linhas.push(linhaDoisLados("  ", formatarMoeda(item.preco_linha)));
-    }
     linhas.push(repetir("-"));
   }
 

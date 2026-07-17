@@ -45,6 +45,7 @@ interface ProdutoDetalhe {
   quantidade_estoque?: number;
   tipo?: "simples" | "combo";
   disponibilidade?: DisponibilidadeProduto;
+  adicional_obrigatorio?: boolean;
 }
 
 interface Adicional {
@@ -137,7 +138,7 @@ function SkeletonColunaMidia({
   return (
     <div
       className={`relative w-full shrink-0 flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] transition-[height] duration-300 ease-out md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 ${
-        compacta ? "h-[30%]" : "h-[50%]"
+        compacta ? "h-[15%]" : "h-[50%]"
       }`}
     >
       {produtoId ? (
@@ -153,7 +154,7 @@ function SkeletonColunaMidia({
 
 function SkeletonDetalhesProduto() {
   return (
-    <div className="mb-8 space-y-4 animate-pulse">
+    <div className="pt-8 mb-8 space-y-4 animate-pulse">
       <div className="h-8 md:landscape:h-10 bg-gray-200 dark:bg-[#2a2c30] rounded-xl w-4/5" />
       <div className="flex items-end gap-3">
         <div className="h-9 bg-gray-200 dark:bg-[#2a2c30] rounded-lg w-28" />
@@ -238,7 +239,7 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   return (
     <div
       className={`relative w-full shrink-0 flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] transition-[height] duration-300 ease-out md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 ${
-        compacta ? "h-[30%]" : "h-[50%]"
+        compacta ? "h-[15%]" : "h-[50%]"
       }`}
     >
       {transicaoEntradaConcluida ? (
@@ -432,11 +433,10 @@ export function VisualizadorReels() {
     }
   }, [modalPosAdicionarAberto, ofertasPendentes.length, location.search, navigate]);
 
+  // Apenas 1 adicional por item: tocar no mesmo desmarca, em outro troca.
   const alternarAdicional = (adc: Adicional) => {
     setAdicionaisSelecionados((prev) =>
-      prev.some((item) => item.id === adc.id)
-        ? prev.filter((item) => item.id !== adc.id)
-        : [...prev, adc],
+      prev.some((item) => item.id === adc.id) ? [] : [adc],
     );
   };
 
@@ -510,6 +510,16 @@ export function VisualizadorReels() {
         toast.error(erroCombo);
         return;
       }
+    }
+    if (
+      produto.adicional_obrigatorio &&
+      adicionaisDisponiveis.length > 0 &&
+      adicionaisSelecionados.length === 0
+    ) {
+      toast.error(
+        "Escolha um adicional em \u201CTurbine o seu pedido\u201D para continuar.",
+      );
+      return;
     }
     adicionarAoCarrinho({
       produtoId: produto.id,
@@ -656,31 +666,50 @@ export function VisualizadorReels() {
         <div className="relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-8 md:landscape:mt-0 rounded-t-[2.5rem] md:landscape:rounded-none z-10 transition-colors duration-300 overflow-hidden">
           <div
             ref={painelScrollRef}
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pt-8 pb-4 hide-scrollbar"
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-4 hide-scrollbar"
           >
             {exibirConteudoProduto && produto ? (
               <>
-                <div className="sticky top-0 z-20 -mx-6 px-6 pt-2 pb-4 mb-2 bg-gray-50/95 dark:bg-[#181a1b]/95 backdrop-blur-md">
-                  <h1 className="text-2xl md:landscape:text-4xl font-bold text-gray-900 dark:text-white mb-2 leading-tight transition-colors">
+                <div
+                  className={`sticky top-0 z-20 -mx-6 px-6 mb-2 bg-gray-50 dark:bg-[#181a1b] transition-all duration-300 ${
+                    midiaCompacta ? "pt-3 pb-2" : "pt-10 pb-4"
+                  }`}
+                >
+                  <h1
+                    className={`font-bold text-gray-900 dark:text-white leading-tight transition-all duration-300 ${
+                      midiaCompacta
+                        ? "text-base md:landscape:text-2xl mb-1"
+                        : "text-2xl md:landscape:text-4xl mb-2"
+                    }`}
+                  >
                     {produto.nome}
                   </h1>
 
-                  {rotuloDisponibilidade(
-                    normalizarDisponibilidade(produto.disponibilidade),
-                  ) && (
-                    <p className="mb-2 text-xs font-bold text-amber-700 dark:text-amber-400">
-                      {rotuloDisponibilidade(
-                        normalizarDisponibilidade(produto.disponibilidade),
-                      )}
-                    </p>
-                  )}
+                  {!midiaCompacta &&
+                    rotuloDisponibilidade(
+                      normalizarDisponibilidade(produto.disponibilidade),
+                    ) && (
+                      <p className="mb-2 text-xs font-bold text-amber-700 dark:text-amber-400">
+                        {rotuloDisponibilidade(
+                          normalizarDisponibilidade(produto.disponibilidade),
+                        )}
+                      </p>
+                    )}
 
                   <div className="flex items-end gap-3 flex-wrap">
-                    <span className="text-3xl font-black text-[#ff5722]">
+                    <span
+                      className={`font-black text-[#ff5722] transition-all duration-300 ${
+                        midiaCompacta ? "text-lg" : "text-3xl"
+                      }`}
+                    >
                       R$ {(precoAtivo + deltaCombo).toFixed(2)}
                     </span>
                     {produto.em_promocao && (
-                      <span className="text-lg font-medium text-gray-500 dark:text-gray-500 line-through mb-1">
+                      <span
+                        className={`font-medium text-gray-500 dark:text-gray-500 line-through transition-all duration-300 ${
+                          midiaCompacta ? "text-xs mb-0.5" : "text-lg mb-1"
+                        }`}
+                      >
                         R$ {produto.preco.toFixed(2)}
                       </span>
                     )}
@@ -886,7 +915,16 @@ export function VisualizadorReels() {
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-4">
                   <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest transition-colors">
-                    Turbine o seu pedido
+                    Turbine o seu pedido{" "}
+                    {produto?.adicional_obrigatorio ? (
+                      <span className="normal-case font-bold text-[#ff5722] tracking-normal">
+                        (escolha 1 · obrigatório)
+                      </span>
+                    ) : (
+                      <span className="normal-case font-medium text-gray-400 dark:text-gray-500 tracking-normal">
+                        (escolha 1)
+                      </span>
+                    )}
                   </h2>
                   <div className="h-[1px] flex-1 bg-gray-200 dark:bg-[#2a2c30] transition-colors"></div>
                 </div>

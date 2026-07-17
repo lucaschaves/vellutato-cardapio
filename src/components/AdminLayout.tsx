@@ -2,6 +2,7 @@ import {
   BarChart3,
   Calculator,
   ChefHat,
+  Clock,
   FolderTree,
   GitBranch,
   History,
@@ -10,6 +11,7 @@ import {
   LayoutGrid,
   LogOut,
   Menu,
+  MessageCircle,
   Package,
   Ticket,
   QrCode,
@@ -23,20 +25,49 @@ import { ImpressaoAdminProvider } from "../context/ImpressaoAdminContext";
 import { useAuth } from "../context/AuthContext";
 import { BotaoInstalarPwa } from "./BotaoInstalarPwa";
 
-const ITENS_NAVEGACAO = [
-  { to: "/admin/dashboard", rotulo: "Dashboard", icone: BarChart3 },
-  { to: "/admin/pedidos", rotulo: "KDS / Fila", icone: LayoutGrid },
-  { to: "/admin/historico", rotulo: "Histórico", icone: History },
-  { to: "/admin/caixa", rotulo: "Caixa", icone: Calculator },
-  { to: "/admin/estoque", rotulo: "Estoque", icone: Package },
-  { to: "/admin/catalogo", rotulo: "Catálogo", icone: ChefHat },
-  { to: "/admin/categorias", rotulo: "Categorias", icone: FolderTree },
-  { to: "/admin/mesas", rotulo: "Mesas", icone: QrCode },
-  { to: "/admin/adicionais", rotulo: "Adicionais", icone: IceCream },
-  { to: "/admin/combos", rotulo: "Combos", icone: Layers },
-  { to: "/admin/clientes", rotulo: "Clientes", icone: Users },
-  { to: "/admin/cupons", rotulo: "Cupons", icone: Ticket },
-  { to: "/admin/vendas-cruzadas", rotulo: "Vendas cruzadas", icone: GitBranch },
+const GRUPOS_NAVEGACAO = [
+  {
+    titulo: "Visão geral",
+    itens: [{ to: "/admin/dashboard", rotulo: "Dashboard", icone: BarChart3 }],
+  },
+  {
+    titulo: "Produção",
+    itens: [
+      { to: "/admin/pedidos", rotulo: "KDS / Fila", icone: LayoutGrid },
+      { to: "/admin/historico", rotulo: "Histórico", icone: History },
+      { to: "/admin/caixa", rotulo: "Caixa", icone: Calculator },
+      { to: "/admin/funcionamento", rotulo: "Funcionamento", icone: Clock },
+    ],
+  },
+  {
+    titulo: "Cadastro",
+    itens: [
+      { to: "/admin/catalogo", rotulo: "Catálogo", icone: ChefHat },
+      { to: "/admin/categorias", rotulo: "Categorias", icone: FolderTree },
+      { to: "/admin/adicionais", rotulo: "Adicionais", icone: IceCream },
+      { to: "/admin/combos", rotulo: "Combos", icone: Layers },
+      { to: "/admin/estoque", rotulo: "Estoque", icone: Package },
+      { to: "/admin/mesas", rotulo: "Mesas", icone: QrCode },
+    ],
+  },
+  {
+    titulo: "Clientes",
+    itens: [
+      { to: "/admin/clientes", rotulo: "Clientes", icone: Users },
+      { to: "/admin/mensagens", rotulo: "Mensagens", icone: MessageCircle },
+    ],
+  },
+  {
+    titulo: "Promoções",
+    itens: [
+      { to: "/admin/cupons", rotulo: "Cupons", icone: Ticket },
+      {
+        to: "/admin/vendas-cruzadas",
+        rotulo: "Vendas cruzadas",
+        icone: GitBranch,
+      },
+    ],
+  },
 ] as const;
 
 export function AdminLayout() {
@@ -66,7 +97,7 @@ export function AdminLayout() {
 
   return (
     <ImpressaoAdminProvider>
-    <div className="min-h-screen bg-gray-50 dark:bg-background-dark flex">
+    <div className="h-screen overflow-hidden bg-gray-50 dark:bg-background-dark flex">
       {menuMobileAberto && (
         <button
           type="button"
@@ -98,17 +129,24 @@ export function AdminLayout() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1 hide-scrollbar">
-          {ITENS_NAVEGACAO.map(({ to, rotulo, icone: Icone }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={classeLink}
-              onClick={fecharMenuMobile}
-            >
-              <Icone size={18} className="shrink-0" />
-              <span>{rotulo}</span>
-            </NavLink>
+        <nav className="flex-1 overflow-y-auto p-3 space-y-4 hide-scrollbar">
+          {GRUPOS_NAVEGACAO.map((grupo) => (
+            <div key={grupo.titulo} className="space-y-1">
+              <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                {grupo.titulo}
+              </p>
+              {grupo.itens.map(({ to, rotulo, icone: Icone }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={classeLink}
+                  onClick={fecharMenuMobile}
+                >
+                  <Icone size={18} className="shrink-0" />
+                  <span>{rotulo}</span>
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
@@ -143,7 +181,7 @@ export function AdminLayout() {
           </span>
         </header>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 min-h-0 overflow-y-auto">
           <Outlet />
         </main>
       </div>

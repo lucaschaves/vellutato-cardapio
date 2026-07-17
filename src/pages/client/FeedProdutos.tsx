@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { version } from "../../../package.json";
 import { CarrinhoLateral } from "../../components/CarrinhoLateral";
+import { InatividadeToten } from "../../components/InatividadeToten";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { formatarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
@@ -28,7 +29,12 @@ import {
 } from "../../lib/disponibilidadeProduto";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
 import { produtoEstaEsgotado } from "../../lib/estoque";
-import { lerContextoCardapio } from "../../lib/modoCardapio";
+import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
+import {
+  emModoToten,
+  lerContextoCardapio,
+  limparIdentificacaoCliente,
+} from "../../lib/modoCardapio";
 import {
   lerEscalaFonte,
   lerTemaEscuro,
@@ -51,6 +57,8 @@ interface Produto {
   id: string;
   nome: string;
   descricao?: string;
+  preco: number;
+  preco_promocional?: number | null;
   imagem_url: string;
   categoria_id: string;
   ativo: boolean;
@@ -142,6 +150,23 @@ export function FeedProdutos() {
   const [quantidadeErros, setQuantidadeErros] = useState(() =>
     obterQuantidadeErros(),
   );
+  const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
+
+  // Status da loja (horário de funcionamento) — atualiza a cada minuto
+  useEffect(() => {
+    let ativo = true;
+    const consultar = () => {
+      void buscarStatusLoja().then((status) => {
+        if (ativo) setStatusLoja(status);
+      });
+    };
+    consultar();
+    const intervalo = window.setInterval(consultar, 60_000);
+    return () => {
+      ativo = false;
+      window.clearInterval(intervalo);
+    };
+  }, []);
 
   useEffect(() => {
     salvarTemaEscuro(temaEscuro);
@@ -203,8 +228,7 @@ export function FeedProdutos() {
 
   const confirmarVoltarHome = () => {
     limparCarrinho();
-    localStorage.removeItem("cliente_nome");
-    localStorage.removeItem("cliente_celular");
+    limparIdentificacaoCliente();
     localStorage.removeItem("tipo_consumo");
     setCarrinhoAberto(false);
     setModalVoltarHomeAberto(false);
@@ -216,12 +240,19 @@ export function FeedProdutos() {
     const etiquetaDisp = rotuloDisponibilidade(
       normalizarDisponibilidade(produto.disponibilidade),
     );
+    const temPromocao =
+      produto.em_promocao &&
+      produto.preco_promocional != null &&
+      produto.preco_promocional > 0;
+    const precoExibido = temPromocao
+      ? (produto.preco_promocional as number)
+      : produto.preco;
 
     return (
       <motion.article
         key={produto.id}
         onClick={() => navigate(urlItemProduto(produto.id, location.search))}
-        className={`bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer active:scale-[0.98] transition-all group ${esgotado ? "opacity-75" : ""}`}
+        className={`bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer select-none active:scale-[0.98] transition-all group ${esgotado ? "opacity-75" : ""}`}
       >
         <motion.div
           layoutId={`produto-midia-${produto.id}`}
@@ -269,7 +300,24 @@ export function FeedProdutos() {
             {produto.nome}
           </h3>
 
-          <p className="text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium whitespace-pre-line">
+          <p className="md:hidden text-sm font-extrabold text-[#ff5722] leading-snug">
+            {esgotado ? (
+              <span className="text-gray-500 dark:text-gray-400 font-medium">
+                Indisponível no momento.
+              </span>
+            ) : (
+              <>
+                R$ {precoExibido.toFixed(2)}
+                {temPromocao && (
+                  <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 line-through">
+                    R$ {produto.preco.toFixed(2)}
+                  </span>
+                )}
+              </>
+            )}
+          </p>
+
+          <p className="hidden md:block text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium whitespace-pre-line">
             {esgotado
               ? "Indisponível no momento."
               : formatarDescricaoComQuebras(produto.descricao) ||
@@ -316,7 +364,7 @@ export function FeedProdutos() {
               <Settings size={20} />
             </button>
 
-            {!contextoCardapio.sessaoPersistente && (
+            {!contextoCardapio.sessaoPersistente && emModoToten() && (
               <button
                 onClick={() => setModalVoltarHomeAberto(true)}
                 className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-[#ff5722] active:scale-95 transition-transform"
@@ -458,6 +506,14 @@ export function FeedProdutos() {
           )}
         </nav>
       </header>
+
+      {statusLoja && !statusLoja.aberta && (
+        <div className="sticky top-0 z-20 bg-red-600 text-white text-center text-sm font-bold px-5 py-2.5">
+          Estamos fechados no momento.
+          {statusLoja.motivo ? ` ${statusLoja.motivo}` : ""} Você pode ver o
+          cardápio, mas não é possível enviar pedidos agora.
+        </div>
+      )}
 
       {/* Grid de Produtos */}
       <main className="max-w-6xl mx-auto mt-6 px-5">
@@ -645,6 +701,8 @@ export function FeedProdutos() {
         aoConfirmar={confirmarVoltarHome}
         aoCancelar={() => setModalVoltarHomeAberto(false)}
       />
+
+      <InatividadeToten />
     </div>
   );
 }

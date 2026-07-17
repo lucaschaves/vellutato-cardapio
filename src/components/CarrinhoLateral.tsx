@@ -23,12 +23,9 @@ import {
   upsertCliente,
 } from "../lib/clientes";
 import { validarCupom } from "../lib/cupons";
-import {
-  processarPedidoPosCriacao,
-  reverterPedidoFalho,
-} from "../lib/pedidos";
+import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
+import { buscarStatusLoja, type StatusLoja } from "../lib/lojaStatus";
 import { somarDeltasCombo } from "../lib/combos";
-import { supabase } from "../lib/supabase";
 import {
   lerCelularLocalStorage,
   normalizarTelefoneParaSalvar,
@@ -98,6 +95,21 @@ export function CarrinhoLateral({
   const [enviando, setEnviando] = useState(false);
   const [etapaMobile, setEtapaMobile] = useState<EtapaMobileCarrinho>("itens");
   const [buscandoCliente, setBuscandoCliente] = useState(false);
+  const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
+
+  // Consulta o horário de funcionamento sempre que o carrinho abre
+  useEffect(() => {
+    if (!aberto) return;
+    let ativo = true;
+    buscarStatusLoja().then((status) => {
+      if (ativo) setStatusLoja(status);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [aberto]);
+
+  const lojaFechada = statusLoja !== null && !statusLoja.aberta;
 
   useRevalidarCupomCarrinho(celularCliente, nomeCliente, aberto);
 
@@ -217,6 +229,14 @@ export function CarrinhoLateral({
     e.preventDefault();
     if (itens.length === 0) return;
 
+    // Revalida na hora do envio (o banco também bloqueia, isto é só UX)
+    const statusAtual = await buscarStatusLoja();
+    setStatusLoja(statusAtual);
+    if (statusAtual && !statusAtual.aberta) {
+      toast.error(statusAtual.motivo || "A loja está fechada no momento.");
+      return;
+    }
+
     if (!telefoneDigitosCompleto(celularCliente)) {
       toast.error("Informe um celular válido com DDD para enviar o pedido.");
       return;
@@ -261,85 +281,37 @@ export function CarrinhoLateral({
         modos: itens.map((item) => item.modoConsumo),
       });
 
-      const { data: pedido, error: errorPedido } = await supabase
-        .from("pedidos")
-        .insert({
-          cliente_nome: nomeCliente.trim(),
-          cliente_celular: celularSalvo,
-          cliente_id: clienteId,
-          cupom_id: cupomAplicado?.id || null,
-          desconto_aplicado: desconto > 0 ? desconto : null,
-          status: "pendente",
-          origem,
-          identificador,
-          total: totalPedido,
-          valor_total: subtotalPedido,
-        })
-        .select("id, sequencia_pedido")
-        .single();
-
-      if (errorPedido)
-        throw new Error(`Falha ao criar o pedido: ${errorPedido.message}`);
-
-      for (const item of itens) {
-        const { data: pedidoItem, error: errorItem } = await supabase
-          .from("pedido_itens")
-          .insert({
-            pedido_id: pedido.id,
-            produto_id: item.produtoId,
-            quantidade: item.quantidade,
-            preco_unitario: item.precoBase,
-            observacoes: item.observacoes?.trim() || null,
-            modo_consumo: item.modoConsumo,
-          })
-          .select("id")
-          .single();
-
-        if (errorItem)
-          throw new Error(`Falha ao inserir item: ${errorItem.message}`);
-
-        if (item.adicionais && item.adicionais.length > 0) {
-          const adicionais = item.adicionais.map((adc) => ({
-            pedido_item_id: pedidoItem.id,
+      // Tudo (pedido + itens + adicionais + combos + estoque + cupom) é
+      // criado numa única transação no banco. Falhou, nada fica gravado.
+      const pedido = await criarPedidoCompleto({
+        cliente_nome: nomeCliente.trim(),
+        cliente_celular: celularSalvo,
+        cliente_id: clienteId,
+        cupom_id: cupomAplicado?.id || null,
+        desconto,
+        origem,
+        identificador,
+        total: totalPedido,
+        valor_total: subtotalPedido,
+        itens: itens.map((item) => ({
+          produto_id: item.produtoId,
+          quantidade: item.quantidade,
+          preco_unitario: item.precoBase,
+          observacoes: item.observacoes?.trim() || null,
+          modo_consumo: item.modoConsumo,
+          adicionais: (item.adicionais ?? []).map((adc) => ({
             adicional_id: adc.id,
             preco_aplicado: adc.preco,
-          }));
-
-          const { error: errAdc } = await supabase
-            .from("pedido_item_adicionais")
-            .insert(adicionais);
-          if (errAdc)
-            throw new Error(`Falha ao inserir adicionais: ${errAdc.message}`);
-        }
-
-        if (item.escolhasCombo && item.escolhasCombo.length > 0) {
-          const escolhas = item.escolhasCombo.map((escolha) => ({
-            pedido_item_id: pedidoItem.id,
+          })),
+          combo_escolhas: (item.escolhasCombo ?? []).map((escolha) => ({
             grupo_id: escolha.grupoId,
             produto_escolhido_id: escolha.produtoId,
             nome_grupo: escolha.grupoNome,
             nome_produto: escolha.produtoNome,
             delta_preco: escolha.deltaPreco,
-          }));
-
-          const { error: errCombo } = await supabase
-            .from("pedido_item_combo_escolhas")
-            .insert(escolhas);
-          if (errCombo)
-            throw new Error(
-              `Falha ao inserir escolhas do combo: ${errCombo.message}`,
-            );
-        }
-      }
-
-      try {
-        await processarPedidoPosCriacao(pedido.id, cupomAplicado?.id);
-      } catch (erroPos: unknown) {
-        await reverterPedidoFalho(pedido.id);
-        const mensagem =
-          erroPos instanceof Error ? erroPos.message : String(erroPos);
-        throw new Error(mensagem);
-      }
+          })),
+        })),
+      });
 
       limparCarrinho();
       setCodigoCupom("");
@@ -359,7 +331,7 @@ export function CarrinhoLateral({
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO CRÍTICO - CHECKOUT]", mensagem);
       toast.error(
-        mensagem.includes("Estoque insuficiente")
+        erro instanceof ErroNegocioCheckout
           ? mensagem
           : "Erro ao processar o pedido. Tente novamente.",
       );
@@ -372,6 +344,12 @@ export function CarrinhoLateral({
     tamanhoTotal: "normal" | "grande" = "normal",
   ) => (
     <div className="space-y-3">
+      {lojaFechada && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
+          Estamos fechados no momento.
+          {statusLoja?.motivo ? ` ${statusLoja.motivo}` : ""}
+        </div>
+      )}
       {economiaPromocional > 0 && (
         <>
           <div className="flex justify-between text-gray-600 dark:text-gray-300 text-sm font-medium">
@@ -782,7 +760,7 @@ export function CarrinhoLateral({
                   {renderResumoFinanceiro("grande")}
                   <button
                     type="submit"
-                    disabled={itens.length === 0 || enviando}
+                    disabled={itens.length === 0 || enviando || lojaFechada}
                     className="w-full mt-4 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
                   >
                     {enviando ? (
@@ -850,7 +828,7 @@ export function CarrinhoLateral({
                 {renderResumoFinanceiro("grande")}
                 <button
                   type="submit"
-                  disabled={itens.length === 0 || enviando}
+                  disabled={itens.length === 0 || enviando || lojaFechada}
                   className="w-full mt-4 md:landscape:mt-5 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
                 >
                   {enviando ? (

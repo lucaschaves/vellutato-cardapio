@@ -7,7 +7,7 @@ export type EscalaFonte = (typeof ESCALAS_VALIDAS)[number];
 
 export function lerTemaEscuro(): boolean {
   const salvo = localStorage.getItem(CHAVE_TEMA_ESCURO);
-  if (salvo === null) return true;
+  if (salvo === null) return false;
   return salvo === "true";
 }
 

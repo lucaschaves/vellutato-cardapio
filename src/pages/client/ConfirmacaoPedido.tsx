@@ -8,8 +8,13 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { buscarStatusLoja } from "../../lib/lojaStatus";
 import { urlCardapio } from "../../lib/urlCardapio";
-import { lerContextoCardapio } from "../../lib/modoCardapio";
+import {
+  emModoToten,
+  lerContextoCardapio,
+  limparIdentificacaoCliente,
+} from "../../lib/modoCardapio";
 
 const TEMPO_REDIRECIONAMENTO_SEG = 10;
 
@@ -17,7 +22,9 @@ export function ConfirmacaoPedido() {
   const navigate = useNavigate();
   const location = useLocation();
   const contexto = lerContextoCardapio(location.search);
-  const sessaoPersistente = contexto.sessaoPersistente;
+  // Fora do totem não há motivo para voltar à tela inicial: o cliente
+  // permanece no cardápio e acompanha o pedido em "Meus pedidos".
+  const sessaoPersistente = contexto.sessaoPersistente || !emModoToten();
   const state = location.state as {
     nomeCliente?: string;
     sequenciaPedido?: number;
@@ -28,15 +35,25 @@ export function ConfirmacaoPedido() {
   const [segundosRestantes, setSegundosRestantes] = useState(
     TEMPO_REDIRECIONAMENTO_SEG,
   );
+  const [tempoPreparoMin, setTempoPreparoMin] = useState<number | null>(null);
   const redirecionouRef = useRef(false);
+
+  useEffect(() => {
+    let ativo = true;
+    void buscarStatusLoja().then((status) => {
+      if (ativo && status) setTempoPreparoMin(status.tempo_preparo_min);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const irParaTelaInicial = useCallback(() => {
     if (redirecionouRef.current) return;
     redirecionouRef.current = true;
 
     if (!sessaoPersistente) {
-      localStorage.removeItem("cliente_nome");
-      localStorage.removeItem("cliente_celular");
+      limparIdentificacaoCliente();
       localStorage.removeItem("tipo_consumo");
       navigate("/", { replace: true });
       return;
@@ -155,6 +172,8 @@ export function ConfirmacaoPedido() {
             {sessaoPersistente
               ? "Já vamos preparar. Acompanhe o status em Meus pedidos."
               : "Já vamos preparar seu pedido."}
+            {tempoPreparoMin != null &&
+              ` Tempo estimado: ~${tempoPreparoMin} min.`}
           </p>
         </div>
 

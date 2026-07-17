@@ -4,9 +4,9 @@ import {
   RouterProvider,
 } from "react-router-dom";
 import { Toaster } from "sonner";
+import { TecladoVirtualHost } from "../components/TecladoVirtual";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { TecladoVirtualHost } from "../components/TecladoVirtual";
 
 // Páginas
 import { DashboardVendas } from "@/pages/admin/DashboardVendas";
@@ -16,6 +16,8 @@ import { GerenciamentoCategorias } from "@/pages/admin/GerenciamentoCategorias";
 import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
 import { GerenciamentoCombos } from "@/pages/admin/GerenciamentoCombos";
 import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
+import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
+import { GerenciamentoMensagens } from "@/pages/admin/GerenciamentoMensagens";
 import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
 import { GerenciamentoVendasCruzadas } from "@/pages/admin/GerenciamentoVendasCruzadas";
 import { GestaoCaixa } from "@/pages/admin/GestaoCaixa";
@@ -54,20 +56,31 @@ const RotaProtegida = () => {
   return <AdminLayout />;
 };
 
+const rotasFilhasCardapio = [
+  { path: "item/:id", element: <VisualizadorReels /> },
+  { path: "pedido-enviado", element: <ConfirmacaoPedido /> },
+  { path: "meus-pedidos", element: <MeusPedidos /> },
+  { path: "erros", element: <ListaErros /> },
+];
+
 const router = createBrowserRouter([
   {
     path: "/",
     element: <BemVindo />,
   },
   {
+    path: "/cardapio-toten",
+    element: <BemVindo />,
+  },
+  {
     path: "/cardapio",
     element: <FeedProdutos />,
-    children: [
-      { path: "item/:id", element: <VisualizadorReels /> },
-      { path: "pedido-enviado", element: <ConfirmacaoPedido /> },
-      { path: "meus-pedidos", element: <MeusPedidos /> },
-      { path: "erros", element: <ListaErros /> },
-    ],
+    children: rotasFilhasCardapio,
+  },
+  {
+    path: "/cardapio-toten/cardapio",
+    element: <FeedProdutos />,
+    children: rotasFilhasCardapio,
   },
   {
     path: "/login",
@@ -88,6 +101,11 @@ const router = createBrowserRouter([
       { path: "/admin/clientes", element: <GerenciamentoClientes /> },
       { path: "/admin/clientes/:clienteId", element: <DetalheCliente /> },
       { path: "/admin/cupons", element: <GerenciamentoCupons /> },
+      { path: "/admin/mensagens", element: <GerenciamentoMensagens /> },
+      {
+        path: "/admin/funcionamento",
+        element: <GerenciamentoFuncionamento />,
+      },
       {
         path: "/admin/vendas-cruzadas",
         element: <GerenciamentoVendasCruzadas />,
@@ -107,7 +125,7 @@ export function AppRoutes() {
       <RouterProvider router={router} />
       <Toaster
         richColors
-        position={isMobile ? "bottom-left" : "top-left"}
+        position={isMobile ? "top-center" : "top-left"}
         expand={false}
         closeButton
         toastOptions={{ style: { fontFamily: "inherit" } }}

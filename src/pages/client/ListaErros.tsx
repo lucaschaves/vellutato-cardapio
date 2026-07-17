@@ -6,6 +6,7 @@ import {
   obterErros,
   type ErroRegistrado,
 } from "../../lib/errorLogger";
+import { urlCardapio } from "../../lib/urlCardapio";
 
 function formatarData(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", {
@@ -25,7 +26,7 @@ export function ListaErros() {
 
   const totalErros = useMemo(() => erros.length, [erros]);
 
-  const voltar = () => navigate(`/cardapio${location.search}`);
+  const voltar = () => navigate(urlCardapio("", location.search));
 
   const handleLimpar = () => {
     limparErros();

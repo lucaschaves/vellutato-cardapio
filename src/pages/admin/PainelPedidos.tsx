@@ -4,12 +4,22 @@ import {
   CheckCircle2,
   ChefHat,
   Clock,
+  MessageCircle,
   Printer,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
+import {
+  buscarMensagensWhatsapp,
+  MENSAGEM_WHATSAPP_PADRAO,
+  montarLinkWhatsapp,
+  preencherMensagemWhatsapp,
+  type DadosMensagemPedido,
+  type MensagemWhatsapp,
+} from "../../lib/mensagensWhatsapp";
 import { supabase } from "../../lib/supabase";
 
 // Tipagens
@@ -34,9 +44,47 @@ interface Pedido {
   origem: "mesa" | "balcao";
   identificador: string;
   cliente_nome: string;
+  cliente_celular: string | null;
+  total: number | null;
   status: "pendente" | "em_producao" | "pronto" | "entregue" | "cancelado";
   criado_em: string;
   pedido_itens: ItemPedido[];
+}
+
+const STATUS_MENSAGEM_WHATSAPP: Record<Pedido["status"], string> = {
+  pendente: "Recebemos o seu pedido e em breve ele entra no preparo.",
+  em_producao: "Seu pedido já está sendo preparado!",
+  pronto: "Seu pedido está pronto! Pode vir retirar.",
+  entregue: "Seu pedido foi entregue.",
+  cancelado: "Seu pedido foi cancelado.",
+};
+
+function dadosMensagemDoPedido(pedido: Pedido): DadosMensagemPedido {
+  const produtos = pedido.pedido_itens
+    .map((item) => {
+      const modo =
+        item.modo_consumo === "levar"
+          ? " (para levar)"
+          : item.modo_consumo === "loja"
+            ? " (na loja)"
+            : "";
+      const combos = (item.pedido_item_combo_escolhas || [])
+        .map((e) => `\n   • ${e.nome_grupo}: ${e.nome_produto}`)
+        .join("");
+      return `- ${item.quantidade}x ${item.produtos.nome}${modo}${combos}`;
+    })
+    .join("\n");
+
+  return {
+    nome: (pedido.cliente_nome || "").trim().split(" ")[0] || "cliente",
+    pedido: pedido.sequencia_pedido ?? null,
+    produtos,
+    total: `R$ ${Number(pedido.total || 0)
+      .toFixed(2)
+      .replace(".", ",")}`,
+    status: STATUS_MENSAGEM_WHATSAPP[pedido.status],
+    local: pedido.identificador || "Balcão",
+  };
 }
 
 export function PainelPedidos() {
@@ -46,6 +94,20 @@ export function PainelPedidos() {
     "conectado" | "desconectado"
   >("desconectado");
   const { impressoraOffline, imprimirPedido } = useImpressaoAdmin();
+
+  const [mensagensWhatsapp, setMensagensWhatsapp] = useState<
+    MensagemWhatsapp[]
+  >([]);
+  const [pedidoWhatsApp, setPedidoWhatsApp] = useState<Pedido | null>(null);
+
+  useEffect(() => {
+    buscarMensagensWhatsapp()
+      .then(setMensagensWhatsapp)
+      .catch((erro: unknown) => {
+        const mensagem = erro instanceof Error ? erro.message : String(erro);
+        console.error("[WHATSAPP] Falha ao carregar mensagens:", mensagem);
+      });
+  }, []);
 
   // Carrega os dados iniciais e monta o listener do Realtime
   useEffect(() => {
@@ -109,7 +171,7 @@ export function PainelPedidos() {
         .from("pedidos")
         .select(
           `
-          id, sequencia_pedido, origem, identificador, cliente_nome, status, criado_em,
+          id, sequencia_pedido, origem, identificador, cliente_nome, cliente_celular, total, status, criado_em,
           pedido_itens (
             id, quantidade, observacoes, modo_consumo,
             produtos ( nome ),
@@ -147,6 +209,33 @@ export function PainelPedidos() {
 
     if (error) toast.error(`Erro ao atualizar: ${error.message}`);
     else toast.success("Status atualizado!");
+  };
+
+  const abrirModalWhatsApp = (pedido: Pedido) => {
+    if (!montarLinkWhatsapp(pedido.cliente_celular, "x")) {
+      toast.error("Este pedido não tem celular do cliente cadastrado.");
+      return;
+    }
+    if (mensagensWhatsapp.length === 0) {
+      // Sem modelos cadastrados: envia direto a mensagem padrão do sistema
+      enviarWhatsApp(pedido, MENSAGEM_WHATSAPP_PADRAO);
+      return;
+    }
+    setPedidoWhatsApp(pedido);
+  };
+
+  const enviarWhatsApp = (pedido: Pedido, modelo: string) => {
+    const mensagem = preencherMensagemWhatsapp(
+      modelo,
+      dadosMensagemDoPedido(pedido),
+    );
+    const link = montarLinkWhatsapp(pedido.cliente_celular, mensagem);
+    if (!link) {
+      toast.error("Este pedido não tem celular do cliente cadastrado.");
+      return;
+    }
+    setPedidoWhatsApp(null);
+    window.open(link, "_blank", "noopener,noreferrer");
   };
 
   const enviarParaImpressora = async (pedido: Pedido) => {
@@ -194,6 +283,15 @@ export function PainelPedidos() {
                 <Trash2 size={18} className="text-white" />
               </button>
             )}
+          {pedido.cliente_celular && (
+            <button
+              onClick={() => abrirModalWhatsApp(pedido)}
+              className="p-2 bg-[#25D366] text-white rounded-md hover:bg-[#1ebe5b] transition-colors"
+              title="Enviar mensagem no WhatsApp"
+            >
+              <MessageCircle size={20} />
+            </button>
+          )}
           <button
             onClick={() => enviarParaImpressora(pedido)}
             className="p-2 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 transition-colors"
@@ -354,6 +452,72 @@ export function PainelPedidos() {
           </div>
         </div>
       )}
+
+      {/* Modal: escolher qual mensagem de WhatsApp enviar */}
+      <AnimatePresence>
+        {pedidoWhatsApp && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPedidoWhatsApp(null)}
+              className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900/20">
+                <div>
+                  <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                    <MessageCircle size={20} className="text-[#25D366]" />
+                    Enviar WhatsApp
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Pedido #{pedidoWhatsApp.sequencia_pedido} ·{" "}
+                    {pedidoWhatsApp.cliente_nome}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setPedidoWhatsApp(null)}
+                  className="p-2 bg-white dark:bg-gray-800 rounded-full border dark:border-gray-700 active:scale-95"
+                  aria-label="Fechar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto flex-1 space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
+                  Qual mensagem enviar?
+                </p>
+                {mensagensWhatsapp.map((mensagem) => (
+                  <button
+                    key={mensagem.id}
+                    onClick={() =>
+                      enviarWhatsApp(pedidoWhatsApp, mensagem.conteudo)
+                    }
+                    className="w-full text-left p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-[#25D366] hover:bg-[#25D366]/5 active:scale-[0.99] transition-all"
+                  >
+                    <p className="font-bold text-sm text-gray-900 dark:text-white mb-1">
+                      {mensagem.titulo}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 whitespace-pre-line">
+                      {preencherMensagemWhatsapp(
+                        mensagem.conteudo,
+                        dadosMensagemDoPedido(pedidoWhatsApp),
+                      )}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

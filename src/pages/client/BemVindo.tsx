@@ -15,7 +15,12 @@ import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
+import {
+  limparIdentificacaoCliente,
+  marcarModoToten,
+} from "../../lib/modoCardapio";
 import { prepararNavegacaoComTelaCheia } from "../../lib/telaCheia";
+import { urlCardapio } from "../../lib/urlCardapio";
 import {
   lerCelularLocalStorage,
   salvarCelularLocalStorage,
@@ -50,7 +55,9 @@ export function BemVindo() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [etapa, setEtapa] = useState(0);
+  const modoToten = location.pathname.startsWith("/cardapio-toten");
+
+  const [etapa, setEtapa] = useState(modoToten ? 0 : 1);
   const [indiceVideo, setIndiceVideo] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -62,6 +69,10 @@ export function BemVindo() {
   const [clienteReconhecido, setClienteReconhecido] = useState(false);
   const ultimoCelularBuscado = useRef("");
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
+
+  useEffect(() => {
+    marcarModoToten(modoToten);
+  }, [modoToten]);
 
   const indiceAtual = indiceVideo % PLAYLIST_DIVULGACAO.length;
   const srcVideoAtual = PLAYLIST_DIVULGACAO[indiceAtual];
@@ -77,7 +88,8 @@ export function BemVindo() {
   }, [srcVideoAtual]);
 
   useEffect(() => {
-    if (!playlistEmSequencia || srcProximoVideo === srcVideoAtual) return;
+    if (!modoToten || !playlistEmSequencia || srcProximoVideo === srcVideoAtual)
+      return;
     const link = document.createElement("link");
     link.rel = "prefetch";
     link.as = "video";
@@ -86,7 +98,7 @@ export function BemVindo() {
     return () => {
       link.remove();
     };
-  }, [playlistEmSequencia, srcProximoVideo, srcVideoAtual]);
+  }, [modoToten, playlistEmSequencia, srcProximoVideo, srcVideoAtual]);
 
   const aoTerminarVideo = () => {
     setIndiceVideo((i) => (i + 1) % PLAYLIST_DIVULGACAO.length);
@@ -118,6 +130,17 @@ export function BemVindo() {
     }
   };
 
+  // Fora do totem, o celular salvo identifica o cliente: ao abrir o site,
+  // rebusca nome (e demais dados) no sistema, que podem ter mudado.
+  useEffect(() => {
+    if (modoToten) return;
+    const salvo = lerCelularLocalStorage();
+    if (telefoneDigitosCompleto(salvo)) {
+      void reconhecerClientePorTelefone(salvo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoToten]);
+
   const handleCelularChange = (valor: string) => {
     setCelular(valor);
     if (!telefoneDigitosCompleto(valor)) {
@@ -140,29 +163,32 @@ export function BemVindo() {
       localStorage.setItem("cliente_nome", nome.trim());
       salvarCelularLocalStorage(celular);
     } else {
-      localStorage.removeItem("cliente_nome");
-      localStorage.removeItem("cliente_celular");
+      limparIdentificacaoCliente();
     }
 
     localStorage.removeItem("tipo_consumo");
     await prepararNavegacaoComTelaCheia();
-    navigate(`/cardapio${location.search}`);
+    navigate(urlCardapio("", location.search));
   };
 
   return (
     <div className="relative min-h-screen overflow-hidden selection:bg-[#ff5722]/30">
-      <video
-        ref={videoRef}
-        key={srcVideoAtual}
-        src={srcVideoAtual}
-        autoPlay
-        loop={!playlistEmSequencia}
-        muted
-        playsInline
-        preload="auto"
-        onEnded={playlistEmSequencia ? aoTerminarVideo : undefined}
-        className="absolute inset-0 w-full h-full object-cover"
-      />
+      {modoToten ? (
+        <video
+          ref={videoRef}
+          key={srcVideoAtual}
+          src={srcVideoAtual}
+          autoPlay
+          loop={!playlistEmSequencia}
+          muted
+          playsInline
+          preload="auto"
+          onEnded={playlistEmSequencia ? aoTerminarVideo : undefined}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] via-[#2d1810] to-[#ff5722]/40" />
+      )}
 
       <div
         className={`absolute inset-0 transition-colors duration-500 ${
@@ -170,24 +196,32 @@ export function BemVindo() {
         }`}
       />
 
-      <div className="absolute top-5 left-5 z-20">
-        <BotaoInstalarPwa
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60"
-          tipo="cardapio"
-        />
-      </div>
+      {modoToten && (
+        <>
+          <div className="absolute top-5 left-5 z-20">
+            <BotaoInstalarPwa
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60"
+              tipo="cardapio"
+            />
+          </div>
 
-      <button
-        type="button"
-        onClick={() => void alternarTelaCheia()}
-        className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white active:scale-95 transition-all border border-white/10"
-        aria-label={telaCheia ? "Sair da tela cheia" : "Ativar tela cheia"}
-        title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+          <button
+            type="button"
+            onClick={() => void alternarTelaCheia()}
+            className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white active:scale-95 transition-all border border-white/10"
+            aria-label={telaCheia ? "Sair da tela cheia" : "Ativar tela cheia"}
+            title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+          >
+            {telaCheia ? <Minimize size={20} /> : <Maximize size={20} />}
+          </button>
+        </>
+      )}
+
+      <div
+        className={`relative z-10 min-h-screen flex flex-col items-center justify-center ${
+          modoToten ? "p-6" : "p-0"
+        }`}
       >
-        {telaCheia ? <Minimize size={20} /> : <Maximize size={20} />}
-      </button>
-
-      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-6">
         <AnimatePresence mode="wait">
           {etapa === 0 && (
             <motion.div
@@ -225,16 +259,22 @@ export function BemVindo() {
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
-              className="w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
+              className={
+                modoToten
+                  ? "w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
+                  : "w-full min-h-screen bg-white dark:bg-[#181a1b] p-6 md:p-8 flex flex-col justify-start *:w-full *:max-w-md *:mx-auto"
+              }
             >
               <div className="flex items-start gap-3 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setEtapa(0)}
-                  className="p-2 bg-gray-100 dark:bg-[#242629] rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0 mt-0.5"
-                >
-                  <ArrowRight size={20} className="rotate-180" />
-                </button>
+                {modoToten && (
+                  <button
+                    type="button"
+                    onClick={() => setEtapa(0)}
+                    className="p-2 bg-gray-100 dark:bg-[#242629] rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0 mt-0.5"
+                  >
+                    <ArrowRight size={20} className="rotate-180" />
+                  </button>
+                )}
                 <div className="min-w-0">
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                     <UserCircle className="text-[#ff5722] shrink-0" /> Quem é

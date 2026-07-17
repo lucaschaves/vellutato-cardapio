@@ -1,4 +1,4 @@
-import { IceCream, Loader2, PlusCircle, Search } from "lucide-react";
+import { IceCream, Loader2, Pencil, PlusCircle, Search, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
@@ -27,10 +27,10 @@ export function GerenciamentoAdicionais() {
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
 
-  // Estados para cadastro
+  const [editandoId, setEditandoId] = useState<string | null>(null);
   const [novoNome, setNovoNome] = useState("");
   const [novoPreco, setNovoPreco] = useState("");
-  const [cadastrando, setCadastrando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
     carregarAdicionais();
@@ -54,6 +54,67 @@ export function GerenciamentoAdicionais() {
       toast.error("Falha ao carregar adicionais. Verifique a conexão.");
     } finally {
       setCarregando(false);
+    }
+  };
+
+  const limparFormulario = () => {
+    setEditandoId(null);
+    setNovoNome("");
+    setNovoPreco("");
+  };
+
+  const iniciarEdicao = (item: Adicional) => {
+    setEditandoId(item.id);
+    setNovoNome(item.nome);
+    setNovoPreco(item.preco.toFixed(2));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const excluirAdicional = async (id: string, nomeAdicional: string) => {
+    const { count: qtdPedidos, error: erroPedidos } = await supabase
+      .from("pedido_item_adicionais")
+      .select("id", { count: "exact", head: true })
+      .eq("adicional_id", id);
+
+    if (erroPedidos) {
+      toast.error("Não foi possível verificar uso em pedidos.");
+      return;
+    }
+
+    if (qtdPedidos && qtdPedidos > 0) {
+      toast.error(
+        `Não é possível excluir "${nomeAdicional}": já foi usado em pedidos. Desative-o no cardápio.`,
+      );
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Excluir o adicional "${nomeAdicional}"? Esta ação não pode ser desfeita.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { error: erroVinculos } = await supabase
+        .from("produto_adicionais")
+        .delete()
+        .eq("adicional_id", id);
+
+      if (erroVinculos) throw new Error(erroVinculos.message);
+
+      const { error } = await supabase.from("adicionais").delete().eq("id", id);
+
+      if (error) throw new Error(error.message);
+
+      setAdicionais((prev) => prev.filter((a) => a.id !== id));
+      if (editandoId === id) limparFormulario();
+      toast.success("Adicional excluído.");
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - ADICIONAIS] Falha ao excluir:", mensagem);
+      toast.error("Erro ao excluir adicional.");
     }
   };
 
@@ -86,43 +147,68 @@ export function GerenciamentoAdicionais() {
     }
   };
 
-  const cadastrarAdicional = async (e: React.FormEvent) => {
+  const salvarAdicional = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoNome.trim() || !novoPreco) {
       toast.warning("Preencha o nome e o preço do adicional.");
       return;
     }
 
+    const precoNumerico = parseFloat(novoPreco.replace(",", "."));
+    if (Number.isNaN(precoNumerico) || precoNumerico < 0) {
+      toast.warning("Informe um preço válido.");
+      return;
+    }
+
     try {
-      setCadastrando(true);
-      const precoNumerico = parseFloat(novoPreco.replace(",", "."));
+      setSalvando(true);
 
-      const { data, error } = await supabase
-        .from("adicionais")
-        .insert([{ nome: novoNome, preco: precoNumerico, disponivel: true }])
-        .select()
-        .single();
+      if (editandoId) {
+        const { data, error } = await supabase
+          .from("adicionais")
+          .update({ nome: novoNome.trim(), preco: precoNumerico })
+          .eq("id", editandoId)
+          .select()
+          .single();
 
-      if (error) throw new Error(error.message);
+        if (error) throw new Error(error.message);
 
-      setAdicionais(
-        [...adicionais, data].sort((a, b) => a.nome.localeCompare(b.nome)),
-      );
-      setNovoNome("");
-      setNovoPreco("");
-      toast.success("Novo adicional cadastrado com sucesso!");
+        setAdicionais(
+          adicionais
+            .map((a) => (a.id === editandoId ? data : a))
+            .sort((a, b) => a.nome.localeCompare(b.nome)),
+        );
+        toast.success("Adicional atualizado com sucesso!");
+      } else {
+        const { data, error } = await supabase
+          .from("adicionais")
+          .insert([
+            { nome: novoNome.trim(), preco: precoNumerico, disponivel: true },
+          ])
+          .select()
+          .single();
 
-      console.info(`[SUCESSO] Adicional "${data.nome}" inserido na base.`);
+        if (error) throw new Error(error.message);
+
+        setAdicionais(
+          [...adicionais, data].sort((a, b) => a.nome.localeCompare(b.nome)),
+        );
+        toast.success("Novo adicional cadastrado com sucesso!");
+      }
+
+      limparFormulario();
     } catch (erro: any) {
       console.error(
-        "[ERRO - ADICIONAIS] Falha de inserção:",
+        "[ERRO - ADICIONAIS] Falha ao salvar:",
         erro.message || erro,
       );
       toast.error(
-        "Falha ao cadastrar. O nome já existe ou houve erro de rede.",
+        editandoId
+          ? "Falha ao atualizar. O nome já existe ou houve erro de rede."
+          : "Falha ao cadastrar. O nome já existe ou houve erro de rede.",
       );
     } finally {
-      setCadastrando(false);
+      setSalvando(false);
     }
   };
 
@@ -144,13 +230,26 @@ export function GerenciamentoAdicionais() {
         </div>
       </div>
 
-      {/* Painel de Cadastro Rápido */}
       <div className="bg-white dark:bg-surface-dark p-6 rounded-xl border dark:border-gray-800 shadow-sm">
-        <h2 className="text-lg font-semibold mb-4 dark:text-white">
-          Cadastrar Novo Adicional
-        </h2>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold dark:text-white">
+            {editandoId ? "Editar Adicional" : "Cadastrar Novo Adicional"}
+          </h2>
+          {editandoId && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={limparFormulario}
+              className="text-gray-500"
+            >
+              <X size={16} className="mr-1" />
+              Cancelar edição
+            </Button>
+          )}
+        </div>
         <form
-          onSubmit={cadastrarAdicional}
+          onSubmit={salvarAdicional}
           className="flex flex-col md:flex-row gap-4 items-end"
         >
           <div className="flex-1 w-full space-y-2">
@@ -180,11 +279,15 @@ export function GerenciamentoAdicionais() {
           </div>
           <Button
             type="submit"
-            disabled={cadastrando}
+            disabled={salvando}
             className="w-full md:w-auto bg-cookie-primary text-white h-10"
           >
-            {cadastrando ? (
+            {salvando ? (
               <Loader2 className="animate-spin" size={18} />
+            ) : editandoId ? (
+              <>
+                <Pencil size={18} className="mr-2" /> Salvar
+              </>
             ) : (
               <>
                 <PlusCircle size={18} className="mr-2" /> Adicionar
@@ -194,7 +297,6 @@ export function GerenciamentoAdicionais() {
         </form>
       </div>
 
-      {/* Lista de Adicionais Ativos */}
       <div className="border rounded-xl dark:border-gray-800 bg-white dark:bg-surface-dark shadow-sm overflow-hidden">
         <div className="p-4 border-b dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/20">
           <div className="relative w-full max-w-sm">
@@ -224,13 +326,14 @@ export function GerenciamentoAdicionais() {
                 <TableHead className="text-right">
                   Visibilidade no Cardápio
                 </TableHead>
+                <TableHead className="w-28 text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {adicionaisFiltrados.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={3}
+                    colSpan={4}
                     className="h-24 text-center text-gray-500"
                   >
                     Nenhum adicional encontrado.
@@ -240,7 +343,11 @@ export function GerenciamentoAdicionais() {
                 adicionaisFiltrados.map((item) => (
                   <TableRow
                     key={item.id}
-                    className={`${!item.disponivel ? "opacity-60 bg-gray-50 dark:bg-gray-900/10" : ""}`}
+                    className={`${!item.disponivel ? "opacity-60 bg-gray-50 dark:bg-gray-900/10" : ""} ${
+                      editandoId === item.id
+                        ? "ring-2 ring-inset ring-cookie-primary/40"
+                        : ""
+                    }`}
                   >
                     <TableCell className="font-medium text-gray-900 dark:text-gray-100">
                       {item.nome}
@@ -260,6 +367,33 @@ export function GerenciamentoAdicionais() {
                           }
                           className="data-[state=checked]:bg-green-500"
                         />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => iniciarEdicao(item)}
+                          title="Editar adicional"
+                          aria-label={`Editar ${item.nome}`}
+                        >
+                          <Pencil size={16} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            void excluirAdicional(item.id, item.nome)
+                          }
+                          title="Excluir adicional"
+                          aria-label={`Excluir ${item.nome}`}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>

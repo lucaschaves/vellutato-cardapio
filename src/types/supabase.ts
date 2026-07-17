@@ -501,6 +501,7 @@ export type Database = {
       }
       produtos: {
         Row: {
+          adicional_obrigatorio: boolean
           ativo: boolean
           categoria_id: string
           controlar_estoque: boolean
@@ -518,6 +519,7 @@ export type Database = {
           video_url: string | null
         }
         Insert: {
+          adicional_obrigatorio?: boolean
           ativo?: boolean
           categoria_id: string
           controlar_estoque?: boolean
@@ -535,6 +537,7 @@ export type Database = {
           video_url?: string | null
         }
         Update: {
+          adicional_obrigatorio?: boolean
           ativo?: boolean
           categoria_id?: string
           controlar_estoque?: boolean
