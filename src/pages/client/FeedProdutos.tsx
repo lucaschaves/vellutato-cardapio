@@ -5,6 +5,7 @@ import {
   Home,
   Maximize,
   Minimize,
+  Monitor,
   Moon,
   Plus,
   Settings,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { version } from "../../../package.json";
 import { CarrinhoLateral } from "../../components/CarrinhoLateral";
 import { InatividadeToten } from "../../components/InatividadeToten";
@@ -34,6 +36,7 @@ import {
   emModoToten,
   lerContextoCardapio,
   limparIdentificacaoCliente,
+  marcarModoToten,
 } from "../../lib/modoCardapio";
 import {
   lerEscalaFonte,
@@ -139,6 +142,20 @@ export function FeedProdutos() {
   const [escalaFonte, setEscalaFonte] = useState<EscalaFonte>(() =>
     lerEscalaFonte(),
   );
+  const [modoToten, setModoToten] = useState(() => emModoToten());
+
+  const alternarModoToten = () => {
+    const novo = !modoToten;
+    marcarModoToten(novo);
+    setModoToten(novo);
+    if (novo) {
+      toast.success(
+        "Modo totem ativado. Ao finalizar pedidos, a tela volta ao vídeo inicial.",
+      );
+    } else {
+      toast.success("Modo totem desativado.");
+    }
+  };
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -364,7 +381,7 @@ export function FeedProdutos() {
               <Settings size={20} />
             </button>
 
-            {!contextoCardapio.sessaoPersistente && emModoToten() && (
+            {!contextoCardapio.sessaoPersistente && modoToten && (
               <button
                 onClick={() => setModalVoltarHomeAberto(true)}
                 className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-[#ff5722] active:scale-95 transition-transform"
@@ -613,6 +630,29 @@ export function FeedProdutos() {
                     className="px-4 py-2 bg-gray-100 dark:bg-[#181a1b] rounded-xl text-sm font-bold text-gray-900 dark:text-white active:scale-95 transition-transform"
                   >
                     {telaCheia ? "Sair" : "Ativar"}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
+                    <Monitor size={20} />
+                    <div>
+                      <span className="font-medium block">Modo Totem</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Vídeo inicial e limpeza a cada pedido
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={alternarModoToten}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform ${
+                      modoToten
+                        ? "bg-[#ff5722] text-white"
+                        : "bg-gray-100 dark:bg-[#181a1b] text-gray-900 dark:text-white"
+                    }`}
+                  >
+                    {modoToten ? "Ativo" : "Desativado"}
                   </button>
                 </div>
 

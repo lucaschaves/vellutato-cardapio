@@ -12,7 +12,6 @@ import { buscarStatusLoja } from "../../lib/lojaStatus";
 import { urlCardapio } from "../../lib/urlCardapio";
 import {
   emModoToten,
-  lerContextoCardapio,
   limparIdentificacaoCliente,
 } from "../../lib/modoCardapio";
 
@@ -21,10 +20,10 @@ const TEMPO_REDIRECIONAMENTO_SEG = 10;
 export function ConfirmacaoPedido() {
   const navigate = useNavigate();
   const location = useLocation();
-  const contexto = lerContextoCardapio(location.search);
-  // Fora do totem não há motivo para voltar à tela inicial: o cliente
-  // permanece no cardápio e acompanha o pedido em "Meus pedidos".
-  const sessaoPersistente = contexto.sessaoPersistente || !emModoToten();
+  // No totem a sessão nunca persiste: ao finalizar, limpa os dados do
+  // cliente e volta ao vídeo inicial para o próximo pedido. Fora do totem
+  // o cliente permanece no cardápio e acompanha em "Meus pedidos".
+  const sessaoPersistente = !emModoToten();
   const state = location.state as {
     nomeCliente?: string;
     sequenciaPedido?: number;

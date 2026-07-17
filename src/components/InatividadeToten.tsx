@@ -53,7 +53,7 @@ export function InatividadeToten() {
     limparCarrinho();
     limparIdentificacaoCliente();
     localStorage.removeItem("tipo_consumo");
-    navigate("/cardapio-toten", { replace: true });
+    navigate("/", { replace: true });
   }, [limparCarrinho, navigate]);
 
   // Reinicia a contagem de inatividade a cada interação (fora do aviso)

@@ -2,20 +2,23 @@
 
 const CHAVE_MODO_TOTEN = "modo_toten";
 
-/** Marca a sessão atual como totem (dispositivo compartilhado da loja). */
+/**
+ * Ativa/desativa o modo totem no dispositivo (configuração persistente,
+ * feita nas opções de exibição do cardápio). Independe da URL.
+ */
 export function marcarModoToten(ativo: boolean) {
   if (ativo) {
-    sessionStorage.setItem(CHAVE_MODO_TOTEN, "1");
+    localStorage.setItem(CHAVE_MODO_TOTEN, "1");
   } else {
-    sessionStorage.removeItem(CHAVE_MODO_TOTEN);
+    localStorage.removeItem(CHAVE_MODO_TOTEN);
   }
 }
 
 export function emModoToten(): boolean {
-  const estaNaRotaToten =
-    typeof window !== "undefined" &&
-    window.location.pathname.startsWith("/cardapio-toten");
-  return estaNaRotaToten || sessionStorage.getItem(CHAVE_MODO_TOTEN) === "1";
+  if (typeof window === "undefined") return false;
+  // Rota legada /cardapio-toten continua funcionando e ativa o modo
+  if (window.location.pathname.startsWith("/cardapio-toten")) return true;
+  return localStorage.getItem(CHAVE_MODO_TOTEN) === "1";
 }
 
 /**

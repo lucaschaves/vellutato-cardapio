@@ -16,6 +16,7 @@ import { InputTelaCheia } from "../../components/InputTelaCheia";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
 import {
+  emModoToten,
   limparIdentificacaoCliente,
   marcarModoToten,
 } from "../../lib/modoCardapio";
@@ -55,7 +56,9 @@ export function BemVindo() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const modoToten = location.pathname.startsWith("/cardapio-toten");
+  // Modo totem é configuração do dispositivo; a rota /cardapio-toten
+  // (legada) apenas ativa a configuração de forma persistente.
+  const modoToten = emModoToten();
 
   const [etapa, setEtapa] = useState(modoToten ? 0 : 1);
   const [indiceVideo, setIndiceVideo] = useState(0);
@@ -71,8 +74,10 @@ export function BemVindo() {
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
 
   useEffect(() => {
-    marcarModoToten(modoToten);
-  }, [modoToten]);
+    if (location.pathname.startsWith("/cardapio-toten")) {
+      marcarModoToten(true);
+    }
+  }, [location.pathname]);
 
   const indiceAtual = indiceVideo % PLAYLIST_DIVULGACAO.length;
   const srcVideoAtual = PLAYLIST_DIVULGACAO[indiceAtual];
