@@ -6,6 +6,7 @@ import {
   emModoToten,
   limparIdentificacaoCliente,
 } from "../lib/modoCardapio";
+import { limparTipoConsumo } from "../lib/disponibilidadeProduto";
 import { useCartStore } from "../store/useCartStore";
 
 const SEGUNDOS_INATIVIDADE = 60;
@@ -52,7 +53,7 @@ export function InatividadeToten() {
     setAvisoAberto(false);
     limparCarrinho();
     limparIdentificacaoCliente();
-    localStorage.removeItem("tipo_consumo");
+    limparTipoConsumo();
     navigate("/", { replace: true });
   }, [limparCarrinho, navigate]);
 

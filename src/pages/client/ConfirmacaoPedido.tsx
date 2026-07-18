@@ -14,6 +14,7 @@ import {
   emModoToten,
   limparIdentificacaoCliente,
 } from "../../lib/modoCardapio";
+import { limparTipoConsumo } from "../../lib/disponibilidadeProduto";
 
 const TEMPO_REDIRECIONAMENTO_SEG = 10;
 
@@ -53,7 +54,7 @@ export function ConfirmacaoPedido() {
 
     if (!sessaoPersistente) {
       limparIdentificacaoCliente();
-      localStorage.removeItem("tipo_consumo");
+      limparTipoConsumo();
       navigate("/", { replace: true });
       return;
     }
@@ -67,10 +68,10 @@ export function ConfirmacaoPedido() {
     navigate(urlCardapio("", location.search), { replace: true });
   };
 
-  const irParaMeusPedidos = () => {
+  const irParaPerfil = () => {
     if (redirecionouRef.current) return;
     redirecionouRef.current = true;
-    navigate(urlCardapio("meus-pedidos", location.search), { replace: true });
+    navigate(urlCardapio("perfil", location.search), { replace: true });
   };
 
   useEffect(() => {
@@ -186,7 +187,7 @@ export function ConfirmacaoPedido() {
           <div className="space-y-3">
             <button
               type="button"
-              onClick={irParaMeusPedidos}
+              onClick={irParaPerfil}
               className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/25"
             >
               <ClipboardList size={20} />

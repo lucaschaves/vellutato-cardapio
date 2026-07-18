@@ -31,6 +31,7 @@ import { ConfirmacaoPedido } from "../pages/client/ConfirmacaoPedido";
 import { FeedProdutos } from "../pages/client/FeedProdutos";
 import { ListaErros } from "../pages/client/ListaErros";
 import { MeusPedidos } from "../pages/client/MeusPedidos";
+import { Perfil } from "../pages/client/Perfil";
 import { VisualizadorReels } from "../pages/client/VisualizadorReels";
 import { Login } from "../pages/Login";
 
@@ -60,6 +61,7 @@ const rotasFilhasCardapio = [
   { path: "item/:id", element: <VisualizadorReels /> },
   { path: "pedido-enviado", element: <ConfirmacaoPedido /> },
   { path: "meus-pedidos", element: <MeusPedidos /> },
+  { path: "perfil", element: <Perfil /> },
   { path: "erros", element: <ListaErros /> },
 ];
 

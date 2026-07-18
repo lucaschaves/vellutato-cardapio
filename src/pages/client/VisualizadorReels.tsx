@@ -11,8 +11,9 @@ import {
 } from "../../lib/estoque";
 import { renderizarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
 import {
+  lerTipoConsumo,
   normalizarDisponibilidade,
-  rotuloDisponibilidade,
+  produtoCompativelComModo,
   type DisponibilidadeProduto,
 } from "../../lib/disponibilidadeProduto";
 import {
@@ -123,10 +124,8 @@ const MidiaProdutoMemo = memo(MidiaProduto);
 
 function SkeletonColunaMidia({
   produtoId,
-  compacta = false,
 }: {
   produtoId?: string;
-  compacta?: boolean;
 }) {
   const classesMidia =
     "w-full h-full md:landscape:rounded-[2rem] md:landscape:border border-gray-200 dark:border-[#2a2c30] overflow-hidden relative md:landscape:shadow-2xl bg-gray-200 dark:bg-gray-800 animate-pulse";
@@ -136,11 +135,7 @@ function SkeletonColunaMidia({
   );
 
   return (
-    <div
-      className={`relative w-full shrink-0 flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] transition-[height] duration-300 ease-out md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 ${
-        compacta ? "h-[15%]" : "h-[50%]"
-      }`}
-    >
+    <div className="relative w-full shrink-0 h-[32vh] max-h-[280px] min-h-[160px] flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] md:landscape:h-full md:landscape:max-h-none md:landscape:min-h-0 md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12">
       {produtoId ? (
         <motion.div layoutId={`produto-midia-${produtoId}`} className={classesMidia}>
           {conteudo}
@@ -197,10 +192,8 @@ function SkeletonRodapeProduto() {
 
 const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   produto,
-  compacta = false,
 }: {
   produto: ProdutoDetalhe;
-  compacta?: boolean;
 }) {
   const [transicaoEntradaConcluida, setTransicaoEntradaConcluida] =
     useState(false);
@@ -232,16 +225,12 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
         nome={produto.nome}
       />
 
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-50 dark:from-[#181a1b] to-transparent md:landscape:hidden pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-gray-50 dark:from-[#181a1b] to-transparent md:landscape:hidden pointer-events-none" />
     </>
   );
 
   return (
-    <div
-      className={`relative w-full shrink-0 flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] transition-[height] duration-300 ease-out md:landscape:h-full md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12 ${
-        compacta ? "h-[15%]" : "h-[50%]"
-      }`}
-    >
+    <div className="relative w-full shrink-0 h-[32vh] max-h-[280px] min-h-[160px] flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] md:landscape:h-full md:landscape:max-h-none md:landscape:min-h-0 md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12">
       {transicaoEntradaConcluida ? (
         <div className={classesMidia}>{conteudo}</div>
       ) : (
@@ -282,7 +271,7 @@ export function VisualizadorReels() {
     [],
   );
   const [modalPosAdicionarAberto, setModalPosAdicionarAberto] = useState(false);
-  const [midiaCompacta, setMidiaCompacta] = useState(false);
+  const [cabecalhoColado, setCabecalhoColado] = useState(false);
   const painelScrollRef = useRef<HTMLDivElement>(null);
 
   const idsProdutosNoCarrinho = useMemo(
@@ -406,7 +395,13 @@ export function VisualizadorReels() {
     async function carregarOfertas() {
       try {
         const ofertas = await buscarOfertasVendaCruzada(produtoId);
-        if (!cancelado) setOfertasCruzadas(ofertas);
+        const modo = lerTipoConsumo();
+        const filtradas = modo
+          ? ofertas.filter((o) =>
+              produtoCompativelComModo(o.produto_alvo.disponibilidade, modo),
+            )
+          : ofertas;
+        if (!cancelado) setOfertasCruzadas(filtradas);
       } catch (erroOferta: unknown) {
         if (cancelado) return;
         console.warn("[VENDA CRUZADA] Falha ao carregar ofertas:", erroOferta);
@@ -597,44 +592,23 @@ export function VisualizadorReels() {
   const exibirConteudoProduto = Boolean(produto) && !carregandoProduto;
 
   useEffect(() => {
-    setMidiaCompacta(false);
+    setCabecalhoColado(false);
+    painelScrollRef.current?.scrollTo({ top: 0 });
   }, [id]);
 
+  // Só marca o cabeçalho sticky — não muda altura da mídia (evita salto no scroll)
   useEffect(() => {
     const painel = painelScrollRef.current;
     if (!painel) return;
 
-    const atualizarCompactacao = () => {
-      const temScroll = painel.scrollHeight > painel.clientHeight + 8;
-      if (!temScroll) {
-        setMidiaCompacta(false);
-        return;
-      }
-      setMidiaCompacta((atual) =>
-        atual ? painel.scrollTop > 8 : painel.scrollTop > 24,
-      );
+    const aoRolar = () => {
+      setCabecalhoColado(painel.scrollTop > 12);
     };
 
-    atualizarCompactacao();
-    painel.addEventListener("scroll", atualizarCompactacao, { passive: true });
-
-    const observer = new ResizeObserver(atualizarCompactacao);
-    observer.observe(painel);
-
-    return () => {
-      painel.removeEventListener("scroll", atualizarCompactacao);
-      observer.disconnect();
-    };
-  }, [
-    id,
-    exibirConteudoProduto,
-    gruposCombo.length,
-    adicionaisDisponiveis.length,
-    ofertasPendentes.length,
-    carregandoCombo,
-    carregandoAdicionais,
-    carregandoOfertas,
-  ]);
+    aoRolar();
+    painel.addEventListener("scroll", aoRolar, { passive: true });
+    return () => painel.removeEventListener("scroll", aoRolar);
+  }, [id, exibirConteudoProduto]);
 
   return (
     <AnimatePresence>
@@ -654,62 +628,35 @@ export function VisualizadorReels() {
         </button>
 
         {exibirConteudoProduto && produto ? (
-          <ColunaMidiaProduto
-            key={produto.id}
-            produto={produto}
-            compacta={midiaCompacta}
-          />
+          <ColunaMidiaProduto key={produto.id} produto={produto} />
         ) : (
-          <SkeletonColunaMidia produtoId={id} compacta={midiaCompacta} />
+          <SkeletonColunaMidia produtoId={id} />
         )}
 
-        <div className="relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-8 md:landscape:mt-0 rounded-t-[2.5rem] md:landscape:rounded-none z-10 transition-colors duration-300 overflow-hidden">
+        <div className="relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-6 md:landscape:mt-0 rounded-t-[2rem] md:landscape:rounded-none z-10 transition-colors duration-300 overflow-hidden">
           <div
             ref={painelScrollRef}
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-4 hide-scrollbar"
+            className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pb-8 hide-scrollbar"
           >
             {exibirConteudoProduto && produto ? (
               <>
                 <div
-                  className={`sticky top-0 z-20 -mx-6 px-6 mb-2 bg-gray-50 dark:bg-[#181a1b] transition-all duration-300 ${
-                    midiaCompacta ? "pt-3 pb-2" : "pt-10 pb-4"
+                  className={`sticky top-0 z-20 -mx-6 px-6 pt-6 pb-3 mb-4 bg-gray-50/95 dark:bg-[#181a1b]/95 backdrop-blur-md transition-[box-shadow,border-color] duration-200 ${
+                    cabecalhoColado
+                      ? "shadow-[0_8px_16px_-8px_rgba(0,0,0,0.18)] border-b border-gray-200/80 dark:border-[#2a2c30]"
+                      : "border-b border-transparent"
                   }`}
                 >
-                  <h1
-                    className={`font-bold text-gray-900 dark:text-white leading-tight transition-all duration-300 ${
-                      midiaCompacta
-                        ? "text-base md:landscape:text-2xl mb-1"
-                        : "text-2xl md:landscape:text-4xl mb-2"
-                    }`}
-                  >
+                  <h1 className="text-xl md:landscape:text-3xl font-bold text-gray-900 dark:text-white leading-tight mb-1.5">
                     {produto.nome}
                   </h1>
 
-                  {!midiaCompacta &&
-                    rotuloDisponibilidade(
-                      normalizarDisponibilidade(produto.disponibilidade),
-                    ) && (
-                      <p className="mb-2 text-xs font-bold text-amber-700 dark:text-amber-400">
-                        {rotuloDisponibilidade(
-                          normalizarDisponibilidade(produto.disponibilidade),
-                        )}
-                      </p>
-                    )}
-
                   <div className="flex items-end gap-3 flex-wrap">
-                    <span
-                      className={`font-black text-[#ff5722] transition-all duration-300 ${
-                        midiaCompacta ? "text-lg" : "text-3xl"
-                      }`}
-                    >
+                    <span className="text-2xl md:landscape:text-3xl font-black text-[#ff5722]">
                       R$ {(precoAtivo + deltaCombo).toFixed(2)}
                     </span>
                     {produto.em_promocao && (
-                      <span
-                        className={`font-medium text-gray-500 dark:text-gray-500 line-through transition-all duration-300 ${
-                          midiaCompacta ? "text-xs mb-0.5" : "text-lg mb-1"
-                        }`}
-                      >
+                      <span className="text-sm md:landscape:text-base font-medium text-gray-500 dark:text-gray-500 line-through mb-0.5">
                         R$ {produto.preco.toFixed(2)}
                       </span>
                     )}
@@ -956,6 +903,9 @@ export function VisualizadorReels() {
                 </div>
               </div>
             )}
+
+            {/* Espaço final para o último item não ficar sob o rodapé */}
+            <div className="h-4" aria-hidden />
           </div>
 
           {/* Rodapé Fixo */}

@@ -5,6 +5,8 @@ import {
   Maximize,
   Minimize,
   Play,
+  ShoppingBag,
+  Store,
   Tag,
   UserCircle,
 } from "lucide-react";
@@ -15,6 +17,10 @@ import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
+import {
+  salvarTipoConsumo,
+  type ModoConsumoItem,
+} from "../../lib/disponibilidadeProduto";
 import {
   emModoToten,
   limparIdentificacaoCliente,
@@ -27,6 +33,7 @@ import {
   salvarCelularLocalStorage,
   telefoneDigitosCompleto,
 } from "../../lib/telefone";
+import { useCartStore } from "../../store/useCartStore";
 
 const VIDEOS_DIVULGACAO_PADRAO = [
   "/primeiro.mp4",
@@ -159,7 +166,10 @@ export function BemVindo() {
   const podeContinuar =
     nome.trim().length > 0 && telefoneDigitosCompleto(celular);
 
-  const prosseguir = async (pular: boolean = false) => {
+  const limparCarrinho = useCartStore((s) => s.limparCarrinho);
+
+  /** Após identificação, vai para a escolha comer/levar. */
+  const irParaConsumo = (pular: boolean = false) => {
     if (!pular) {
       if (!podeContinuar) {
         toast.error("Informe celular e nome para continuar.");
@@ -170,8 +180,13 @@ export function BemVindo() {
     } else {
       limparIdentificacaoCliente();
     }
+    setEtapa(2);
+  };
 
-    localStorage.removeItem("tipo_consumo");
+  const selecionarConsumo = async (modo: ModoConsumoItem) => {
+    salvarTipoConsumo(modo);
+    // Trocar de modo no meio de um pedido antigo não faz sentido
+    limparCarrinho();
     await prepararNavegacaoComTelaCheia();
     navigate(urlCardapio("", location.search));
   };
@@ -341,17 +356,17 @@ export function BemVindo() {
               <div className="flex flex-col gap-3">
                 <button
                   type="button"
-                  onClick={() => void prosseguir(false)}
+                  onClick={() => irParaConsumo(false)}
                   disabled={!podeContinuar}
                   className="w-full bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
                 >
-                  <span>Ver Cardápio</span>
+                  <span>Continuar</span>
                   <ArrowRight size={20} />
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => void prosseguir(true)}
+                  onClick={() => irParaConsumo(true)}
                   className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-[#ff5722]/40 hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10"
                 >
                   <span>Continuar sem informar</span>
@@ -362,6 +377,78 @@ export function BemVindo() {
                   Sem identificação, cupons e descontos exclusivos podem ficar
                   indisponíveis.
                 </p>
+              </div>
+            </motion.div>
+          )}
+
+          {etapa === 2 && (
+            <motion.div
+              key="etapa-2"
+              initial={{ opacity: 0, x: 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 50 }}
+              className={
+                modoToten
+                  ? "w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
+                  : "w-full min-h-screen bg-white dark:bg-[#181a1b] p-6 md:p-8 flex flex-col justify-start *:w-full *:max-w-md *:mx-auto"
+              }
+            >
+              <div className="flex items-start gap-3 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setEtapa(1)}
+                  className="p-2 bg-gray-100 dark:bg-[#242629] rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0 mt-0.5"
+                  aria-label="Voltar"
+                >
+                  <ArrowRight size={20} className="rotate-180" />
+                </button>
+                <div className="min-w-0">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                    Como vai aproveitar?
+                  </h2>
+                  <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400 leading-snug">
+                    O cardápio mostra só os produtos disponíveis para o modo
+                    escolhido.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => void selecionarConsumo("loja")}
+                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 active:scale-[0.98] transition-all text-left"
+                >
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ff5722]/15 text-[#ff5722] shrink-0">
+                    <Store size={28} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-lg font-bold text-gray-900 dark:text-white">
+                      Comer na loja
+                    </span>
+                    <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                      Produtos para consumo no local
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void selecionarConsumo("levar")}
+                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 active:scale-[0.98] transition-all text-left"
+                >
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ff5722]/15 text-[#ff5722] shrink-0">
+                    <ShoppingBag size={28} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-lg font-bold text-gray-900 dark:text-white">
+                      Para levar
+                    </span>
+                    <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                      Produtos para viagem / retirada
+                    </span>
+                  </span>
+                </button>
               </div>
             </motion.div>
           )}

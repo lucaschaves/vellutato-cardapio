@@ -34,12 +34,9 @@ import {
 } from "../lib/telefone";
 import { urlCardapio } from "../lib/urlCardapio";
 import {
-  itensComConflitoConsumo,
+  lerTipoConsumo,
   montarOrigemIdentificadorPedido,
-  modoConsumoPermitido,
-  rotuloDisponibilidade,
   rotuloModoConsumo,
-  type ModoConsumoItem,
 } from "../lib/disponibilidadeProduto";
 import { formatarDescricaoComQuebras } from "../lib/descricaoProduto.tsx";
 import { cn } from "../lib/utils";
@@ -65,7 +62,6 @@ export function CarrinhoLateral({
     itens,
     removerItem,
     alterarQuantidade,
-    alterarModoConsumo,
     obterSubtotal,
     obterDescontoCupom,
     obterTotal,
@@ -78,10 +74,14 @@ export function CarrinhoLateral({
   const layoutSplitMedia = useLayoutCarrinhoSplit();
   const [layoutSplit, setLayoutSplit] = useState(layoutSplitMedia);
   const navigate = useNavigate();
+  const tipoConsumo = lerTipoConsumo();
   const destinoExibicao = rotuloDestino || (mesa ? `Mesa ${mesa}` : "Balcão");
-  const textoDestinoCarrinho = mesa
-    ? `Pedido · ${destinoExibicao}`
-    : "Pedido · escolha comer ou levar em cada item";
+  const textoDestinoCarrinho = [
+    tipoConsumo ? rotuloModoConsumo(tipoConsumo) : null,
+    mesa ? destinoExibicao : null,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Seu pedido";
   const textoPagamento = "Pagamento no balcão/caixa";
 
   const [nomeCliente, setNomeCliente] = useState(
@@ -210,21 +210,6 @@ export function CarrinhoLateral({
     }
   };
 
-  const solicitarModoConsumo = (idUnico: string, modo: ModoConsumoItem) => {
-    const item = itens.find((i) => i.idUnico === idUnico);
-    if (!item) return;
-
-    if (!modoConsumoPermitido(item.disponibilidade, modo)) {
-      const rotulo = rotuloDisponibilidade(item.disponibilidade);
-      const ok = window.confirm(
-        `"${item.nome}" ${rotulo ? `é marcado como: ${rotulo}.` : "não permite esse modo."}\n\nDeseja continuar mesmo assim com "${rotuloModoConsumo(modo)}"?`,
-      );
-      if (!ok) return;
-    }
-
-    alterarModoConsumo(idUnico, modo);
-  };
-
   const finalizarPedido = async (e: React.FormEvent) => {
     e.preventDefault();
     if (itens.length === 0) return;
@@ -247,18 +232,11 @@ export function CarrinhoLateral({
       return;
     }
 
-    const conflitos = itensComConflitoConsumo(itens);
-    if (conflitos.length > 0) {
-      const lista = conflitos
-        .map(
-          (item) =>
-            `• ${item.nome} (${rotuloDisponibilidade(item.disponibilidade) || "restrito"} → ${rotuloModoConsumo(item.modoConsumo)})`,
-        )
-        .join("\n");
-      const ok = window.confirm(
-        `Alguns itens não combinam com o modo escolhido:\n\n${lista}\n\nDeseja enviar o pedido mesmo assim?`,
-      );
-      if (!ok) return;
+    const modoSessao = lerTipoConsumo();
+    if (!modoSessao) {
+      toast.error("Escolha se é para comer na loja ou para levar.");
+      navigate("/");
+      return;
     }
 
     try {
@@ -278,7 +256,7 @@ export function CarrinhoLateral({
       const totalPedido = obterTotal();
       const { origem, identificador } = montarOrigemIdentificadorPedido({
         mesa,
-        modos: itens.map((item) => item.modoConsumo),
+        modo: modoSessao,
       });
 
       // Tudo (pedido + itens + adicionais + combos + estoque + cupom) é
@@ -298,7 +276,7 @@ export function CarrinhoLateral({
           quantidade: item.quantidade,
           preco_unitario: item.precoBase,
           observacoes: item.observacoes?.trim() || null,
-          modo_consumo: item.modoConsumo,
+          modo_consumo: modoSessao,
           adicionais: (item.adicionais ?? []).map((adc) => ({
             adicional_id: adc.id,
             preco_aplicado: adc.preco,
@@ -514,11 +492,6 @@ export function CarrinhoLateral({
                       <Gift size={10} /> Brinde
                     </span>
                   )}
-                  {rotuloDisponibilidade(item.disponibilidade) && (
-                    <span className="inline-flex mt-1 text-[0.625rem] md:landscape:text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                      {rotuloDisponibilidade(item.disponibilidade)}
-                    </span>
-                  )}
                 </div>
                 <button
                   type="button"
@@ -558,33 +531,6 @@ export function CarrinhoLateral({
                   ))}
                 </div>
               )}
-
-              <div className="mb-3 grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-gray-50 dark:bg-[#2a2c30] border border-gray-200 dark:border-transparent">
-                {(["loja", "levar"] as const).map((modo) => {
-                  const selecionado = item.modoConsumo === modo;
-                  const permitido = modoConsumoPermitido(
-                    item.disponibilidade,
-                    modo,
-                  );
-                  return (
-                    <button
-                      key={modo}
-                      type="button"
-                      onClick={() => solicitarModoConsumo(item.idUnico, modo)}
-                      className={cn(
-                        "py-2 px-2 rounded-lg text-[0.6875rem] md:landscape:text-xs font-bold transition-all",
-                        selecionado
-                          ? "bg-[#ff5722] text-white shadow-sm"
-                          : permitido
-                            ? "text-gray-600 dark:text-gray-300 hover:bg-white/70 dark:hover:bg-[#323438]"
-                            : "text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20",
-                      )}
-                    >
-                      {rotuloModoConsumo(modo)}
-                    </button>
-                  );
-                })}
-              </div>
 
               <div className="mt-auto flex items-center justify-between gap-2">
                 <div className="flex items-center bg-gray-50 dark:bg-[#2a2c30] rounded-lg border border-gray-200 dark:border-transparent">

@@ -7,6 +7,7 @@ import type {
   ModoConsumoItem,
 } from "../lib/disponibilidadeProduto";
 import {
+  lerTipoConsumo,
   modoConsumoPadrao,
   normalizarDisponibilidade,
 } from "../lib/disponibilidadeProduto";
@@ -58,7 +59,6 @@ interface CartStore {
   removerItem: (idUnico: string) => void;
   alterarQuantidade: (idUnico: string, novaQuantidade: number) => void;
   alterarObservacoes: (idUnico: string, observacoes: string) => void;
-  alterarModoConsumo: (idUnico: string, modo: ModoConsumoItem) => void;
   limparCarrinho: () => void;
   aplicarCupom: (cupom: CupomValidado) => void;
   removerCupom: () => void;
@@ -75,7 +75,9 @@ export const useCartStore = create<CartStore>((set, get) => ({
   adicionarItem: (novoItem) => {
     const disponibilidade = normalizarDisponibilidade(novoItem.disponibilidade);
     const modoConsumo =
-      novoItem.modoConsumo || modoConsumoPadrao(disponibilidade);
+      novoItem.modoConsumo ||
+      lerTipoConsumo() ||
+      modoConsumoPadrao(disponibilidade);
     const idUnico = `${novoItem.produtoId}-${Date.now()}`;
     set((state) => ({
       itens: [
@@ -108,14 +110,6 @@ export const useCartStore = create<CartStore>((set, get) => ({
     set((state) => ({
       itens: state.itens.map((item) =>
         item.idUnico === idUnico ? { ...item, observacoes } : item,
-      ),
-    }));
-  },
-
-  alterarModoConsumo: (idUnico, modo) => {
-    set((state) => ({
-      itens: state.itens.map((item) =>
-        item.idUnico === idUnico ? { ...item, modoConsumo: modo } : item,
       ),
     }));
   },

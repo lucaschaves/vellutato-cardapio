@@ -33,6 +33,12 @@ export function limparIdentificacaoCliente() {
   }
 }
 
+/** Encerra a sessão local do cliente (sair / trocar conta), inclusive o celular. */
+export function encerrarSessaoCliente() {
+  localStorage.removeItem("cliente_nome");
+  localStorage.removeItem("cliente_celular");
+}
+
 export type TipoContextoCardapio = "mesa" | "padrao";
 
 export interface ContextoCardapio {

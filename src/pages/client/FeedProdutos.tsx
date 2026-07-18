@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
-  ClipboardList,
   Home,
   Maximize,
   Minimize,
@@ -13,6 +12,7 @@ import {
   Sun,
   Tag,
   Type,
+  UserCircle,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,9 +25,12 @@ import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { formatarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
 import {
-  normalizarDisponibilidade,
-  rotuloDisponibilidade,
+  lerTipoConsumo,
+  limparTipoConsumo,
+  produtoCompativelComModo,
+  rotuloModoConsumo,
   type DisponibilidadeProduto,
+  type ModoConsumoItem,
 } from "../../lib/disponibilidadeProduto";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
 import { produtoEstaEsgotado } from "../../lib/estoque";
@@ -199,6 +202,13 @@ export function FeedProdutos() {
     }
   }, [modalOpcoesAberto]);
 
+  // Sem escolha comer/levar, volta ao onboarding
+  useEffect(() => {
+    if (!lerTipoConsumo()) {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
+
   useEffect(() => {
     async function carregarCardapio() {
       try {
@@ -246,17 +256,31 @@ export function FeedProdutos() {
   const confirmarVoltarHome = () => {
     limparCarrinho();
     limparIdentificacaoCliente();
-    localStorage.removeItem("tipo_consumo");
+    limparTipoConsumo();
     setCarrinhoAberto(false);
     setModalVoltarHomeAberto(false);
     navigate("/");
   };
 
+  const tipoConsumo: ModoConsumoItem | null = lerTipoConsumo();
+
+  const produtosFiltrados = tipoConsumo
+    ? produtos.filter((p) =>
+        produtoCompativelComModo(p.disponibilidade, tipoConsumo),
+      )
+    : [];
+
+  const categoriasFiltradas = categorias
+    .map((cat) => ({
+      ...cat,
+      quantidade_produtos: produtosFiltrados.filter(
+        (p) => p.categoria_id === cat.id,
+      ).length,
+    }))
+    .filter((cat) => cat.quantidade_produtos > 0);
+
   const renderCardProduto = (produto: Produto) => {
     const esgotado = produtoEstaEsgotado(produto);
-    const etiquetaDisp = rotuloDisponibilidade(
-      normalizarDisponibilidade(produto.disponibilidade),
-    );
     const temPromocao =
       produto.em_promocao &&
       produto.preco_promocional != null &&
@@ -279,12 +303,6 @@ export function FeedProdutos() {
             <div className="absolute top-2 left-2 z-20 bg-[#ff5722] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
               <Tag size={10} strokeWidth={3} />
               PROMO
-            </div>
-          )}
-
-          {etiquetaDisp && !esgotado && (
-            <div className="absolute bottom-2 left-2 z-20 bg-black/75 text-white text-[0.625rem] font-bold px-2 py-1 rounded-md max-w-[90%] truncate">
-              {etiquetaDisp}
             </div>
           )}
 
@@ -345,17 +363,17 @@ export function FeedProdutos() {
     );
   };
 
-  const produtosPorCategoria = categorias
+  const produtosPorCategoria = categoriasFiltradas
     .map((categoria) => ({
       categoria,
-      produtos: produtos.filter((p) => p.categoria_id === categoria.id),
+      produtos: produtosFiltrados.filter((p) => p.categoria_id === categoria.id),
     }))
     .filter((grupo) => grupo.produtos.length > 0);
 
   const produtosExibidos =
     categoriaAtiva === "all"
-      ? produtos
-      : produtos.filter((p) => p.categoria_id === categoriaAtiva);
+      ? produtosFiltrados
+      : produtosFiltrados.filter((p) => p.categoria_id === categoriaAtiva);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32 font-sans transition-colors duration-300 selection:bg-[#ff5722]/30">
@@ -363,15 +381,17 @@ export function FeedProdutos() {
       <header className="sticky top-0 z-30 bg-white dark:bg-[#181a1b] border-b border-gray-200 dark:border-[#2a2c30] shadow-sm pb-4 pt-4 transition-colors duration-300">
         <div className="px-5 flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() =>
-                navigate(urlCardapio("meus-pedidos", location.search))
-              }
-              className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white active:scale-95 transition-transform"
-              aria-label="Meus pedidos"
-            >
-              <ClipboardList size={20} />
-            </button>
+            {!modoToten && (
+              <button
+                onClick={() =>
+                  navigate(urlCardapio("perfil", location.search))
+                }
+                className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white active:scale-95 transition-transform"
+                aria-label="Minha conta"
+              >
+                <UserCircle size={20} />
+              </button>
+            )}
 
             <button
               onClick={() => setModalOpcoesAberto(true)}
@@ -397,11 +417,16 @@ export function FeedProdutos() {
             <h1 className="text-xl md:text-2xl font-extrabold tracking-wide text-gray-950 dark:text-white">
               Cardápio
             </h1>
-            {contextoCardapio.tipo === "mesa" && (
-              <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
-                {contextoCardapio.rotuloDestino}
-              </p>
-            )}
+            <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
+              {[
+                tipoConsumo ? rotuloModoConsumo(tipoConsumo) : null,
+                contextoCardapio.tipo === "mesa"
+                  ? contextoCardapio.rotuloDestino
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
           </div>
 
           <button
@@ -454,11 +479,11 @@ export function FeedProdutos() {
                       : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
                   }`}
                 >
-                  {produtos.length}
+                  {produtosFiltrados.length}
                 </span>
               </button>
 
-              {categorias.map((cat) => (
+              {categoriasFiltradas.map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setCategoriaAtiva(cat.id)}
@@ -494,11 +519,11 @@ export function FeedProdutos() {
                 <span
                   className={`text-xs font-semibold ${categoriaAtiva === "all" ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}
                 >
-                  {produtos.length} Itens
+                  {produtosFiltrados.length} Itens
                 </span>
               </button>
 
-              {categorias.map((cat) => (
+              {categoriasFiltradas.map((cat) => (
                 <button
                   key={`desktop-${cat.id}`}
                   onClick={() => setCategoriaAtiva(cat.id)}
@@ -684,20 +709,6 @@ export function FeedProdutos() {
                 </div>
 
                 <div className="pt-2 border-t border-gray-100 dark:border-[#323438]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setModalOpcoesAberto(false);
-                      navigate(urlCardapio("meus-pedidos", location.search));
-                    }}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-[#181a1b] hover:bg-gray-100 dark:hover:bg-[#2a2c30] transition-colors mb-2"
-                  >
-                    <ClipboardList size={20} className="text-[#ff5722]" />
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      Meus pedidos
-                    </span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => {
