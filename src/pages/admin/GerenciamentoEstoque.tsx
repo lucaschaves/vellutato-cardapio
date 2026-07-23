@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -57,6 +58,7 @@ export function GerenciamentoEstoque() {
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
   const [processandoId, setProcessandoId] = useState<string | null>(null);
+  const [aba, setAba] = useState<"ativos" | "desativados">("ativos");
 
   // Estados do Modal de Adicionais (Vínculos)
   const [produtoAtivo, setProdutoAtivo] = useState<ProdutoEstoque | null>(null);
@@ -114,8 +116,8 @@ export function GerenciamentoEstoque() {
       );
       toast.success(
         novoStatus
-          ? "Produto visível no cardápio."
-          : "Produto ocultado do cardápio.",
+          ? "Produto reativado e visível no cardápio."
+          : "Produto desativado — movido para a aba Desativados.",
       );
     } catch (erro: any) {
       console.error(
@@ -151,6 +153,72 @@ export function GerenciamentoEstoque() {
         erro.message || erro,
       );
       toast.error("Erro de Sincronização: Falha ao salvar a quantidade.");
+    } finally {
+      setProcessandoId(null);
+    }
+  };
+
+  const excluirProduto = async (produto: ProdutoEstoque) => {
+    try {
+      setProcessandoId(produto.id);
+
+      const { count: qtdPedidos, error: erroPedidos } = await supabase
+        .from("pedido_itens")
+        .select("id", { count: "exact", head: true })
+        .eq("produto_id", produto.id);
+
+      if (erroPedidos) {
+        toast.error("Não foi possível verificar uso em pedidos.");
+        return;
+      }
+
+      if (qtdPedidos && qtdPedidos > 0) {
+        toast.error(
+          `Não é possível excluir "${produto.nome}": já teve vendas. Desative-o para tirar do cardápio sem afetar o histórico.`,
+        );
+        return;
+      }
+
+      if (
+        !window.confirm(
+          `Excluir o produto "${produto.nome}"? Esta ação não pode ser desfeita.`,
+        )
+      ) {
+        return;
+      }
+
+      await supabase
+        .from("produto_adicionais")
+        .delete()
+        .eq("produto_id", produto.id);
+
+      await supabase
+        .from("vendas_cruzadas")
+        .delete()
+        .or(
+          `gatilho_produto_id.eq.${produto.id},alvo_produto_id.eq.${produto.id}`,
+        );
+
+      await supabase.from("combo_opcoes").delete().eq("produto_id", produto.id);
+
+      const { error } = await supabase
+        .from("produtos")
+        .delete()
+        .eq("id", produto.id);
+
+      if (error) throw new Error(error.message);
+
+      setProdutos((prev) => prev.filter((p) => p.id !== produto.id));
+      if (produtoAtivo?.id === produto.id) setProdutoAtivo(null);
+      toast.success("Produto excluído.");
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - ESTOQUE] Falha ao excluir:", mensagem);
+      toast.error(
+        /foreign key|violates|constraint/i.test(mensagem)
+          ? `Não é possível excluir "${produto.nome}": ainda está vinculado a outro registro.`
+          : "Erro ao excluir produto.",
+      );
     } finally {
       setProcessandoId(null);
     }
@@ -272,9 +340,15 @@ export function GerenciamentoEstoque() {
     }
   };
 
-  const produtosFiltrados = produtos.filter((p) =>
-    p.nome.toLowerCase().includes(termoBusca.toLowerCase()),
-  );
+  const qtdAtivos = produtos.filter((p) => p.ativo).length;
+  const qtdDesativados = produtos.filter((p) => !p.ativo).length;
+
+  const produtosFiltrados = produtos.filter((p) => {
+    const naAba = aba === "ativos" ? p.ativo : !p.ativo;
+    if (!naAba) return false;
+    if (!termoBusca.trim()) return true;
+    return p.nome.toLowerCase().includes(termoBusca.toLowerCase());
+  });
 
   return (
     <div className="p-6 max-w-5xl mx-auto h-full space-y-6">
@@ -286,7 +360,9 @@ export function GerenciamentoEstoque() {
             Estoque
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Gerencie produtos e libere extras para vendas.
+            {aba === "ativos"
+              ? "Produtos no cardápio — quantidade, extras e visibilidade."
+              : "Produtos ocultos. Quem já teve venda não pode ser excluído (histórico)."}
           </p>
         </div>
 
@@ -304,11 +380,48 @@ export function GerenciamentoEstoque() {
         </div>
       </div>
 
+      <div className="flex gap-1 overflow-x-auto">
+        {(
+          [
+            ["ativos", "Ativos", qtdAtivos],
+            ["desativados", "Desativados", qtdDesativados],
+          ] as const
+        ).map(([id, label, qtd]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setAba(id)}
+            className={`px-3 py-1.5 rounded-full text-sm font-semibold shrink-0 ${
+              aba === id
+                ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                : "bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300"
+            }`}
+          >
+            {label}
+            <span
+              className={`ml-1.5 text-xs font-bold ${
+                aba === id ? "opacity-80" : "text-gray-400"
+              }`}
+            >
+              ({qtd})
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Tabela de Produtos */}
       <div className="border rounded-xl dark:border-gray-800 bg-white dark:bg-surface-dark shadow-sm overflow-hidden">
         {carregando ? (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="animate-spin text-cookie-primary" size={32} />
+          </div>
+        ) : produtosFiltrados.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-center px-4 text-gray-500 text-sm">
+            {termoBusca.trim()
+              ? "Nenhum produto encontrado com esse filtro."
+              : aba === "ativos"
+                ? "Nenhum produto ativo."
+                : "Nenhum produto desativado."}
           </div>
         ) : (
           <Table>
@@ -323,10 +436,7 @@ export function GerenciamentoEstoque() {
             </TableHeader>
             <TableBody>
               {produtosFiltrados.map((produto) => (
-                <TableRow
-                  key={produto.id}
-                  className={`${!produto.ativo ? "opacity-60" : ""}`}
-                >
+                <TableRow key={produto.id}>
                   <TableCell className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 flex-shrink-0 overflow-hidden border">
                       {produto.imagem_url ? (
@@ -461,17 +571,33 @@ export function GerenciamentoEstoque() {
                   </TableCell>
 
                   <TableCell className="text-right pr-6">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/admin/catalogo?editar=${produto.id}`)
-                      }
-                      className="gap-2"
-                    >
-                      <Pencil size={14} />
-                      Editar
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          navigate(`/admin/catalogo?editar=${produto.id}`)
+                        }
+                        className="gap-2"
+                      >
+                        <Pencil size={14} />
+                        Editar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        disabled={processandoId === produto.id}
+                        title="Excluir produto"
+                        onClick={() => void excluirProduto(produto)}
+                      >
+                        {processandoId === produto.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

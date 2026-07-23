@@ -1,0 +1,34 @@
+# Configuração das Edge Functions do projeto Cardapio
+
+[functions.webhook-asaas]
+# Asaas não envia JWT do Supabase — só o header asaas-access-token
+verify_jwt = false
+
+[functions.asaas-callback]
+# Redirect público pós-pagamento (Asaas → app)
+verify_jwt = false
+
+[functions.webhook-voa]
+verify_jwt = false
+
+[functions.send-sms]
+# Auth SMS Hook autentica via SEND_SMS_HOOK_SECRET (standard webhooks)
+verify_jwt = false
+
+[functions.webhook-whatsapp]
+# Meta WhatsApp Cloud API — verificação hub + inbound
+verify_jwt = false
+
+[functions.notificar-status-pedido]
+# Chamada autenticada pelo admin (KDS) após mudar status
+verify_jwt = true
+
+[functions.confirmar-pagamento-asaas]
+# Cliente no retorno ?pago=1 — sync com Asaas se webhook atrasar
+verify_jwt = false
+
+[functions.criar-checkout-asaas]
+verify_jwt = true
+
+[functions.voa-enviar-pedido]
+verify_jwt = true

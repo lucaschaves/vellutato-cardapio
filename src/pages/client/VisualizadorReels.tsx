@@ -21,6 +21,7 @@ import {
   calcularDeltaOpcao,
   somarDeltasCombo,
   validarEscolhasCombo,
+  rotuloEscolhasGrupo,
   type ComboGrupo,
   type EscolhaCombo,
 } from "../../lib/combos";
@@ -29,6 +30,7 @@ import {
   calcularPrecoComDescontoVendaCruzada,
   type OfertaVendaCruzada,
 } from "../../lib/vendasCruzadas";
+import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { urlCardapio } from "../../lib/urlCardapio";
 import { useCartStore } from "../../store/useCartStore";
 
@@ -47,6 +49,8 @@ interface ProdutoDetalhe {
   tipo?: "simples" | "combo";
   disponibilidade?: DisponibilidadeProduto;
   adicional_obrigatorio?: boolean;
+  medida_valor?: number | null;
+  medida_unidade?: string | null;
 }
 
 interface Adicional {
@@ -219,6 +223,16 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
         </div>
       )}
 
+      <TagMedidaProduto
+        valor={produto.medida_valor}
+        unidade={produto.medida_unidade}
+        variante="overlay"
+        tamanho="md"
+        className={`absolute z-20 ${
+          produto.em_promocao ? "top-4 left-4" : "top-4 right-4"
+        }`}
+      />
+
       <MidiaProdutoMemo
         imagemUrl={produto.imagem_url}
         videoUrl={produto.video_url}
@@ -327,7 +341,9 @@ export function VisualizadorReels() {
             setGruposCombo(grupos);
             const iniciais: EscolhaCombo[] = [];
             for (const grupo of grupos) {
-              if (grupo.min_escolhas < 1 || grupo.opcoes.length === 0) continue;
+              // Só pré-seleciona em grupos de escolha única (radio)
+              if (grupo.max_escolhas !== 1 || grupo.min_escolhas < 1) continue;
+              if (grupo.opcoes.length === 0) continue;
               const opcao = grupo.opcoes[0];
               iniciais.push({
                 grupoId: grupo.id,
@@ -647,9 +663,15 @@ export function VisualizadorReels() {
                       : "border-b border-transparent"
                   }`}
                 >
-                  <h1 className="text-xl md:landscape:text-3xl font-bold text-gray-900 dark:text-white leading-tight mb-1.5">
+                  <h1 className="text-xl md:landscape:text-3xl font-bold text-gray-900 dark:text-white leading-tight mb-2">
                     {produto.nome}
                   </h1>
+                  <TagMedidaProduto
+                    valor={produto.medida_valor}
+                    unidade={produto.medida_unidade}
+                    tamanho="lg"
+                    className="mb-3"
+                  />
 
                   <div className="flex items-end gap-3 flex-wrap">
                     <span className="text-2xl md:landscape:text-3xl font-black text-[#ff5722]">
@@ -687,88 +709,112 @@ export function VisualizadorReels() {
 
             {!carregandoCombo && gruposCombo.length > 0 && (
               <div className="mb-8 space-y-6">
-                {gruposCombo.map((grupo) => (
-                  <div key={grupo.id} className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest">
-                          {grupo.nome}
-                        </h2>
-                        {grupo.descricao && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {grupo.descricao}
-                          </p>
-                        )}
-                      </div>
-                      <div className="h-[1px] flex-1 bg-gray-200 dark:bg-[#2a2c30]" />
-                    </div>
+                {gruposCombo.map((grupo) => {
+                  const selecionadas = escolhasCombo.filter(
+                    (e) => e.grupoId === grupo.id,
+                  ).length;
+                  const meta =
+                    grupo.min_escolhas === grupo.max_escolhas
+                      ? grupo.min_escolhas
+                      : grupo.max_escolhas;
+                  const completo = selecionadas >= grupo.min_escolhas;
 
-                    {grupo.opcoes.length === 0 ? (
-                      <p className="text-sm text-red-600 dark:text-red-400 font-medium">
-                        Nenhuma opção disponível neste grupo no momento.
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-2">
-                        {grupo.opcoes.map((opcao) => {
-                          const selecionada = escolhasCombo.some(
-                            (e) =>
-                              e.grupoId === grupo.id && e.opcaoId === opcao.id,
-                          );
-                          const delta = calcularDeltaOpcao(
-                            opcao,
-                            grupo.preco_referencia,
-                          );
-                          return (
-                            <button
-                              key={opcao.id}
-                              type="button"
-                              onClick={() =>
-                                selecionarOpcaoCombo(grupo, opcao.id)
-                              }
-                              className={`flex justify-between items-center gap-3 p-4 rounded-2xl border-2 transition-all active:scale-[0.98] text-left ${
-                                selecionada
-                                  ? "border-[#ff5722] bg-[#ff5722]/10"
-                                  : "border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b]"
+                  return (
+                    <div key={grupo.id} className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest">
+                              {grupo.nome}
+                            </h2>
+                            <span
+                              className={`text-[11px] font-bold ${
+                                completo
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-[#ff5722]"
                               }`}
                             >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {opcao.produto.imagem_url && (
-                                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
-                                    <img
-                                      src={opcao.produto.imagem_url}
-                                      alt={opcao.produto.nome}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                )}
-                                <span
-                                  className={`font-bold truncate ${
-                                    selecionada
-                                      ? "text-[#ff5722]"
-                                      : "text-gray-900 dark:text-white"
-                                  }`}
-                                >
-                                  {opcao.produto.nome}
-                                </span>
-                              </div>
-                              <span
-                                className={`shrink-0 text-sm font-bold ${
-                                  delta > 0
-                                    ? "text-[#ff5722]"
-                                    : "text-gray-400 dark:text-gray-500"
+                              {rotuloEscolhasGrupo(grupo)}
+                              {meta > 0 ? ` · ${selecionadas}/${meta}` : ""}
+                            </span>
+                          </div>
+                          {grupo.descricao && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              {grupo.descricao}
+                            </p>
+                          )}
+                        </div>
+                        <div className="h-[1px] flex-1 bg-gray-200 dark:bg-[#2a2c30]" />
+                      </div>
+
+                      {grupo.opcoes.length === 0 ? (
+                        <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                          Nenhuma opção disponível neste grupo no momento.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2">
+                          {grupo.opcoes.map((opcao) => {
+                            const selecionada = escolhasCombo.some(
+                              (e) =>
+                                e.grupoId === grupo.id &&
+                                e.opcaoId === opcao.id,
+                            );
+                            const delta = calcularDeltaOpcao(
+                              opcao,
+                              grupo.preco_referencia,
+                            );
+                            return (
+                              <button
+                                key={opcao.id}
+                                type="button"
+                                onClick={() =>
+                                  selecionarOpcaoCombo(grupo, opcao.id)
+                                }
+                                className={`flex justify-between items-center gap-3 p-4 rounded-2xl border-2 transition-all active:scale-[0.98] text-left ${
+                                  selecionada
+                                    ? "border-[#ff5722] bg-[#ff5722]/10"
+                                    : "border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b]"
                                 }`}
                               >
-                                {delta > 0
-                                  ? `+ R$ ${delta.toFixed(2)}`
-                                  : "Incluso"}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {opcao.produto.imagem_url && (
+                                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                                      <img
+                                        src={opcao.produto.imagem_url}
+                                        alt={opcao.produto.nome}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                  )}
+                                  <span
+                                    className={`font-bold truncate ${
+                                      selecionada
+                                        ? "text-[#ff5722]"
+                                        : "text-gray-900 dark:text-white"
+                                    }`}
+                                  >
+                                    {opcao.produto.nome}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`shrink-0 text-sm font-bold ${
+                                    delta > 0
+                                      ? "text-[#ff5722]"
+                                      : "text-gray-400 dark:text-gray-500"
+                                  }`}
+                                >
+                                  {delta > 0
+                                    ? `+ R$ ${delta.toFixed(2)}`
+                                    : "Incluso"}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

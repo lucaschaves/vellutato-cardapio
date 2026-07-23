@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bike,
   Calculator,
   ChefHat,
   Clock,
@@ -37,6 +38,8 @@ const GRUPOS_NAVEGACAO = [
       { to: "/admin/historico", rotulo: "Histórico", icone: History },
       { to: "/admin/caixa", rotulo: "Caixa", icone: Calculator },
       { to: "/admin/funcionamento", rotulo: "Funcionamento", icone: Clock },
+      { to: "/admin/delivery", rotulo: "Delivery", icone: Bike },
+      { to: "/admin/chat", rotulo: "Chat", icone: MessageCircle },
     ],
   },
   {

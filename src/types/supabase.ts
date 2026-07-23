@@ -127,6 +127,7 @@ export type Database = {
           created_at: string | null
           id: string
           limite_uso: number | null
+          limite_por_cliente: number | null
           tipo: string
           usos: number | null
           validade: string | null
@@ -140,6 +141,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           limite_uso?: number | null
+          limite_por_cliente?: number | null
           tipo: string
           usos?: number | null
           validade?: string | null
@@ -153,6 +155,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           limite_uso?: number | null
+          limite_por_cliente?: number | null
           tipo?: string
           usos?: number | null
           validade?: string | null
@@ -510,7 +513,10 @@ export type Database = {
           em_promocao: boolean
           id: string
           imagem_url: string | null
+          medida_unidade: Database["public"]["Enums"]["unidade_medida_produto"] | null
+          medida_valor: number | null
           nome: string
+          ordem: number
           preco: number
           preco_promocional: number | null
           quantidade_estoque: number
@@ -528,7 +534,10 @@ export type Database = {
           em_promocao?: boolean
           id?: string
           imagem_url?: string | null
+          medida_unidade?: Database["public"]["Enums"]["unidade_medida_produto"] | null
+          medida_valor?: number | null
           nome: string
+          ordem?: number
           preco: number
           preco_promocional?: number | null
           quantidade_estoque?: number
@@ -546,7 +555,10 @@ export type Database = {
           em_promocao?: boolean
           id?: string
           imagem_url?: string | null
+          medida_unidade?: Database["public"]["Enums"]["unidade_medida_produto"] | null
+          medida_valor?: number | null
           nome?: string
+          ordem?: number
           preco?: number
           preco_promocional?: number | null
           quantidade_estoque?: number
@@ -657,6 +669,7 @@ export type Database = {
       tipo_origem_pedido: "mesa" | "balcao"
       tipo_produto: "simples" | "combo"
       disponibilidade_produto: "loja" | "levar" | "ambos"
+      unidade_medida_produto: "g" | "kg" | "ml" | "L"
       tipo_status_pedido:
         | "pendente"
         | "em_producao"
@@ -664,6 +677,7 @@ export type Database = {
         | "entregue"
         | "pago"
         | "cancelado"
+        | "aguardando_pagamento"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -794,6 +808,7 @@ export const Constants = {
       tipo_origem_pedido: ["mesa", "balcao"],
       tipo_produto: ["simples", "combo"],
       disponibilidade_produto: ["loja", "levar", "ambos"],
+      unidade_medida_produto: ["g", "kg", "ml", "L"],
       tipo_status_pedido: [
         "pendente",
         "em_producao",
@@ -801,6 +816,7 @@ export const Constants = {
         "entregue",
         "pago",
         "cancelado",
+        "aguardando_pagamento",
       ],
     },
   },

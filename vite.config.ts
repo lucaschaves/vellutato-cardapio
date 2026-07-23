@@ -11,11 +11,12 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["pwa-192x192.png", "pwa-512x512.png"],
+      includeAssets: ["pwa-192x192.png", "pwa-512x512.png", "sw-push.js"],
       manifest: false,
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
+        importScripts: ["/sw-push.js"],
       },
     }),
   ],

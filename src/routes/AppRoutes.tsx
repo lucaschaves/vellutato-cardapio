@@ -16,6 +16,8 @@ import { GerenciamentoCategorias } from "@/pages/admin/GerenciamentoCategorias";
 import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
 import { GerenciamentoCombos } from "@/pages/admin/GerenciamentoCombos";
 import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
+import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
+import { GerenciamentoChatDelivery } from "@/pages/admin/GerenciamentoChatDelivery";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
 import { GerenciamentoMensagens } from "@/pages/admin/GerenciamentoMensagens";
 import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
@@ -23,7 +25,7 @@ import { GerenciamentoVendasCruzadas } from "@/pages/admin/GerenciamentoVendasCr
 import { GestaoCaixa } from "@/pages/admin/GestaoCaixa";
 import { HistoricoPedidos } from "@/pages/admin/HistoricoPedidos";
 import { BemVindo } from "@/pages/client/BemVindo";
-import { AdminLayout } from "../components/AdminLayout"; // NOVO IMPORT
+import { AdminLayout } from "../components/AdminLayout";
 import { GerenciamentoCatalogo } from "../pages/admin/GerenciamentoCatalogo";
 import { GerenciamentoEstoque } from "../pages/admin/GerenciamentoEstoque";
 import { PainelPedidos } from "../pages/admin/PainelPedidos";
@@ -34,6 +36,17 @@ import { MeusPedidos } from "../pages/client/MeusPedidos";
 import { Perfil } from "../pages/client/Perfil";
 import { VisualizadorReels } from "../pages/client/VisualizadorReels";
 import { Login } from "../pages/Login";
+import { DeliveryLayout } from "../pages/delivery/DeliveryLayout";
+import { DeliveryHome } from "../pages/delivery/DeliveryHome";
+import { DeliveryItem } from "../pages/delivery/DeliveryItem";
+import { DeliveryCheckout } from "../pages/delivery/DeliveryCheckout";
+import { DeliveryConta } from "../pages/delivery/DeliveryConta";
+import { DeliveryPedido } from "../pages/delivery/DeliveryPedido";
+import { DeliveryPedidos } from "../pages/delivery/DeliveryPedidos";
+import { DeliveryChat } from "../pages/delivery/DeliveryChat";
+import { DeliveryAuthCallback } from "../pages/delivery/DeliveryAuthCallback";
+import { DeliveryCadastro } from "../pages/delivery/DeliveryCadastro";
+import { DeliveryEndereco } from "../pages/delivery/DeliveryEndereco";
 
 const RotaProtegida = () => {
   const { sessao, carregando } = useAuth();
@@ -53,7 +66,6 @@ const RotaProtegida = () => {
     return <Navigate to="/login" replace />;
   }
 
-  // AGORA RETORNAMOS O LAYOUT EM VEZ DO OUTLET DIRETO
   return <AdminLayout />;
 };
 
@@ -85,6 +97,22 @@ const router = createBrowserRouter([
     children: rotasFilhasCardapio,
   },
   {
+    path: "/delivery",
+    element: <DeliveryLayout />,
+    children: [
+      { index: true, element: <DeliveryHome /> },
+      { path: "item/:id", element: <DeliveryItem /> },
+      { path: "checkout", element: <DeliveryCheckout /> },
+      { path: "conta", element: <DeliveryConta /> },
+      { path: "pedidos", element: <DeliveryPedidos /> },
+      { path: "pedido/:id", element: <DeliveryPedido /> },
+      { path: "chat", element: <DeliveryChat /> },
+      { path: "auth/callback", element: <DeliveryAuthCallback /> },
+      { path: "cadastro", element: <DeliveryCadastro /> },
+      { path: "endereco", element: <DeliveryEndereco /> },
+    ],
+  },
+  {
     path: "/login",
     element: <Login />,
   },
@@ -108,6 +136,8 @@ const router = createBrowserRouter([
         path: "/admin/funcionamento",
         element: <GerenciamentoFuncionamento />,
       },
+      { path: "/admin/delivery", element: <GerenciamentoDelivery /> },
+      { path: "/admin/chat", element: <GerenciamentoChatDelivery /> },
       {
         path: "/admin/vendas-cruzadas",
         element: <GerenciamentoVendasCruzadas />,

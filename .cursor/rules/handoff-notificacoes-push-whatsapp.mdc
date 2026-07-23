@@ -1,0 +1,27 @@
+---
+description: Handoff — Web Push + WhatsApp status (cliente inicia conversa)
+globs:
+alwaysApply: false
+---
+
+# Notificações de status (Push + WhatsApp)
+
+## Ideia
+- **Push**: cliente ativa na tela `/delivery/pedido/:id`.
+- **WhatsApp**: cliente toca no botão, envia mensagem → janela 24h → KDS atualiza via Cloud API (sem template de abertura).
+
+## Arquivos
+- Migration: `supabase/migrations/20250723150000_notificacoes_push_whatsapp.sql`
+- Edge: `notificar-status-pedido`, `webhook-whatsapp`
+- Front: `src/lib/webPush.ts`, `src/lib/notificacoesPedido.ts`, `DeliveryPedido.tsx`
+- SW push: `public/sw-push.js` (importScripts no VitePWA)
+- KDS chama `dispararNotificacaoStatusPedido` em `PainelPedidos.tsx`
+
+## Config pendente (ops)
+1. Rodar migration
+2. `npx web-push generate-vapid-keys` → secrets + `VITE_VAPID_PUBLIC_KEY`
+3. Meta Cloud API: token, phone number id, webhook verify
+4. Deploy functions + número em Admin → Delivery
+5. `SITE_URL` https em produção
+
+Ver `supabase/functions/README.md` seção Notificações.

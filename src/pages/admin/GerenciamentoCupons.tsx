@@ -29,6 +29,7 @@ interface Cupom {
   valor_minimo: number | null;
   validade: string | null;
   limite_uso: number | null;
+  limite_por_cliente: number | null;
   usos: number | null;
   ativo: boolean | null;
   cliente_id: string | null;
@@ -49,6 +50,7 @@ export function GerenciamentoCupons() {
   const [valorMinimo, setValorMinimo] = useState("");
   const [validade, setValidade] = useState("");
   const [limiteUso, setLimiteUso] = useState("");
+  const [limitePorCliente, setLimitePorCliente] = useState("");
   const [clienteId, setClienteId] = useState("");
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export function GerenciamentoCupons() {
     setValorMinimo("");
     setValidade("");
     setLimiteUso("");
+    setLimitePorCliente("");
     setClienteId("");
   };
 
@@ -108,6 +111,9 @@ export function GerenciamentoCupons() {
     );
     setLimiteUso(
       cupom.limite_uso != null ? String(cupom.limite_uso) : "",
+    );
+    setLimitePorCliente(
+      cupom.limite_por_cliente != null ? String(cupom.limite_por_cliente) : "",
     );
     setClienteId(cupom.cliente_id || "");
   };
@@ -128,6 +134,9 @@ export function GerenciamentoCupons() {
         : null,
       validade: validade || null,
       limite_uso: limiteUso ? parseInt(limiteUso, 10) : null,
+      limite_por_cliente: limitePorCliente
+        ? parseInt(limitePorCliente, 10)
+        : null,
       cliente_id: clienteId || null,
     };
 
@@ -284,11 +293,32 @@ export function GerenciamentoCupons() {
             value={validade}
             onChange={(e) => setValidade(e.target.value)}
           />
-          <Input
-            placeholder="Limite de usos (opcional)"
-            value={limiteUso}
-            onChange={(e) => setLimiteUso(e.target.value)}
-          />
+          <div className="space-y-1">
+            <Input
+              type="number"
+              min={1}
+              placeholder="Limite geral de usos (opcional)"
+              value={limiteUso}
+              onChange={(e) => setLimiteUso(e.target.value)}
+            />
+            <p className="text-[11px] text-zinc-500">
+              Total de vezes que o cupom pode ser usado no geral (todos os
+              clientes). Vazio = sem limite geral.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Input
+              type="number"
+              min={1}
+              placeholder="Limite por cliente (opcional)"
+              value={limitePorCliente}
+              onChange={(e) => setLimitePorCliente(e.target.value)}
+            />
+            <p className="text-[11px] text-zinc-500">
+              Quantas vezes o mesmo cliente pode usar. Ex.: 1 = só uma vez por
+              pessoa. Vazio = o cliente pode usar várias vezes.
+            </p>
+          </div>
           <select
             value={clienteId}
             onChange={(e) => setClienteId(e.target.value)}
@@ -301,6 +331,10 @@ export function GerenciamentoCupons() {
               </option>
             ))}
           </select>
+          <p className="text-[11px] text-zinc-500 lg:col-span-3 -mt-2">
+            “Cliente” acima restringe quem pode aplicar o código (cupom
+            exclusivo). É diferente do limite por cliente.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={salvando}>
@@ -350,7 +384,8 @@ export function GerenciamentoCupons() {
                 <TableHead>Cliente</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Valor</TableHead>
-                <TableHead>Usos</TableHead>
+                <TableHead>Usos (geral)</TableHead>
+                <TableHead>Por cliente</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead>Ativo</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -359,7 +394,7 @@ export function GerenciamentoCupons() {
             <TableBody>
               {cuponsFiltrados.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10 text-gray-500">
+                  <TableCell colSpan={9} className="text-center py-10 text-gray-500">
                     Nenhum cupom cadastrado.
                   </TableCell>
                 </TableRow>
@@ -384,7 +419,14 @@ export function GerenciamentoCupons() {
                     </TableCell>
                     <TableCell>
                       {cupom.usos || 0}
-                      {cupom.limite_uso != null ? ` / ${cupom.limite_uso}` : ""}
+                      {cupom.limite_uso != null ? ` / ${cupom.limite_uso}` : " / ∞"}
+                    </TableCell>
+                    <TableCell>
+                      {cupom.limite_por_cliente != null
+                        ? cupom.limite_por_cliente === 1
+                          ? "1 vez"
+                          : `${cupom.limite_por_cliente}×`
+                        : "Ilimitado"}
                     </TableCell>
                     <TableCell>
                       {cupom.validade

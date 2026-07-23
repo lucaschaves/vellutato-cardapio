@@ -48,6 +48,7 @@ import {
   salvarTemaEscuro,
   type EscalaFonte,
 } from "../../lib/preferenciasExibicao";
+import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { supabase } from "../../lib/supabase";
 import { urlCardapio, urlItemProduto } from "../../lib/urlCardapio";
 import { useCartStore } from "../../store/useCartStore";
@@ -69,9 +70,18 @@ interface Produto {
   categoria_id: string;
   ativo: boolean;
   em_promocao: boolean;
+  ordem?: number | null;
+  medida_valor?: number | null;
+  medida_unidade?: string | null;
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
   disponibilidade?: DisponibilidadeProduto;
+}
+
+function ordenarProdutosCategoria(a: Produto, b: Produto) {
+  const diff = (a.ordem ?? 0) - (b.ordem ?? 0);
+  if (diff !== 0) return diff;
+  return a.nome.localeCompare(b.nome, "pt-BR");
 }
 
 function ImagemProdutoCard({ src, alt }: { src: string; alt: string }) {
@@ -306,6 +316,18 @@ export function FeedProdutos() {
             </div>
           )}
 
+          {!esgotado && (
+            <TagMedidaProduto
+              valor={produto.medida_valor}
+              unidade={produto.medida_unidade}
+              variante="overlay"
+              tamanho="sm"
+              className={`absolute z-20 ${
+                produto.em_promocao ? "top-2 left-[4.75rem]" : "top-2 left-2"
+              }`}
+            />
+          )}
+
           {esgotado && (
             <div className="absolute inset-0 z-30 bg-black/50 flex items-center justify-center">
               <span className="bg-gray-900 text-white text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg">
@@ -334,6 +356,12 @@ export function FeedProdutos() {
           <h3 className="text-sm md:text-base font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-2 leading-snug">
             {produto.nome}
           </h3>
+          <TagMedidaProduto
+            valor={produto.medida_valor}
+            unidade={produto.medida_unidade}
+            tamanho="sm"
+            className="mb-1.5 self-start"
+          />
 
           <p className="md:hidden text-sm font-extrabold text-[#ff5722] leading-snug">
             {esgotado ? (
@@ -366,14 +394,20 @@ export function FeedProdutos() {
   const produtosPorCategoria = categoriasFiltradas
     .map((categoria) => ({
       categoria,
-      produtos: produtosFiltrados.filter((p) => p.categoria_id === categoria.id),
+      produtos: produtosFiltrados
+        .filter((p) => p.categoria_id === categoria.id)
+        .slice()
+        .sort(ordenarProdutosCategoria),
     }))
     .filter((grupo) => grupo.produtos.length > 0);
 
   const produtosExibidos =
     categoriaAtiva === "all"
-      ? produtosFiltrados
-      : produtosFiltrados.filter((p) => p.categoria_id === categoriaAtiva);
+      ? produtosFiltrados.slice().sort(ordenarProdutosCategoria)
+      : produtosFiltrados
+          .filter((p) => p.categoria_id === categoriaAtiva)
+          .slice()
+          .sort(ordenarProdutosCategoria);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32 font-sans transition-colors duration-300 selection:bg-[#ff5722]/30">

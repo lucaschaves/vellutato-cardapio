@@ -11,6 +11,12 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import {
+  isUnidadeMedida,
+  LABELS_UNIDADE_MEDIDA,
+  UNIDADES_MEDIDA,
+  type UnidadeMedidaProduto,
+} from "../../lib/produtoMedida";
 
 interface Categoria {
   id: string;
@@ -39,6 +45,10 @@ export function GerenciamentoCatalogo() {
   const [disponibilidade, setDisponibilidade] = useState<
     "loja" | "levar" | "ambos"
   >("ambos");
+  const [medidaValor, setMedidaValor] = useState("");
+  const [medidaUnidade, setMedidaUnidade] = useState<UnidadeMedidaProduto | "">(
+    "",
+  );
 
   const [imagemFila, setImagemFila] = useState<File | null>(null);
   const [videoFila, setVideoFila] = useState<File | null>(null);
@@ -103,6 +113,12 @@ export function GerenciamentoCatalogo() {
             ? data.disponibilidade
             : "ambos",
         );
+        setMedidaValor(
+          data.medida_valor != null ? String(data.medida_valor) : "",
+        );
+        setMedidaUnidade(
+          isUnidadeMedida(data.medida_unidade) ? data.medida_unidade : "",
+        );
         setImagemUrlAtual(data.imagem_url);
         setVideoUrlAtual(data.video_url);
         setImagemFila(null);
@@ -131,6 +147,8 @@ export function GerenciamentoCatalogo() {
     setAtivo(true);
     setTipo("simples");
     setDisponibilidade("ambos");
+    setMedidaValor("");
+    setMedidaUnidade("");
     setImagemFila(null);
     setVideoFila(null);
     setImagemUrlAtual(null);
@@ -214,6 +232,24 @@ export function GerenciamentoCatalogo() {
           ? parseFloat(precoPromocional.replace(",", "."))
           : null;
 
+      const medidaTrim = medidaValor.trim().replace(",", ".");
+      let medidaValorNum: number | null = null;
+      let medidaUnidadeDb: UnidadeMedidaProduto | null = null;
+      if (medidaTrim || medidaUnidade) {
+        if (!medidaTrim || !medidaUnidade) {
+          toast.error("Informe o valor e a unidade da medida, ou deixe ambos vazios.");
+          setSalvando(false);
+          return;
+        }
+        medidaValorNum = parseFloat(medidaTrim);
+        if (!Number.isFinite(medidaValorNum) || medidaValorNum <= 0) {
+          toast.error("A medida deve ser um número maior que zero.");
+          setSalvando(false);
+          return;
+        }
+        medidaUnidadeDb = medidaUnidade;
+      }
+
       const payload = {
         nome,
         descricao,
@@ -230,6 +266,8 @@ export function GerenciamentoCatalogo() {
         ativo,
         tipo,
         disponibilidade,
+        medida_valor: medidaValorNum,
+        medida_unidade: medidaUnidadeDb,
       };
 
       if (modoEdicao && produtoEditandoId) {
@@ -247,9 +285,20 @@ export function GerenciamentoCatalogo() {
           navigate("/admin/estoque");
         }
       } else {
+        const { data: maxOrdemRow } = await supabase
+          .from("produtos")
+          .select("ordem")
+          .eq("categoria_id", categoriaId)
+          .order("ordem", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const proximaOrdem =
+          typeof maxOrdemRow?.ordem === "number" ? maxOrdemRow.ordem + 1 : 0;
+
         const { data: criado, error: dbError } = await supabase
           .from("produtos")
-          .insert(payload)
+          .insert({ ...payload, ordem: proximaOrdem })
           .select("id")
           .single();
 
@@ -413,6 +462,42 @@ export function GerenciamentoCatalogo() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+              Medida (peso / volume)
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={medidaValor}
+                onChange={(e) => setMedidaValor(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+                placeholder="Ex: 85"
+              />
+              <select
+                value={medidaUnidade}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMedidaUnidade(isUnidadeMedida(v) ? v : "");
+                }}
+                className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+              >
+                <option value="">Sem medida</option>
+                {UNIDADES_MEDIDA.map((u) => (
+                  <option key={u} value={u}>
+                    {LABELS_UNIDADE_MEDIDA[u]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Aparece como tag no cardápio (ex: 85g, 250ml). Deixe vazio se não
+              quiser exibir.
+            </p>
           </div>
 
           <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 space-y-4">

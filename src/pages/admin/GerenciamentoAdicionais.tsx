@@ -22,10 +22,16 @@ interface Adicional {
   disponivel: boolean;
 }
 
+function ehAdicionalGratis(preco: number) {
+  return Number(preco) === 0;
+}
+
 export function GerenciamentoAdicionais() {
   const [adicionais, setAdicionais] = useState<Adicional[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
+  const [aba, setAba] = useState<"ativos" | "desativados">("ativos");
+  const [tipoPreco, setTipoPreco] = useState<"pagos" | "gratis">("pagos");
 
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [novoNome, setNovoNome] = useState("");
@@ -135,8 +141,8 @@ export function GerenciamentoAdicionais() {
       );
       toast.success(
         novoStatus
-          ? "Adicional reativado no cardápio."
-          : "Adicional suspenso temporariamente.",
+          ? "Adicional reativado — movido para a aba Ativos."
+          : "Adicional desativado — movido para a aba Desativados.",
       );
     } catch (erro: any) {
       console.error(
@@ -197,6 +203,10 @@ export function GerenciamentoAdicionais() {
       }
 
       limparFormulario();
+
+      const novoTipo = ehAdicionalGratis(precoNumerico) ? "gratis" : "pagos";
+      setTipoPreco(novoTipo);
+      setAba("ativos");
     } catch (erro: any) {
       console.error(
         "[ERRO - ADICIONAIS] Falha ao salvar:",
@@ -212,9 +222,23 @@ export function GerenciamentoAdicionais() {
     }
   };
 
-  const adicionaisFiltrados = adicionais.filter((a) =>
-    a.nome.toLowerCase().includes(termoBusca.toLowerCase()),
+  const adicionaisDoTipo = adicionais.filter((a) =>
+    tipoPreco === "gratis"
+      ? ehAdicionalGratis(a.preco)
+      : !ehAdicionalGratis(a.preco),
   );
+
+  const qtdAtivos = adicionaisDoTipo.filter((a) => a.disponivel).length;
+  const qtdDesativados = adicionaisDoTipo.filter((a) => !a.disponivel).length;
+  const qtdPagos = adicionais.filter((a) => !ehAdicionalGratis(a.preco)).length;
+  const qtdGratis = adicionais.filter((a) => ehAdicionalGratis(a.preco)).length;
+
+  const adicionaisFiltrados = adicionaisDoTipo.filter((a) => {
+    const naAba = aba === "ativos" ? a.disponivel : !a.disponivel;
+    if (!naAba) return false;
+    if (!termoBusca.trim()) return true;
+    return a.nome.toLowerCase().includes(termoBusca.toLowerCase());
+  });
 
   return (
     <div className="p-6 max-w-5xl mx-auto h-full space-y-8">
@@ -225,7 +249,13 @@ export function GerenciamentoAdicionais() {
             Extras e Adicionais
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Gerencie sorvetes, caldas e coberturas oferecidos nos produtos.
+            {tipoPreco === "pagos"
+              ? aba === "ativos"
+                ? "Extras pagos visíveis no cardápio (aumentam o valor do item)."
+                : "Extras pagos ocultos. Quem já teve venda não pode ser excluído."
+              : aba === "ativos"
+                ? "Opções grátis (R$ 0) visíveis no cardápio — escolha sem custo."
+                : "Opções grátis ocultas do cardápio."}
           </p>
         </div>
       </div>
@@ -276,6 +306,9 @@ export function GerenciamentoAdicionais() {
               placeholder="0.00"
               className="dark:bg-[#1a1815]"
             />
+            <p className="text-xs text-gray-500">
+              Use 0 para opção grátis; valor maior para extra pago.
+            </p>
           </div>
           <Button
             type="submit"
@@ -295,6 +328,69 @@ export function GerenciamentoAdicionais() {
             )}
           </Button>
         </form>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex gap-1 overflow-x-auto">
+          {(
+            [
+              ["pagos", "Com valor", qtdPagos],
+              ["gratis", "Grátis (R$ 0)", qtdGratis],
+            ] as const
+          ).map(([id, label, qtd]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setTipoPreco(id);
+                setAba("ativos");
+              }}
+              className={`px-3 py-1.5 rounded-full text-sm font-semibold shrink-0 ${
+                tipoPreco === id
+                  ? "bg-cookie-primary text-white"
+                  : "bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300"
+              }`}
+            >
+              {label}
+              <span
+                className={`ml-1.5 text-xs font-bold ${
+                  tipoPreco === id ? "opacity-80" : "text-gray-400"
+                }`}
+              >
+                ({qtd})
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-1 overflow-x-auto">
+          {(
+            [
+              ["ativos", "Ativos", qtdAtivos],
+              ["desativados", "Desativados", qtdDesativados],
+            ] as const
+          ).map(([id, label, qtd]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setAba(id)}
+              className={`px-3 py-1.5 rounded-full text-sm font-semibold shrink-0 ${
+                aba === id
+                  ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                  : "bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300"
+              }`}
+            >
+              {label}
+              <span
+                className={`ml-1.5 text-xs font-bold ${
+                  aba === id ? "opacity-80" : "text-gray-400"
+                }`}
+              >
+                ({qtd})
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="border rounded-xl dark:border-gray-800 bg-white dark:bg-surface-dark shadow-sm overflow-hidden">
@@ -336,29 +432,39 @@ export function GerenciamentoAdicionais() {
                     colSpan={4}
                     className="h-24 text-center text-gray-500"
                   >
-                    Nenhum adicional encontrado.
+                    {termoBusca.trim()
+                      ? "Nenhum adicional encontrado com esse filtro."
+                      : tipoPreco === "pagos"
+                        ? aba === "ativos"
+                          ? "Nenhum adicional pago ativo."
+                          : "Nenhum adicional pago desativado."
+                        : aba === "ativos"
+                          ? "Nenhuma opção grátis ativa."
+                          : "Nenhuma opção grátis desativada."}
                   </TableCell>
                 </TableRow>
               ) : (
                 adicionaisFiltrados.map((item) => (
                   <TableRow
                     key={item.id}
-                    className={`${!item.disponivel ? "opacity-60 bg-gray-50 dark:bg-gray-900/10" : ""} ${
+                    className={
                       editandoId === item.id
                         ? "ring-2 ring-inset ring-cookie-primary/40"
                         : ""
-                    }`}
+                    }
                   >
                     <TableCell className="font-medium text-gray-900 dark:text-gray-100">
                       {item.nome}
                     </TableCell>
                     <TableCell className="text-cookie-accent font-semibold">
-                      + R$ {item.preco.toFixed(2).replace(".", ",")}
+                      {ehAdicionalGratis(item.preco)
+                        ? "Grátis"
+                        : `+ R$ ${item.preco.toFixed(2).replace(".", ",")}`}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-3">
-                        <span className="text-sm text-gray-500 font-medium w-20 text-right">
-                          {item.disponivel ? "Disponível" : "Esgotado"}
+                        <span className="text-sm text-gray-500 font-medium w-24 text-right">
+                          {item.disponivel ? "Disponível" : "Desativado"}
                         </span>
                         <Switch
                           checked={item.disponivel}

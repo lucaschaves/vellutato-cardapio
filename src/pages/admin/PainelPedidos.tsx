@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
+  Bike,
   CheckCircle2,
   ChefHat,
   Clock,
@@ -20,6 +21,7 @@ import {
   type DadosMensagemPedido,
   type MensagemWhatsapp,
 } from "../../lib/mensagensWhatsapp";
+import { dispararNotificacaoStatusPedido } from "../../lib/notificacoesPedido";
 import { supabase } from "../../lib/supabase";
 
 // Tipagens
@@ -41,23 +43,49 @@ interface ItemPedido {
 interface Pedido {
   id: string;
   sequencia_pedido: number;
-  origem: "mesa" | "balcao";
+  origem: "mesa" | "balcao" | "delivery";
+  modalidade?: "entrega" | "retirada" | null;
+  status_pagamento?: string | null;
   identificador: string;
   cliente_nome: string;
   cliente_celular: string | null;
   total: number | null;
-  status: "pendente" | "em_producao" | "pronto" | "entregue" | "cancelado";
+  status:
+    | "pendente"
+    | "em_producao"
+    | "pronto"
+    | "entregue"
+    | "cancelado"
+    | "aguardando_pagamento";
   criado_em: string;
+  voa_order_id?: string | null;
+  tracking_url?: string | null;
   pedido_itens: ItemPedido[];
 }
 
 const STATUS_MENSAGEM_WHATSAPP: Record<Pedido["status"], string> = {
   pendente: "Recebemos o seu pedido e em breve ele entra no preparo.",
   em_producao: "Seu pedido já está sendo preparado!",
-  pronto: "Seu pedido está pronto! Pode vir retirar.",
+  pronto: "Seu pedido está pronto!",
   entregue: "Seu pedido foi entregue.",
   cancelado: "Seu pedido foi cancelado.",
+  aguardando_pagamento: "Aguardando a confirmação do pagamento.",
 };
+
+function fraseStatusWhatsapp(pedido: Pedido): string {
+  if (pedido.status === "pronto") {
+    if (pedido.origem === "delivery" && pedido.modalidade === "entrega") {
+      return pedido.voa_order_id
+        ? "Seu pedido saiu para entrega! Acompanhe pelo rastreio."
+        : "Seu pedido está pronto e em breve sai para entrega!";
+    }
+    if (pedido.origem === "delivery" && pedido.modalidade === "retirada") {
+      return "Seu pedido está pronto para retirada!";
+    }
+    return "Seu pedido está pronto! Pode vir buscar.";
+  }
+  return STATUS_MENSAGEM_WHATSAPP[pedido.status];
+}
 
 function dadosMensagemDoPedido(pedido: Pedido): DadosMensagemPedido {
   const produtos = pedido.pedido_itens
@@ -82,7 +110,7 @@ function dadosMensagemDoPedido(pedido: Pedido): DadosMensagemPedido {
     total: `R$ ${Number(pedido.total || 0)
       .toFixed(2)
       .replace(".", ",")}`,
-    status: STATUS_MENSAGEM_WHATSAPP[pedido.status],
+    status: fraseStatusWhatsapp(pedido),
     local: pedido.identificador || "Balcão",
   };
 }
@@ -166,12 +194,15 @@ export function PainelPedidos() {
   const carregarPedidosAtivos = async () => {
     try {
       setCarregando(true);
+      await supabase.rpc("cancelar_pedidos_delivery_sem_pagamento", {
+        p_minutos: 30,
+      });
       // Removemos o filtro 'in' para garantir que nada fique oculto por erro de digitação de status
       const { data, error } = await supabase
         .from("pedidos")
         .select(
           `
-          id, sequencia_pedido, origem, identificador, cliente_nome, cliente_celular, total, status, criado_em,
+          id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, status, criado_em, voa_order_id, tracking_url,
           pedido_itens (
             id, quantidade, observacoes, modo_consumo,
             produtos ( nome ),
@@ -181,13 +212,23 @@ export function PainelPedidos() {
           )
         `,
         )
-        // KDS: exclui entregue, cancelado e pago (conta fechada no caixa)
-        .not("status", "in", '("entregue","cancelado","pago")')
+        // KDS: exclui entregue, cancelado, pago (conta fechada) e aguardando pagamento Asaas
+        .not(
+          "status",
+          "in",
+          '("entregue","cancelado","pago","aguardando_pagamento")',
+        )
         .order("criado_em", { ascending: false }); // Pedidos novos primeiro
 
       if (error) throw new Error(error.message);
 
-      setPedidos(data as unknown as Pedido[]);
+      // Delivery aguardando pagamento não entra na fila da cozinha
+      const lista = ((data || []) as unknown as Pedido[]).filter(
+        (p) =>
+          p.status_pagamento !== "aguardando" &&
+          p.status !== "aguardando_pagamento",
+      );
+      setPedidos(lista);
     } catch (erro: any) {
       console.error("[ERRO - PAINEL] Falha ao carregar:", erro.message);
     } finally {
@@ -204,11 +245,41 @@ export function PainelPedidos() {
     console.log("novoStatus", novoStatus);
     const { error } = await supabase
       .from("pedidos")
-      .update({ status: novoStatus }) // O valor aqui deve ser idêntico ao do banco
+      .update({ status: novoStatus })
       .eq("id", pedidoId);
 
-    if (error) toast.error(`Erro ao atualizar: ${error.message}`);
-    else toast.success("Status atualizado!");
+    if (error) {
+      toast.error(`Erro ao atualizar: ${error.message}`);
+      return;
+    }
+    toast.success("Status atualizado!");
+
+    void dispararNotificacaoStatusPedido(pedidoId, novoStatus);
+  };
+
+  const chamarMotoboy = async (pedido: Pedido) => {
+    if (pedido.voa_order_id) {
+      toast.message("Motoboy já foi chamado para este pedido.");
+      return;
+    }
+    try {
+      const { data, error: voaErr } = await supabase.functions.invoke(
+        "voa-enviar-pedido",
+        { body: { pedido_id: pedido.id } },
+      );
+      if (voaErr) throw voaErr;
+      if (data?.erro) throw new Error(String(data.erro));
+      toast.success("Motoboy chamado (VOA Delivery)!");
+      void carregarPedidosAtivos();
+      void dispararNotificacaoStatusPedido(pedido.id, "pronto");
+    } catch (e: unknown) {
+      console.error("[VOA]", e);
+      toast.error(
+        e instanceof Error
+          ? `VOA: ${e.message}`
+          : "Falha ao chamar motoboy na VOA",
+      );
+    }
   };
 
   const abrirModalWhatsApp = (pedido: Pedido) => {
@@ -273,6 +344,17 @@ export function PainelPedidos() {
             #{pedido.sequencia_pedido} - {pedido.identificador}
           </h3>
           <p className="text-sm text-gray-500">{pedido.cliente_nome}</p>
+          {pedido.origem === "delivery" && (
+            <span
+              className={`inline-block mt-1 text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                pedido.modalidade === "retirada"
+                  ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                  : "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
+              }`}
+            >
+              {pedido.modalidade === "retirada" ? "Retirada" : "Delivery"}
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
           {(pedido.status === "pendente" || pedido.status === "em_producao") && (
@@ -355,16 +437,54 @@ export function PainelPedidos() {
             onClick={() => atualizarStatus(pedido.id, "pronto")}
             className="flex-1 bg-green-500 text-white py-2 rounded font-bold flex justify-center items-center gap-2"
           >
-            <CheckCircle2 size={18} /> Finalizar
+            <CheckCircle2 size={18} /> Finalizar (pronto)
           </button>
         )}
         {pedido.status === "pronto" && (
-          <button
-            onClick={() => atualizarStatus(pedido.id, "entregue")}
-            className="flex-1 bg-gray-800 text-white py-2 rounded font-bold"
-          >
-            Entregue
-          </button>
+          <>
+            {pedido.origem === "delivery" &&
+              pedido.modalidade === "entrega" &&
+              !pedido.voa_order_id && (
+                <button
+                  type="button"
+                  onClick={() => void chamarMotoboy(pedido)}
+                  className="flex-1 bg-violet-600 text-white py-2 rounded font-bold flex justify-center items-center gap-2"
+                >
+                  <Bike size={18} /> Chamar motoboy
+                </button>
+              )}
+            {pedido.origem === "delivery" &&
+              pedido.modalidade === "entrega" &&
+              pedido.voa_order_id && (
+                <div className="rounded-lg bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-3 py-2 text-xs font-semibold text-violet-800 dark:text-violet-200 flex items-center gap-2">
+                  <Bike size={14} />
+                  Motoboy chamado
+                  {pedido.tracking_url && (
+                    <a
+                      href={pedido.tracking_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline ml-auto"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Rastrear
+                    </a>
+                  )}
+                </div>
+              )}
+            <button
+              type="button"
+              onClick={() => atualizarStatus(pedido.id, "entregue")}
+              className="flex-1 bg-gray-800 text-white py-2 rounded font-bold"
+            >
+              {pedido.origem === "delivery" && pedido.modalidade === "retirada"
+                ? "Cliente retirou"
+                : pedido.origem === "delivery" &&
+                    pedido.modalidade === "entrega"
+                  ? "Entrega concluída"
+                  : "Entregue"}
+            </button>
+          </>
         )}
       </div>
     </motion.div>
@@ -435,9 +555,12 @@ export function PainelPedidos() {
 
           {/* Coluna PRONTO */}
           <div className="flex flex-col bg-gray-100 dark:bg-[#1a1815] rounded-xl p-4 overflow-y-auto hide-scrollbar">
-            <h2 className="font-bold text-lg mb-4 flex items-center gap-2 text-green-600">
+            <h2 className="font-bold text-lg mb-1 flex items-center gap-2 text-green-600">
               <CheckCircle2 size={20} /> Prontos ({prontos.length})
             </h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Delivery: chame o motoboy aqui. Retirada: aguarde o cliente.
+            </p>
             <div className="flex flex-col gap-4">
               <AnimatePresence>
                 {prontos.map((p) => (

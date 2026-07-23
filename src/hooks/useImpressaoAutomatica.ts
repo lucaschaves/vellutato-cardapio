@@ -9,6 +9,7 @@ import { supabase } from "../lib/supabase";
 const SELECT_PEDIDO_IMPRESSAO = `
   id, sequencia_pedido, origem, identificador, cliente_nome, cliente_celular,
   status, criado_em, total, valor_total, desconto_aplicado, impresso,
+  status_pagamento,
   pedido_itens (
     id, quantidade, observacoes, preco_unitario, modo_consumo,
     produtos ( nome ),
@@ -21,6 +22,13 @@ const SELECT_PEDIDO_IMPRESSAO = `
     )
   )
 `;
+
+function pagamentoLiberaImpressao(statusPagamento: string | null | undefined) {
+  // Delivery online: só imprime após pago ou pagar-na-loja.
+  // Demais origens: nao_aplicavel / null.
+  if (!statusPagamento || statusPagamento === "nao_aplicavel") return true;
+  return statusPagamento === "pago" || statusPagamento === "na_loja";
+}
 
 const MAX_TENTATIVAS_ITENS = 6;
 const INTERVALO_TENTATIVA_MS = 400;
@@ -58,6 +66,11 @@ export function useImpressaoAutomatica() {
       if (!pedido) return false;
 
       if (pedido.status !== "pendente") return false;
+
+      const statusPagamento = (
+        pedido as { status_pagamento?: string | null }
+      ).status_pagamento;
+      if (!pagamentoLiberaImpressao(statusPagamento)) return false;
 
       if (
         !manual &&
@@ -117,14 +130,71 @@ export function useImpressaoAutomatica() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "pedidos" },
         (payload) => {
-          const novoPedido = payload.new as { id?: string; status?: string };
-          if (!novoPedido.id || novoPedido.status !== "pendente") return;
+          const novoPedido = payload.new as {
+            id?: string;
+            status?: string;
+            status_pagamento?: string | null;
+          };
+          if (!novoPedido.id) return;
+          if (novoPedido.status === "aguardando_pagamento") {
+            console.info(
+              "[IMPRESSÃO] Pedido aguardando pagamento — não imprime ainda:",
+              novoPedido.id,
+            );
+            return;
+          }
+          if (novoPedido.status !== "pendente") return;
+          if (!pagamentoLiberaImpressao(novoPedido.status_pagamento)) {
+            console.info(
+              "[IMPRESSÃO] Pedido aguardando pagamento — não imprime ainda:",
+              novoPedido.id,
+            );
+            return;
+          }
 
           console.info(
             "[IMPRESSÃO] Novo pedido detectado, agendando impressão:",
             novoPedido.id,
           );
           agendarImpressaoPedido(novoPedido.id);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "pedidos" },
+        (payload) => {
+          const atualizado = payload.new as {
+            id?: string;
+            status?: string;
+            status_pagamento?: string | null;
+            impresso?: boolean;
+          };
+          const anterior = payload.old as {
+            status?: string;
+            status_pagamento?: string | null;
+          };
+          if (!atualizado.id) return;
+          if (atualizado.impresso) return;
+          if (!pagamentoLiberaImpressao(atualizado.status_pagamento)) return;
+
+          // Liberou pagamento agora (webhook Asaas: aguardando_pagamento → pendente)
+          const liberouStatus =
+            anterior.status === "aguardando_pagamento" &&
+            atualizado.status === "pendente";
+          const liberouPagamento =
+            anterior.status_pagamento === "aguardando" &&
+            pagamentoLiberaImpressao(atualizado.status_pagamento);
+
+          if (
+            atualizado.status === "pendente" &&
+            (liberouStatus || liberouPagamento)
+          ) {
+            console.info(
+              "[IMPRESSÃO] Pagamento confirmado, agendando impressão:",
+              atualizado.id,
+            );
+            agendarImpressaoPedido(atualizado.id);
+          }
         },
       )
       .subscribe();

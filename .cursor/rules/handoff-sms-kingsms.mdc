@@ -1,0 +1,34 @@
+---
+description: Handoff pendente — Auth SMS via KingSMS + Supabase Send SMS Hook (retomar depois)
+alwaysApply: true
+---
+
+# Handoff pendente: Auth SMS (KingSMS)
+
+**Status:** código da Edge Function pronto e deployado; falta configurar secrets + Hook no Dashboard. Pausado para outra feature.
+
+## Já feito
+
+- Checkout/Conta: OTP por telefone (`signInWithOtp` / `verifyOtp`) em `AuthContext`; não puxar dados do cliente sem confirmar SMS
+- Edge Function `supabase/functions/send-sms` (KingSMS, só +55, mensagem sem acento)
+- Deploy: `send-sms` em `uhaapfxdxivmwhvnuyie`
+- Docs: `supabase/functions/README.md` (seção Auth SMS)
+- `config.toml`: `[functions.send-sms] verify_jwt = false`
+
+## Falta fazer (ao retomar)
+
+1. Secrets: `KINGSMS_LOGIN`, `KINGSMS_TOKEN`, `SEND_SMS_HOOK_SECRET` (`v1,whsec_...`)
+2. Dashboard: Phone provider ON + **Hooks → Send SMS** → URL  
+   `https://uhaapfxdxivmwhvnuyie.supabase.co/functions/v1/send-sms`
+3. Testar envio no checkout/conta; sem isso aparece `phone_provider_disabled`
+
+## Front relevante
+
+- `src/context/AuthContext.tsx` — `enviarOtpSms` / `verificarOtpSms`
+- `src/pages/delivery/DeliveryCheckout.tsx` — botões SMS + Google
+- `src/pages/delivery/DeliveryConta.tsx` — login SMS
+- `src/lib/telefone.ts` — `telefoneParaE164`
+
+## Ao concluir
+
+Remover esta rule `.cursor/rules/handoff-sms-kingsms.mdc`.

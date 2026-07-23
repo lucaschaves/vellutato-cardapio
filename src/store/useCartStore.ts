@@ -59,6 +59,7 @@ interface CartStore {
   removerItem: (idUnico: string) => void;
   alterarQuantidade: (idUnico: string, novaQuantidade: number) => void;
   alterarObservacoes: (idUnico: string, observacoes: string) => void;
+  consolidarItensIguais: () => void;
   limparCarrinho: () => void;
   aplicarCupom: (cupom: CupomValidado) => void;
   removerCupom: () => void;
@@ -66,6 +67,37 @@ interface CartStore {
   obterDescontoCupom: () => number;
   obterTotal: () => number;
   obterQuantidadeTotal: () => number;
+}
+
+function chaveItemIgual(
+  a: Pick<
+    ItemCarrinho,
+    | "produtoId"
+    | "precoBase"
+    | "adicionais"
+    | "escolhasCombo"
+    | "observacoes"
+    | "ehBrinde"
+    | "modoConsumo"
+  >,
+): string {
+  const adicionais = [...(a.adicionais || [])]
+    .map((x) => `${x.id}:${x.preco}`)
+    .sort()
+    .join(",");
+  const combos = [...(a.escolhasCombo || [])]
+    .map((x) => `${x.grupoId}:${x.produtoId}:${x.deltaPreco}`)
+    .sort()
+    .join(",");
+  return [
+    a.produtoId,
+    a.precoBase,
+    adicionais,
+    combos,
+    a.observacoes || "",
+    a.ehBrinde ? "1" : "0",
+    a.modoConsumo || "",
+  ].join("|");
 }
 
 export const useCartStore = create<CartStore>((set, get) => ({
@@ -78,13 +110,40 @@ export const useCartStore = create<CartStore>((set, get) => ({
       novoItem.modoConsumo ||
       lerTipoConsumo() ||
       modoConsumoPadrao(disponibilidade);
-    const idUnico = `${novoItem.produtoId}-${Date.now()}`;
-    set((state) => ({
-      itens: [
-        ...state.itens,
-        { ...novoItem, idUnico, disponibilidade, modoConsumo },
-      ],
-    }));
+    const itemCompleto = {
+      ...novoItem,
+      disponibilidade,
+      modoConsumo,
+    };
+    const chaveNova = chaveItemIgual(itemCompleto);
+
+    set((state) => {
+      const indice = state.itens.findIndex(
+        (item) => chaveItemIgual(item) === chaveNova,
+      );
+      if (indice >= 0) {
+        const atualizados = state.itens.map((item, i) =>
+          i === indice
+            ? {
+                ...item,
+                quantidade: item.quantidade + (novoItem.quantidade || 1),
+              }
+            : item,
+        );
+        return { itens: atualizados };
+      }
+      const idUnico = `${novoItem.produtoId}-${Date.now()}`;
+      return {
+        itens: [
+          ...state.itens,
+          {
+            ...itemCompleto,
+            idUnico,
+            quantidade: novoItem.quantidade || 1,
+          },
+        ],
+      };
+    });
     console.info(`[CARRINHO] Produto adicionado: ${novoItem.nome}`);
   },
 
@@ -112,6 +171,25 @@ export const useCartStore = create<CartStore>((set, get) => ({
         item.idUnico === idUnico ? { ...item, observacoes } : item,
       ),
     }));
+  },
+
+  consolidarItensIguais: () => {
+    set((state) => {
+      const agrupados = new Map<string, ItemCarrinho>();
+      for (const item of state.itens) {
+        const chave = chaveItemIgual(item);
+        const existente = agrupados.get(chave);
+        if (existente) {
+          agrupados.set(chave, {
+            ...existente,
+            quantidade: existente.quantidade + item.quantidade,
+          });
+        } else {
+          agrupados.set(chave, { ...item });
+        }
+      }
+      return { itens: Array.from(agrupados.values()) };
+    });
   },
 
   limparCarrinho: () => {

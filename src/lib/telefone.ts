@@ -37,6 +37,28 @@ export function telefoneDigitosCompleto(valor: string): boolean {
   return extrairDigitosTelefone(valor).length === TELEFONE_DIGITOS_MAX;
 }
 
+/** E.164 para Supabase Auth / Twilio (+55 + DDD + número). */
+export function telefoneParaE164(valor: string): string {
+  let digitos = valor.replace(/\D/g, "");
+  if (digitos.startsWith("55") && digitos.length >= 12) {
+    digitos = digitos.slice(0, 13);
+  } else {
+    digitos = digitos.slice(0, TELEFONE_DIGITOS_MAX);
+    digitos = `55${digitos}`;
+  }
+  return `+${digitos}`;
+}
+
+/** Converte E.164 (+55…) para exibição BR. */
+export function telefoneDeE164(valor: string | null | undefined): string {
+  if (!valor) return "";
+  let digitos = valor.replace(/\D/g, "");
+  if (digitos.startsWith("55") && digitos.length > 11) {
+    digitos = digitos.slice(2);
+  }
+  return formatarTelefoneBr(digitos);
+}
+
 export function criarHandlerTelefone(
   aoAtualizar: (valor: string) => void,
 ) {

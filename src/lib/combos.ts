@@ -78,13 +78,29 @@ export function validarEscolhasCombo(
   for (const grupo of grupos) {
     const qtd = escolhas.filter((e) => e.grupoId === grupo.id).length;
     if (qtd < grupo.min_escolhas) {
-      return `Escolha ${grupo.min_escolhas === 1 ? "uma opção" : `${grupo.min_escolhas} opções`} em "${grupo.nome}".`;
+      if (grupo.min_escolhas === 1) {
+        return `Escolha 1 opção obrigatória em "${grupo.nome}".`;
+      }
+      return `Escolha ${grupo.min_escolhas} opções obrigatórias em "${grupo.nome}" (faltam ${grupo.min_escolhas - qtd}).`;
     }
     if (qtd > grupo.max_escolhas) {
       return `No máximo ${grupo.max_escolhas} opção(ões) em "${grupo.nome}".`;
     }
   }
   return null;
+}
+
+/** Texto de obrigatoriedade exibido no cardápio. */
+export function rotuloEscolhasGrupo(grupo: {
+  min_escolhas: number;
+  max_escolhas: number;
+}): string {
+  const min = grupo.min_escolhas;
+  const max = grupo.max_escolhas;
+  if (min === 0 && max <= 0) return "Opcional";
+  if (min === 0) return `Opcional (máx. ${max})`;
+  if (min === max) return min === 1 ? "Escolha 1" : `Escolha ${min}`;
+  return `Escolha ${min} a ${max}`;
 }
 
 export async function buscarEstruturaCombo(

@@ -282,6 +282,30 @@ export function GerenciamentoCombos() {
         toast.error(`O grupo "${g.nome}" precisa de ao menos uma opção.`);
         return;
       }
+      const min = Number(g.min_escolhas);
+      const max = Number(g.max_escolhas);
+      if (!Number.isFinite(min) || min < 0) {
+        toast.error(
+          `O grupo "${g.nome}" precisa de quantidade obrigatória ≥ 0.`,
+        );
+        return;
+      }
+      if (!Number.isFinite(max) || max < 1) {
+        toast.error(`O grupo "${g.nome}" precisa de máximo ≥ 1.`);
+        return;
+      }
+      if (min > max) {
+        toast.error(
+          `No grupo "${g.nome}", obrigatórias não pode ser maior que o máximo.`,
+        );
+        return;
+      }
+      if (max > g.opcoes.length) {
+        toast.error(
+          `No grupo "${g.nome}", o máximo (${max}) não pode ser maior que o número de opções (${g.opcoes.length}).`,
+        );
+        return;
+      }
     }
 
     try {
@@ -478,6 +502,50 @@ export function GerenciamentoCombos() {
                         className="w-full mt-1 px-3 py-2 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700"
                       />
                     </div>
+                    <div>
+                      <label className="text-xs font-bold uppercase text-gray-500">
+                        Obrigatórias
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={grupo.min_escolhas}
+                        onChange={(e) => {
+                          const min = Math.max(
+                            0,
+                            Math.floor(Number(e.target.value) || 0),
+                          );
+                          atualizarGrupo(grupo.id, {
+                            min_escolhas: min,
+                            max_escolhas: Math.max(grupo.max_escolhas, min, 1),
+                          });
+                        }}
+                        className="w-full mt-1 px-3 py-2 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold uppercase text-gray-500">
+                        Máximo
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={grupo.max_escolhas}
+                        onChange={(e) => {
+                          const max = Math.max(
+                            1,
+                            Math.floor(Number(e.target.value) || 1),
+                          );
+                          atualizarGrupo(grupo.id, {
+                            max_escolhas: max,
+                            min_escolhas: Math.min(grupo.min_escolhas, max),
+                          });
+                        }}
+                        className="w-full mt-1 px-3 py-2 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700"
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -488,6 +556,10 @@ export function GerenciamentoCombos() {
                     <Trash2 size={18} />
                   </button>
                 </div>
+                <p className="text-[11px] text-gray-500 -mt-2">
+                  Ex.: 3 cookies obrigatórios → Obrigatórias 3 e Máximo 3. Bebida
+                  única → 1 e 1.
+                </p>
 
                 <div className="space-y-2">
                   <p className="text-xs font-bold uppercase text-gray-500">
