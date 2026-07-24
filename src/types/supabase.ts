@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           criado_em: string
           disponivel: boolean
+          disponibilidade: Database["public"]["Enums"]["disponibilidade_produto"]
           id: string
           nome: string
           preco: number
@@ -25,6 +26,7 @@ export type Database = {
         Insert: {
           criado_em?: string
           disponivel?: boolean
+          disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           id?: string
           nome: string
           preco?: number
@@ -32,6 +34,7 @@ export type Database = {
         Update: {
           criado_em?: string
           disponivel?: boolean
+          disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           id?: string
           nome?: string
           preco?: number

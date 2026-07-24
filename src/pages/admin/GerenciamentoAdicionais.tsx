@@ -1,10 +1,17 @@
-import { IceCream, Loader2, Pencil, PlusCircle, Search, Trash2, X } from "lucide-react";
+import {
+  IceCream,
+  Loader2,
+  Pencil,
+  PlusCircle,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "../../lib/supabase";
-
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { Switch } from "../../components/ui/switch";
 import {
   Table,
@@ -14,12 +21,19 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table";
+import {
+  normalizarDisponibilidade,
+  rotuloDisponibilidadeCurto,
+  type DisponibilidadeProduto,
+} from "../../lib/disponibilidadeProduto";
+import { supabase } from "../../lib/supabase";
 
 interface Adicional {
   id: string;
   nome: string;
   preco: number;
   disponivel: boolean;
+  disponibilidade: DisponibilidadeProduto;
 }
 
 function ehAdicionalGratis(preco: number) {
@@ -36,10 +50,12 @@ export function GerenciamentoAdicionais() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [novoNome, setNovoNome] = useState("");
   const [novoPreco, setNovoPreco] = useState("");
+  const [novaDisponibilidade, setNovaDisponibilidade] =
+    useState<DisponibilidadeProduto>("ambos");
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    carregarAdicionais();
+    void carregarAdicionais();
   }, []);
 
   const carregarAdicionais = async () => {
@@ -51,12 +67,15 @@ export function GerenciamentoAdicionais() {
         .order("nome", { ascending: true });
 
       if (error) throw new Error(error.message);
-      setAdicionais(data || []);
-    } catch (erro: any) {
-      console.error(
-        "[ERRO - ADICIONAIS] Falha na leitura:",
-        erro.message || erro,
+      setAdicionais(
+        ((data as Adicional[]) || []).map((a) => ({
+          ...a,
+          disponibilidade: normalizarDisponibilidade(a.disponibilidade),
+        })),
       );
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - ADICIONAIS] Falha na leitura:", mensagem);
       toast.error("Falha ao carregar adicionais. Verifique a conexão.");
     } finally {
       setCarregando(false);
@@ -67,12 +86,14 @@ export function GerenciamentoAdicionais() {
     setEditandoId(null);
     setNovoNome("");
     setNovoPreco("");
+    setNovaDisponibilidade("ambos");
   };
 
   const iniciarEdicao = (item: Adicional) => {
     setEditandoId(item.id);
     setNovoNome(item.nome);
     setNovoPreco(item.preco.toFixed(2));
+    setNovaDisponibilidade(normalizarDisponibilidade(item.disponibilidade));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -172,7 +193,11 @@ export function GerenciamentoAdicionais() {
       if (editandoId) {
         const { data, error } = await supabase
           .from("adicionais")
-          .update({ nome: novoNome.trim(), preco: precoNumerico })
+          .update({
+            nome: novoNome.trim(),
+            preco: precoNumerico,
+            disponibilidade: novaDisponibilidade,
+          })
           .eq("id", editandoId)
           .select()
           .single();
@@ -181,7 +206,16 @@ export function GerenciamentoAdicionais() {
 
         setAdicionais(
           adicionais
-            .map((a) => (a.id === editandoId ? data : a))
+            .map((a) =>
+              a.id === editandoId
+                ? {
+                    ...data,
+                    disponibilidade: normalizarDisponibilidade(
+                      data.disponibilidade,
+                    ),
+                  }
+                : a,
+            )
             .sort((a, b) => a.nome.localeCompare(b.nome)),
         );
         toast.success("Adicional atualizado com sucesso!");
@@ -189,7 +223,12 @@ export function GerenciamentoAdicionais() {
         const { data, error } = await supabase
           .from("adicionais")
           .insert([
-            { nome: novoNome.trim(), preco: precoNumerico, disponivel: true },
+            {
+              nome: novoNome.trim(),
+              preco: precoNumerico,
+              disponivel: true,
+              disponibilidade: novaDisponibilidade,
+            },
           ])
           .select()
           .single();
@@ -197,7 +236,13 @@ export function GerenciamentoAdicionais() {
         if (error) throw new Error(error.message);
 
         setAdicionais(
-          [...adicionais, data].sort((a, b) => a.nome.localeCompare(b.nome)),
+          [
+            ...adicionais,
+            {
+              ...data,
+              disponibilidade: normalizarDisponibilidade(data.disponibilidade),
+            },
+          ].sort((a, b) => a.nome.localeCompare(b.nome)),
         );
         toast.success("Novo adicional cadastrado com sucesso!");
       }
@@ -278,55 +323,73 @@ export function GerenciamentoAdicionais() {
             </Button>
           )}
         </div>
-        <form
-          onSubmit={salvarAdicional}
-          className="flex flex-col md:flex-row gap-4 items-end"
-        >
-          <div className="flex-1 w-full space-y-2">
-            <label className="text-sm font-medium dark:text-gray-300">
-              Nome (Ex: Bola de Sorvete de Creme)
-            </label>
-            <Input
-              value={novoNome}
-              onChange={(e) => setNovoNome(e.target.value)}
-              placeholder="Digite o nome..."
-              className="dark:bg-[#1a1815]"
-            />
+        <form onSubmit={salvarAdicional} className="flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-4 items-start">
+            <div className="flex-1 w-full space-y-2">
+              <Label htmlFor="adicional-nome">Nome</Label>
+              <Input
+                id="adicional-nome"
+                value={novoNome}
+                onChange={(e) => setNovoNome(e.target.value)}
+                placeholder="Ex: Bola de sorvete de creme"
+                className="dark:bg-[#1a1815]"
+              />
+            </div>
+            <div className="w-full md:w-48 space-y-2">
+              <Label htmlFor="adicional-preco">Preço (R$)</Label>
+              <Input
+                id="adicional-preco"
+                type="number"
+                step="0.01"
+                min="0"
+                value={novoPreco}
+                onChange={(e) => setNovoPreco(e.target.value)}
+                placeholder="0.00"
+                className="dark:bg-[#1a1815]"
+              />
+              <p className="text-xs text-gray-500">
+                Use 0 para opção grátis; valor maior para extra pago.
+              </p>
+            </div>
+            <div className="w-full md:w-56 space-y-2">
+              <Label htmlFor="adicional-disponibilidade">Disponibilidade</Label>
+              <select
+                id="adicional-disponibilidade"
+                value={novaDisponibilidade}
+                onChange={(e) => {
+                  const valor = e.target.value;
+                  setNovaDisponibilidade(
+                    valor === "loja" || valor === "levar" ? valor : "ambos",
+                  );
+                }}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-[#1a1815] text-sm outline-none focus:ring-2 focus:ring-cookie-primary"
+              >
+                <option value="ambos">Loja e levar</option>
+                <option value="loja">Só para comer aqui</option>
+                <option value="levar">Só para levar</option>
+              </select>
+              <p className="text-xs text-gray-500">
+                Filtrado pelo modo que o cliente escolheu.
+              </p>
+            </div>
+            <Button
+              type="submit"
+              disabled={salvando}
+              className="w-full md:w-auto bg-cookie-primary text-white h-10"
+            >
+              {salvando ? (
+                <Loader2 className="animate-spin" size={18} />
+              ) : editandoId ? (
+                <>
+                  <Pencil size={18} className="mr-2" /> Salvar
+                </>
+              ) : (
+                <>
+                  <PlusCircle size={18} className="mr-2" /> Adicionar
+                </>
+              )}
+            </Button>
           </div>
-          <div className="w-full md:w-48 space-y-2">
-            <label className="text-sm font-medium dark:text-gray-300">
-              Preço (R$)
-            </label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={novoPreco}
-              onChange={(e) => setNovoPreco(e.target.value)}
-              placeholder="0.00"
-              className="dark:bg-[#1a1815]"
-            />
-            <p className="text-xs text-gray-500">
-              Use 0 para opção grátis; valor maior para extra pago.
-            </p>
-          </div>
-          <Button
-            type="submit"
-            disabled={salvando}
-            className="w-full md:w-auto bg-cookie-primary text-white h-10"
-          >
-            {salvando ? (
-              <Loader2 className="animate-spin" size={18} />
-            ) : editandoId ? (
-              <>
-                <Pencil size={18} className="mr-2" /> Salvar
-              </>
-            ) : (
-              <>
-                <PlusCircle size={18} className="mr-2" /> Adicionar
-              </>
-            )}
-          </Button>
         </form>
       </div>
 
@@ -418,7 +481,8 @@ export function GerenciamentoAdicionais() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome do Extra</TableHead>
-                <TableHead>Preço Adicionado</TableHead>
+                <TableHead>Preço</TableHead>
+                <TableHead>Modo</TableHead>
                 <TableHead className="text-right">
                   Visibilidade no Cardápio
                 </TableHead>
@@ -429,7 +493,7 @@ export function GerenciamentoAdicionais() {
               {adicionaisFiltrados.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     className="h-24 text-center text-gray-500"
                   >
                     {termoBusca.trim()
@@ -460,6 +524,11 @@ export function GerenciamentoAdicionais() {
                       {ehAdicionalGratis(item.preco)
                         ? "Grátis"
                         : `+ R$ ${item.preco.toFixed(2).replace(".", ",")}`}
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600 dark:text-gray-300">
+                      {rotuloDisponibilidadeCurto(
+                        normalizarDisponibilidade(item.disponibilidade),
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-3">

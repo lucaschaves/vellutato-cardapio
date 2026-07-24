@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, ShoppingBag, Sparkles, Tag, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo, type Ref } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
@@ -14,6 +14,7 @@ import {
   lerTipoConsumo,
   normalizarDisponibilidade,
   produtoCompativelComModo,
+  adicionalCompativelComModo,
   type DisponibilidadeProduto,
 } from "../../lib/disponibilidadeProduto";
 import {
@@ -37,6 +38,8 @@ import {
   maxAdicionaisProduto,
   rotuloAdicionaisProduto,
 } from "../../lib/adicionaisProduto";
+import { useTabletEmpilhado } from "../../hooks/useTabletEmpilhado";
+import { cn } from "../../lib/utils";
 
 interface ProdutoDetalhe {
   id: string;
@@ -63,6 +66,7 @@ interface Adicional {
   nome: string;
   preco: number;
   disponivel: boolean;
+  disponibilidade?: string | null;
 }
 
 function MidiaProduto({
@@ -133,8 +137,13 @@ const MidiaProdutoMemo = memo(MidiaProduto);
 
 function SkeletonColunaMidia({
   produtoId,
+  preencher,
+  containerRef,
 }: {
   produtoId?: string;
+  /** Preenche o pai (tablet sticky) em vez de altura própria. */
+  preencher?: boolean;
+  containerRef?: Ref<HTMLDivElement>;
 }) {
   const classesMidia =
     "w-full h-full md:landscape:rounded-[2rem] md:landscape:border border-gray-200 dark:border-[#2a2c30] overflow-hidden relative md:landscape:shadow-2xl bg-gray-200 dark:bg-gray-800 animate-pulse";
@@ -144,7 +153,15 @@ function SkeletonColunaMidia({
   );
 
   return (
-    <div className="relative w-full shrink-0 h-[32vh] max-h-[280px] min-h-[160px] flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] md:landscape:h-full md:landscape:max-h-none md:landscape:min-h-0 md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12">
+    <div
+      ref={containerRef}
+      className={cn(
+        "relative w-full flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415]",
+        preencher
+          ? "h-full min-h-0 max-h-none"
+          : "shrink-0 h-[32vh] max-h-[280px] min-h-[160px] md:landscape:h-full md:landscape:max-h-none md:landscape:min-h-0 md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12",
+      )}
+    >
       {produtoId ? (
         <motion.div layoutId={`produto-midia-${produtoId}`} className={classesMidia}>
           {conteudo}
@@ -201,8 +218,11 @@ function SkeletonRodapeProduto() {
 
 const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   produto,
+  preencher,
 }: {
   produto: ProdutoDetalhe;
+  /** Preenche o pai (tablet sticky) em vez de altura própria. */
+  preencher?: boolean;
 }) {
   const [transicaoEntradaConcluida, setTransicaoEntradaConcluida] =
     useState(false);
@@ -249,7 +269,14 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   );
 
   return (
-    <div className="relative w-full shrink-0 h-[32vh] max-h-[280px] min-h-[160px] flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415] md:landscape:h-full md:landscape:max-h-none md:landscape:min-h-0 md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12">
+    <div
+      className={cn(
+        "relative w-full flex items-center justify-center bg-gray-200 md:landscape:bg-gray-100 dark:bg-black dark:md:landscape:bg-[#121415]",
+        preencher
+          ? "h-full min-h-0 max-h-none"
+          : "shrink-0 h-[32vh] max-h-[280px] min-h-[160px] md:landscape:h-full md:landscape:max-h-none md:landscape:min-h-0 md:landscape:w-1/2 md:landscape:p-8 lg:landscape:p-12",
+      )}
+    >
       {transicaoEntradaConcluida ? (
         <div className={classesMidia}>{conteudo}</div>
       ) : (
@@ -292,6 +319,8 @@ export function VisualizadorReels() {
   const [modalPosAdicionarAberto, setModalPosAdicionarAberto] = useState(false);
   const [cabecalhoColado, setCabecalhoColado] = useState(false);
   const painelScrollRef = useRef<HTMLDivElement>(null);
+  const midiaTabletRef = useRef<HTMLDivElement>(null);
+  const tabletEmpilhado = useTabletEmpilhado();
 
   const idsProdutosNoCarrinho = useMemo(
     () => new Set(itensCarrinho.map((item) => item.produtoId)),
@@ -386,7 +415,7 @@ export function VisualizadorReels() {
           .select(
             `
             adicionais (
-              id, nome, preco, disponivel
+              id, nome, preco, disponivel, disponibilidade
             )
           `,
           )
@@ -395,6 +424,7 @@ export function VisualizadorReels() {
         if (cancelado) return;
         if (errAdc) throw errAdc;
 
+        const modo = lerTipoConsumo();
         const adicionaisDoProduto = (vinculos || [])
           .flatMap((vinculo) => {
             const raw = vinculo.adicionais as Adicional | Adicional[] | null;
@@ -402,9 +432,19 @@ export function VisualizadorReels() {
             return Array.isArray(raw) ? raw : [raw];
           })
           .filter((adicional) => adicional.disponivel)
+          .filter((adicional) =>
+            modo
+              ? adicionalCompativelComModo(adicional.disponibilidade, modo)
+              : true,
+          )
           .sort((a, b) => a.nome.localeCompare(b.nome));
 
         setAdicionaisDisponiveis(adicionaisDoProduto);
+        setAdicionaisSelecionados((prev) =>
+          prev.filter((sel) =>
+            adicionaisDoProduto.some((adc) => adc.id === sel.id),
+          ),
+        );
       } catch (erro: unknown) {
         if (cancelado) return;
         console.warn("[ADICIONAIS] Falha ao carregar adicionais:", erro);
@@ -649,21 +689,55 @@ export function VisualizadorReels() {
   useEffect(() => {
     setCabecalhoColado(false);
     painelScrollRef.current?.scrollTo({ top: 0 });
+    if (midiaTabletRef.current) {
+      midiaTabletRef.current.style.height = "50vh";
+    }
   }, [id]);
 
-  // Só marca o cabeçalho sticky — não muda altura da mídia (evita salto no scroll)
+  // Sticky do título + no tablet a mídia encolhe 50vh→25vh contínuo (sem salto de layout)
   useEffect(() => {
     const painel = painelScrollRef.current;
     if (!painel) return;
 
+    const aplicarAlturaMidia = (scrollTop: number) => {
+      const midia = midiaTabletRef.current;
+      if (!midia || !tabletEmpilhado) return;
+      const maxPx = window.innerHeight * 0.5;
+      const minPx = window.innerHeight * 0.25;
+      const faixa = maxPx - minPx;
+      const progresso = Math.min(1, Math.max(0, scrollTop / faixa));
+      midia.style.height = `${maxPx - progresso * faixa}px`;
+    };
+
     const aoRolar = () => {
-      setCabecalhoColado(painel.scrollTop > 12);
+      const top = painel.scrollTop;
+      // No tablet a altura da mídia vai direto no DOM (sem re-render = sem pulo)
+      if (!tabletEmpilhado) {
+        setCabecalhoColado(top > 12);
+      }
+      aplicarAlturaMidia(top);
     };
 
     aoRolar();
     painel.addEventListener("scroll", aoRolar, { passive: true });
     return () => painel.removeEventListener("scroll", aoRolar);
-  }, [id, exibirConteudoProduto]);
+  }, [id, exibirConteudoProduto, tabletEmpilhado]);
+
+  useEffect(() => {
+    if (!tabletEmpilhado && midiaTabletRef.current) {
+      midiaTabletRef.current.style.height = "";
+    }
+  }, [tabletEmpilhado]);
+
+  const blocoMidia = exibirConteudoProduto && produto ? (
+    <ColunaMidiaProduto
+      key={produto.id}
+      produto={produto}
+      preencher={tabletEmpilhado}
+    />
+  ) : (
+    <SkeletonColunaMidia produtoId={id} preencher={tabletEmpilhado} />
+  );
 
   return (
     <AnimatePresence>
@@ -682,25 +756,45 @@ export function VisualizadorReels() {
           <span className="hidden sm:inline tracking-wide">Fechar</span>
         </button>
 
-        {exibirConteudoProduto && produto ? (
-          <ColunaMidiaProduto key={produto.id} produto={produto} />
-        ) : (
-          <SkeletonColunaMidia produtoId={id} />
-        )}
+        {!tabletEmpilhado && blocoMidia}
 
-        <div className="relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] -mt-6 md:landscape:mt-0 rounded-t-[2rem] md:landscape:rounded-none z-10 transition-colors duration-300 overflow-hidden">
+        <div
+          className={cn(
+            "relative w-full flex-1 min-h-0 md:landscape:h-full md:landscape:w-1/2 flex flex-col bg-gray-50 dark:bg-[#181a1b] z-10 transition-colors duration-300 overflow-hidden",
+            tabletEmpilhado
+              ? "mt-0 rounded-none"
+              : "-mt-6 rounded-t-[2rem] md:landscape:mt-0 md:landscape:rounded-none",
+          )}
+        >
           <div
             ref={painelScrollRef}
             className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pb-8 hide-scrollbar"
           >
+            {tabletEmpilhado && (
+              <div className="relative h-[50vh] -mx-6 mb-0 shrink-0 bg-gray-200 dark:bg-black">
+                <div
+                  ref={midiaTabletRef}
+                  className="sticky top-0 z-0 w-full overflow-hidden will-change-[height]"
+                  style={{ height: "50vh" }}
+                >
+                  {blocoMidia}
+                </div>
+              </div>
+            )}
+
             {exibirConteudoProduto && produto ? (
               <>
                 <div
-                  className={`sticky top-0 z-20 -mx-6 px-6 pt-6 pb-3 mb-4 bg-gray-50/95 dark:bg-[#181a1b]/95 backdrop-blur-md transition-[box-shadow,border-color] duration-200 ${
-                    cabecalhoColado
-                      ? "shadow-[0_8px_16px_-8px_rgba(0,0,0,0.18)] border-b border-gray-200/80 dark:border-[#2a2c30]"
-                      : "border-b border-transparent"
-                  }`}
+                  className={cn(
+                    "-mx-6 px-6 pt-6 pb-3 mb-4 bg-gray-50/95 dark:bg-[#181a1b]/95 backdrop-blur-md transition-[box-shadow,border-color] duration-200",
+                    tabletEmpilhado
+                      ? "relative z-20 -mt-6 rounded-t-[2rem] border-b border-transparent"
+                      : "sticky top-0 z-20",
+                    !tabletEmpilhado &&
+                      (cabecalhoColado
+                        ? "shadow-[0_8px_16px_-8px_rgba(0,0,0,0.18)] border-b border-gray-200/80 dark:border-[#2a2c30]"
+                        : "border-b border-transparent"),
+                  )}
                 >
                   <h1 className="text-xl md:landscape:text-3xl font-bold text-gray-900 dark:text-white leading-tight mb-2">
                     {produto.nome}

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { supabase } from "../../lib/supabase";
+import { adicionalCompativelComModo } from "../../lib/disponibilidadeProduto";
 import {
   buscarOfertasVendaCruzada,
   calcularPrecoComDescontoVendaCruzada,
@@ -24,6 +25,7 @@ interface Adicional {
   nome: string;
   preco: number;
   disponivel: boolean;
+  disponibilidade?: string | null;
 }
 
 interface ProdutoItem {
@@ -89,7 +91,7 @@ export function DeliveryItem() {
             .single(),
           supabase
             .from("produto_adicionais")
-            .select("adicionais ( id, nome, preco, disponivel )")
+            .select("adicionais ( id, nome, preco, disponivel, disponibilidade )")
             .eq("produto_id", id),
           buscarOfertasVendaCruzada(id).catch(() => [] as OfertaVendaCruzada[]),
         ]);
@@ -114,6 +116,7 @@ export function DeliveryItem() {
             return Array.isArray(raw) ? raw : [raw];
           })
           .filter((a) => a.disponivel)
+          .filter((a) => adicionalCompativelComModo(a.disponibilidade, "levar"))
           .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
         setAdicionais(listaAdc);
         setOfertas(

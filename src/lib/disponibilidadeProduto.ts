@@ -58,6 +58,22 @@ export function rotuloDisponibilidade(
   return null;
 }
 
+export function rotuloDisponibilidadeCurto(
+  disponibilidade: DisponibilidadeProduto,
+): string {
+  if (disponibilidade === "loja") return "Só loja";
+  if (disponibilidade === "levar") return "Só levar";
+  return "Loja e levar";
+}
+
+/** Adicional aparece conforme o modo escolhido pelo cliente (loja / levar). */
+export function adicionalCompativelComModo(
+  disponibilidade: string | null | undefined,
+  modo: ModoConsumoItem,
+): boolean {
+  return produtoCompativelComModo(disponibilidade, modo);
+}
+
 export function rotuloModoConsumo(modo: ModoConsumoItem): string {
   return modo === "levar" ? "Para levar" : "Comer na loja";
 }
