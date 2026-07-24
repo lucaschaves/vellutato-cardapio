@@ -14,6 +14,10 @@ import {
   useCartStore,
   type AdicionalSelecionado,
 } from "../../store/useCartStore";
+import {
+  maxAdicionaisProduto,
+  rotuloAdicionaisProduto,
+} from "../../lib/adicionaisProduto";
 
 interface Adicional {
   id: string;
@@ -31,6 +35,7 @@ interface ProdutoItem {
   em_promocao: boolean | null;
   imagem_url: string | null;
   adicional_obrigatorio: boolean | null;
+  adicional_maximo: number | null;
   disponibilidade?: string | null;
   medida_valor?: number | null;
   medida_unidade?: string | null;
@@ -78,7 +83,7 @@ export function DeliveryItem() {
           supabase
             .from("produtos")
             .select(
-              "id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url, adicional_obrigatorio, disponibilidade, medida_valor, medida_unidade",
+              "id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url, adicional_obrigatorio, adicional_maximo, disponibilidade, medida_valor, medida_unidade",
             )
             .eq("id", id)
             .single(),
@@ -165,11 +170,23 @@ export function DeliveryItem() {
   const total = (precoBase + precoAdicionais) * qtd + precoCruzadas;
 
   const alternarAdicional = (adc: Adicional) => {
-    setSelecionados((prev) =>
-      prev.some((x) => x.id === adc.id)
-        ? []
-        : [{ id: adc.id, nome: adc.nome, preco: Number(adc.preco) }],
-    );
+    const max = maxAdicionaisProduto(produto?.adicional_maximo);
+    setSelecionados((prev) => {
+      if (prev.some((x) => x.id === adc.id)) {
+        return prev.filter((x) => x.id !== adc.id);
+      }
+      const novo = {
+        id: adc.id,
+        nome: adc.nome,
+        preco: Number(adc.preco),
+      };
+      if (max === 1) return [novo];
+      if (max != null && prev.length >= max) {
+        toast.error(`Você pode escolher no máximo ${max} adicional(is).`);
+        return prev;
+      }
+      return [...prev, novo];
+    });
   };
 
   const alternarOferta = (ofertaId: string) => {
@@ -188,7 +205,12 @@ export function DeliveryItem() {
       adicionais.length > 0 &&
       selecionados.length === 0
     ) {
-      toast.error("Escolha um adicional para continuar.");
+      toast.error("Escolha pelo menos um adicional para continuar.");
+      return;
+    }
+    const maxAdc = maxAdicionaisProduto(produto.adicional_maximo);
+    if (maxAdc != null && selecionados.length > maxAdc) {
+      toast.error(`Escolha no máximo ${maxAdc} adicional(is).`);
       return;
     }
 
@@ -277,9 +299,12 @@ export function DeliveryItem() {
               Turbine o pedido
             </h2>
             <span className="text-xs text-zinc-400">
-              {produto.adicional_obrigatorio
-                ? "(escolha 1 · obrigatório)"
-                : "(escolha 1)"}
+              (
+              {rotuloAdicionaisProduto({
+                obrigatorio: produto.adicional_obrigatorio,
+                maximo: produto.adicional_maximo,
+              })}
+              )
             </span>
             <div className="h-px flex-1 bg-zinc-200" />
           </div>

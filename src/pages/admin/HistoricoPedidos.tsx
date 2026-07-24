@@ -5,10 +5,27 @@ import {
   Loader2,
   Search,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { toast } from "sonner";
 import { Badge } from "../../components/ui/badge";
 import { Input } from "../../components/ui/input";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "../../components/ui/pagination";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import {
   formatarDataHora,
   formatarMoeda,
@@ -66,6 +83,30 @@ const FILTROS_STATUS = [
   { id: "cancelado", label: "Cancelado" },
 ];
 
+const ITENS_POR_PAGINA = 10;
+
+function gerarPaginasVisiveis(
+  paginaAtual: number,
+  totalPaginas: number,
+): Array<number | "ellipsis"> {
+  if (totalPaginas <= 7) {
+    return Array.from({ length: totalPaginas }, (_, i) => i + 1);
+  }
+
+  const paginas: Array<number | "ellipsis"> = [1];
+
+  if (paginaAtual > 3) paginas.push("ellipsis");
+
+  const inicio = Math.max(2, paginaAtual - 1);
+  const fim = Math.min(totalPaginas - 1, paginaAtual + 1);
+  for (let p = inicio; p <= fim; p++) paginas.push(p);
+
+  if (paginaAtual < totalPaginas - 2) paginas.push("ellipsis");
+
+  paginas.push(totalPaginas);
+  return paginas;
+}
+
 export function HistoricoPedidos() {
   const [pedidos, setPedidos] = useState<PedidoHistorico[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -73,6 +114,7 @@ export function HistoricoPedidos() {
   const [periodo, setPeriodo] = useState<PeriodoRelatorio>("30dias");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
+  const [pagina, setPagina] = useState(1);
 
   const carregarHistorico = useCallback(async () => {
     try {
@@ -97,7 +139,7 @@ export function HistoricoPedidos() {
         `,
         )
         .order("criado_em", { ascending: false })
-        .limit(200);
+        .limit(500);
 
       const inicio = obterInicioPeriodo(periodo);
       if (inicio) {
@@ -125,8 +167,14 @@ export function HistoricoPedidos() {
     void carregarHistorico();
   }, [carregarHistorico]);
 
+  useEffect(() => {
+    setPagina(1);
+    setExpandidoId(null);
+  }, [termoBusca, periodo, filtroStatus]);
+
   const pedidosFiltrados = useMemo(() => {
     const termo = termoBusca.trim().toLowerCase();
+    // Já vem do banco do mais recente para o mais antigo
     if (!termo) return pedidos;
 
     return pedidos.filter((pedido) => {
@@ -145,6 +193,30 @@ export function HistoricoPedidos() {
     });
   }, [pedidos, termoBusca]);
 
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(pedidosFiltrados.length / ITENS_POR_PAGINA),
+  );
+
+  useEffect(() => {
+    if (pagina > totalPaginas) setPagina(totalPaginas);
+  }, [pagina, totalPaginas]);
+
+  const pedidosPagina = useMemo(() => {
+    const inicio = (pagina - 1) * ITENS_POR_PAGINA;
+    return pedidosFiltrados.slice(inicio, inicio + ITENS_POR_PAGINA);
+  }, [pedidosFiltrados, pagina]);
+
+  const paginasVisiveis = useMemo(
+    () => gerarPaginasVisiveis(pagina, totalPaginas),
+    [pagina, totalPaginas],
+  );
+
+  const irParaPagina = (nova: number) => {
+    setPagina(Math.min(totalPaginas, Math.max(1, nova)));
+    setExpandidoId(null);
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
@@ -154,7 +226,8 @@ export function HistoricoPedidos() {
             Histórico de Pedidos
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Consulte pedidos finalizados, pagos e em andamento.
+            Consulte pedidos finalizados, pagos e em andamento — do mais recente
+            ao mais antigo.
           </p>
         </div>
 
@@ -213,129 +286,244 @@ export function HistoricoPedidos() {
           <p className="text-lg font-medium">Nenhum pedido encontrado.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {pedidosFiltrados.map((pedido) => {
-            const expandido = expandidoId === pedido.id;
-            const totalItens = pedido.pedido_itens.reduce(
-              (acc, item) => acc + item.quantidade,
-              0,
-            );
+        <div className="space-y-4">
+          <div className="border rounded-xl dark:border-gray-800 bg-white dark:bg-surface-dark shadow-sm overflow-hidden">
+            <Table>
+              <TableHeader className="bg-gray-50/80 dark:bg-gray-900/40">
+                <TableRow>
+                  <TableHead className="w-10" />
+                  <TableHead>Pedido</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Origem</TableHead>
+                  <TableHead>Data</TableHead>
+                  <TableHead className="text-right">Itens</TableHead>
+                  <TableHead className="text-right pr-4">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pedidosPagina.map((pedido) => {
+                  const expandido = expandidoId === pedido.id;
+                  const totalItens = pedido.pedido_itens.reduce(
+                    (acc, item) => acc + item.quantidade,
+                    0,
+                  );
 
-            return (
-              <div
-                key={pedido.id}
-                className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandidoId(expandido ? null : pedido.id)
-                  }
-                  className="w-full px-5 py-4 flex flex-col md:flex-row md:items-center gap-3 md:gap-6 text-left hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-black text-gray-900 dark:text-white">
-                        #{pedido.sequencia_pedido}
-                      </span>
-                      <span
-                        className={`text-xs font-bold px-2 py-0.5 rounded-full ${obterClasseStatus(pedido.status)}`}
+                  return (
+                    <Fragment key={pedido.id}>
+                      <TableRow
+                        className="cursor-pointer"
+                        onClick={() =>
+                          setExpandidoId(expandido ? null : pedido.id)
+                        }
                       >
-                        {STATUS_PEDIDO_LABEL[pedido.status] || pedido.status}
-                      </span>
-                      <Badge variant="outline">{pedido.identificador}</Badge>
-                      {pedido.cupons && (
-                        <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-0">
-                          Cupom {pedido.cupons.codigo}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="font-semibold text-gray-900 dark:text-white truncate">
-                      {pedido.cliente_nome}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {formatarDataHora(pedido.criado_em)} · {totalItens}{" "}
-                      {totalItens === 1 ? "item" : "itens"} ·{" "}
-                      {pedido.origem}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-xl font-black text-cookie-accent">
-                      {formatarMoeda(obterValorPedido(pedido))}
-                    </span>
-                    {expandido ? (
-                      <ChevronUp size={20} className="text-gray-400" />
-                    ) : (
-                      <ChevronDown size={20} className="text-gray-400" />
-                    )}
-                  </div>
-                </button>
-
-                {expandido && (
-                  <div className="px-5 pb-5 border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3">
-                    {pedido.cliente_celular && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Celular: {pedido.cliente_celular}
-                      </p>
-                    )}
-
-                    {(Number(pedido.desconto_aplicado || 0) > 0 ||
-                      pedido.valor_total != null) && (
-                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1 bg-gray-50 dark:bg-[#1a1815] rounded-xl p-3">
-                        {pedido.valor_total != null && (
-                          <p>
-                            Subtotal: {formatarMoeda(pedido.valor_total)}
-                          </p>
-                        )}
-                        {Number(pedido.desconto_aplicado || 0) > 0 && (
-                          <p className="text-green-600 dark:text-green-400 font-medium">
-                            Desconto
-                            {pedido.cupons ? ` (${pedido.cupons.codigo})` : ""}:{" "}
-                            -{formatarMoeda(pedido.desconto_aplicado)}
-                          </p>
-                        )}
-                        <p className="font-bold text-gray-900 dark:text-white">
-                          Total: {formatarMoeda(obterValorPedido(pedido))}
-                        </p>
-                      </div>
-                    )}
-
-                    {pedido.pedido_itens.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex justify-between gap-4 text-sm bg-gray-50 dark:bg-[#1a1815] rounded-xl p-3"
-                      >
-                        <div>
-                          <p className="font-semibold text-gray-900 dark:text-white">
-                            {item.quantidade}x {item.produtos?.nome || "Produto"}
-                          </p>
-                          {item.observacoes && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Obs: {item.observacoes}
-                            </p>
+                        <TableCell className="w-10 text-gray-400">
+                          {expandido ? (
+                            <ChevronUp size={16} />
+                          ) : (
+                            <ChevronDown size={16} />
                           )}
-                          {item.pedido_item_adicionais.length > 0 && (
-                            <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                              {item.pedido_item_adicionais.map((adicional, idx) => (
-                                <p key={idx}>
-                                  + {adicional.adicionais?.nome} (
-                                  {formatarMoeda(adicional.preco_aplicado)})
-                                </p>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <span className="font-black text-gray-900 dark:text-white">
+                              #{pedido.sequencia_pedido}
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              <Badge variant="outline" className="text-[10px]">
+                                {pedido.identificador}
+                              </Badge>
+                              {pedido.cupons && (
+                                <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-0 text-[10px]">
+                                  {pedido.cupons.codigo}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 dark:text-white truncate max-w-[180px]">
+                              {pedido.cliente_nome}
+                            </p>
+                            {pedido.cliente_celular && (
+                              <p className="text-xs text-gray-500">
+                                {pedido.cliente_celular}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${obterClasseStatus(pedido.status)}`}
+                          >
+                            {STATUS_PEDIDO_LABEL[pedido.status] ||
+                              pedido.status}
+                          </span>
+                        </TableCell>
+                        <TableCell className="capitalize text-gray-600 dark:text-gray-300">
+                          {pedido.origem}
+                        </TableCell>
+                        <TableCell className="text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                          {formatarDataHora(pedido.criado_em)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-gray-600 dark:text-gray-300">
+                          {totalItens}
+                        </TableCell>
+                        <TableCell className="text-right pr-4 font-black text-cookie-accent tabular-nums whitespace-nowrap">
+                          {formatarMoeda(obterValorPedido(pedido))}
+                        </TableCell>
+                      </TableRow>
+
+                      {expandido && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell
+                            colSpan={8}
+                            className="bg-gray-50/80 dark:bg-[#1a1815] p-4"
+                          >
+                            <div className="space-y-3">
+                              {(Number(pedido.desconto_aplicado || 0) > 0 ||
+                                pedido.valor_total != null) && (
+                                <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-3">
+                                  {pedido.valor_total != null && (
+                                    <p>
+                                      Subtotal:{" "}
+                                      {formatarMoeda(pedido.valor_total)}
+                                    </p>
+                                  )}
+                                  {Number(pedido.desconto_aplicado || 0) >
+                                    0 && (
+                                    <p className="text-green-600 dark:text-green-400 font-medium">
+                                      Desconto
+                                      {pedido.cupons
+                                        ? ` (${pedido.cupons.codigo})`
+                                        : ""}
+                                      : -
+                                      {formatarMoeda(pedido.desconto_aplicado)}
+                                    </p>
+                                  )}
+                                  <p className="font-bold text-gray-900 dark:text-white">
+                                    Total:{" "}
+                                    {formatarMoeda(obterValorPedido(pedido))}
+                                  </p>
+                                </div>
+                              )}
+
+                              {pedido.pedido_itens.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="flex justify-between gap-4 text-sm rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-3"
+                                >
+                                  <div>
+                                    <p className="font-semibold text-gray-900 dark:text-white">
+                                      {item.quantidade}x{" "}
+                                      {item.produtos?.nome || "Produto"}
+                                    </p>
+                                    {item.observacoes && (
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        Obs: {item.observacoes}
+                                      </p>
+                                    )}
+                                    {item.pedido_item_adicionais.length > 0 && (
+                                      <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                                        {item.pedido_item_adicionais.map(
+                                          (adicional, idx) => (
+                                            <p key={idx}>
+                                              + {adicional.adicionais?.nome} (
+                                              {formatarMoeda(
+                                                adicional.preco_aplicado,
+                                              )}
+                                              )
+                                            </p>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="font-bold text-gray-900 dark:text-white shrink-0">
+                                    {formatarMoeda(
+                                      item.preco_unitario * item.quantidade,
+                                    )}
+                                  </span>
+                                </div>
                               ))}
                             </div>
-                          )}
-                        </div>
-                        <span className="font-bold text-gray-900 dark:text-white shrink-0">
-                          {formatarMoeda(item.preco_unitario * item.quantidade)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-sm text-gray-500 text-center sm:text-left">
+              {pedidosFiltrados.length}{" "}
+              {pedidosFiltrados.length === 1 ? "pedido" : "pedidos"} · página{" "}
+              {pagina} de {totalPaginas}
+            </p>
+
+            {totalPaginas > 1 && (
+              <Pagination className="mx-0 w-auto justify-center sm:justify-end">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      text="Anterior"
+                      href="#"
+                      aria-disabled={pagina <= 1}
+                      className={
+                        pagina <= 1 ? "pointer-events-none opacity-50" : ""
+                      }
+                      onClick={(e) => {
+                        e.preventDefault();
+                        irParaPagina(pagina - 1);
+                      }}
+                    />
+                  </PaginationItem>
+
+                  {paginasVisiveis.map((item, idx) =>
+                    item === "ellipsis" ? (
+                      <PaginationItem key={`e-${idx}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={item}>
+                        <PaginationLink
+                          href="#"
+                          isActive={item === pagina}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            irParaPagina(item);
+                          }}
+                        >
+                          {item}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ),
+                  )}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      text="Próxima"
+                      href="#"
+                      aria-disabled={pagina >= totalPaginas}
+                      className={
+                        pagina >= totalPaginas
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                      onClick={(e) => {
+                        e.preventDefault();
+                        irParaPagina(pagina + 1);
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
+          </div>
         </div>
       )}
     </div>

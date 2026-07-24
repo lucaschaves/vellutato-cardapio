@@ -505,6 +505,7 @@ export type Database = {
       produtos: {
         Row: {
           adicional_obrigatorio: boolean
+          adicional_maximo: number | null
           ativo: boolean
           categoria_id: string
           controlar_estoque: boolean
@@ -526,6 +527,7 @@ export type Database = {
         }
         Insert: {
           adicional_obrigatorio?: boolean
+          adicional_maximo?: number | null
           ativo?: boolean
           categoria_id: string
           controlar_estoque?: boolean
@@ -547,6 +549,7 @@ export type Database = {
         }
         Update: {
           adicional_obrigatorio?: boolean
+          adicional_maximo?: number | null
           ativo?: boolean
           categoria_id?: string
           controlar_estoque?: boolean

@@ -363,7 +363,7 @@ export function FeedProdutos() {
             className="mb-1.5 self-start"
           />
 
-          <p className="md:hidden text-sm font-extrabold text-[#ff5722] leading-snug">
+          <p className="text-sm md:text-base font-extrabold text-[#ff5722] leading-snug">
             {esgotado ? (
               <span className="text-gray-500 dark:text-gray-400 font-medium">
                 Indisponível no momento.
@@ -380,7 +380,7 @@ export function FeedProdutos() {
             )}
           </p>
 
-          <p className="hidden md:block text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium whitespace-pre-line">
+          <p className="hidden md:block mt-1 text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium whitespace-pre-line">
             {esgotado
               ? "Indisponível no momento."
               : formatarDescricaoComQuebras(produto.descricao) ||

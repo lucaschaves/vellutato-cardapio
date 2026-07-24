@@ -33,6 +33,10 @@ import {
 import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { urlCardapio } from "../../lib/urlCardapio";
 import { useCartStore } from "../../store/useCartStore";
+import {
+  maxAdicionaisProduto,
+  rotuloAdicionaisProduto,
+} from "../../lib/adicionaisProduto";
 
 interface ProdutoDetalhe {
   id: string;
@@ -49,6 +53,7 @@ interface ProdutoDetalhe {
   tipo?: "simples" | "combo";
   disponibilidade?: DisponibilidadeProduto;
   adicional_obrigatorio?: boolean;
+  adicional_maximo?: number | null;
   medida_valor?: number | null;
   medida_unidade?: string | null;
 }
@@ -444,11 +449,20 @@ export function VisualizadorReels() {
     }
   }, [modalPosAdicionarAberto, ofertasPendentes.length, location.search, navigate]);
 
-  // Apenas 1 adicional por item: tocar no mesmo desmarca, em outro troca.
+  // Adicionais: múltipla escolha, com máximo opcional (1 = troca como rádio).
   const alternarAdicional = (adc: Adicional) => {
-    setAdicionaisSelecionados((prev) =>
-      prev.some((item) => item.id === adc.id) ? [] : [adc],
-    );
+    const max = maxAdicionaisProduto(produto?.adicional_maximo);
+    setAdicionaisSelecionados((prev) => {
+      if (prev.some((item) => item.id === adc.id)) {
+        return prev.filter((item) => item.id !== adc.id);
+      }
+      if (max === 1) return [adc];
+      if (max != null && prev.length >= max) {
+        toast.error(`Você pode escolher no máximo ${max} adicional(is).`);
+        return prev;
+      }
+      return [...prev, adc];
+    });
   };
 
   const selecionarOpcaoCombo = (grupo: ComboGrupo, opcaoId: string) => {
@@ -466,26 +480,46 @@ export function VisualizadorReels() {
 
     setEscolhasCombo((prev) => {
       const doGrupo = prev.filter((e) => e.grupoId === grupo.id);
-      const jaSelecionada = doGrupo.some((e) => e.opcaoId === opcao.id);
+      const qtdDesta = doGrupo.filter((e) => e.opcaoId === opcao.id).length;
+      const foraDoGrupo = prev.filter((e) => e.grupoId !== grupo.id);
 
+      // Máximo 1: comportamento de rádio (troca)
       if (grupo.max_escolhas <= 1) {
-        return [...prev.filter((e) => e.grupoId !== grupo.id), escolha];
+        if (qtdDesta > 0) {
+          // Desmarca se já estava selecionada (exceto se min exige manter)
+          if (grupo.min_escolhas >= 1) return prev;
+          return foraDoGrupo;
+        }
+        return [...foraDoGrupo, escolha];
       }
 
-      if (jaSelecionada) {
-        if (doGrupo.length <= grupo.min_escolhas) return prev;
-        return prev.filter(
-          (e) => !(e.grupoId === grupo.id && e.opcaoId === opcao.id),
-        );
+      // Já no limite e clicou em outra opção → troca a última escolha
+      if (doGrupo.length >= grupo.max_escolhas && qtdDesta === 0) {
+        return [...foraDoGrupo, ...doGrupo.slice(0, -1), escolha];
       }
 
-      if (doGrupo.length >= grupo.max_escolhas) {
-        toast.error(
-          `No máximo ${grupo.max_escolhas} opção(ões) em "${grupo.nome}".`,
-        );
-        return prev;
+      // Mesma opção de novo e ainda há vaga → permite repetir (ex.: 2 cookies iguais)
+      if (qtdDesta > 0 && doGrupo.length < grupo.max_escolhas) {
+        return [...prev, escolha];
       }
 
+      // Mesma opção e já no limite → remove uma unidade desta opção
+      if (qtdDesta > 0 && doGrupo.length >= grupo.max_escolhas) {
+        let removida = false;
+        return prev.filter((e) => {
+          if (
+            !removida &&
+            e.grupoId === grupo.id &&
+            e.opcaoId === opcao.id
+          ) {
+            removida = true;
+            return false;
+          }
+          return true;
+        });
+      }
+
+      // Nova opção com vaga
       return [...prev, escolha];
     });
   };
@@ -528,8 +562,13 @@ export function VisualizadorReels() {
       adicionaisSelecionados.length === 0
     ) {
       toast.error(
-        "Escolha um adicional em \u201CTurbine o seu pedido\u201D para continuar.",
+        "Escolha pelo menos um adicional em \u201CTurbine o seu pedido\u201D para continuar.",
       );
+      return;
+    }
+    const maxAdc = maxAdicionaisProduto(produto.adicional_maximo);
+    if (maxAdc != null && adicionaisSelecionados.length > maxAdc) {
+      toast.error(`Escolha no máximo ${maxAdc} adicional(is).`);
       return;
     }
     adicionarAoCarrinho({
@@ -738,6 +777,12 @@ export function VisualizadorReels() {
                               {meta > 0 ? ` · ${selecionadas}/${meta}` : ""}
                             </span>
                           </div>
+                          {grupo.max_escolhas > 1 && (
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                              Pode repetir a mesma opção. Com o limite cheio,
+                              toque em outra para trocar.
+                            </p>
+                          )}
                           {grupo.descricao && (
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                               {grupo.descricao}
@@ -754,11 +799,12 @@ export function VisualizadorReels() {
                       ) : (
                         <div className="grid grid-cols-1 gap-2">
                           {grupo.opcoes.map((opcao) => {
-                            const selecionada = escolhasCombo.some(
+                            const qtdOpcao = escolhasCombo.filter(
                               (e) =>
                                 e.grupoId === grupo.id &&
                                 e.opcaoId === opcao.id,
-                            );
+                            ).length;
+                            const selecionada = qtdOpcao > 0;
                             const delta = calcularDeltaOpcao(
                               opcao,
                               grupo.preco_referencia,
@@ -794,15 +840,21 @@ export function VisualizadorReels() {
                                     }`}
                                   >
                                     {opcao.produto.nome}
+                                    {qtdOpcao > 0 && grupo.max_escolhas > 1
+                                      ? ` ×${qtdOpcao}`
+                                      : ""}
                                   </span>
                                 </div>
                                 <span
                                   className={`shrink-0 text-sm font-bold ${
-                                    delta > 0
+                                    delta > 0 || selecionada
                                       ? "text-[#ff5722]"
                                       : "text-gray-400 dark:text-gray-500"
                                   }`}
                                 >
+                                  {qtdOpcao > 0 && grupo.max_escolhas > 1
+                                    ? `${qtdOpcao}× `
+                                    : ""}
                                   {delta > 0
                                     ? `+ R$ ${delta.toFixed(2)}`
                                     : "Incluso"}
@@ -909,15 +961,20 @@ export function VisualizadorReels() {
                 <div className="flex items-center gap-3 mb-4">
                   <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest transition-colors">
                     Turbine o seu pedido{" "}
-                    {produto?.adicional_obrigatorio ? (
-                      <span className="normal-case font-bold text-[#ff5722] tracking-normal">
-                        (escolha 1 · obrigatório)
-                      </span>
-                    ) : (
-                      <span className="normal-case font-medium text-gray-400 dark:text-gray-500 tracking-normal">
-                        (escolha 1)
-                      </span>
-                    )}
+                    <span
+                      className={`normal-case tracking-normal ${
+                        produto?.adicional_obrigatorio
+                          ? "font-bold text-[#ff5722]"
+                          : "font-medium text-gray-400 dark:text-gray-500"
+                      }`}
+                    >
+                      (
+                      {rotuloAdicionaisProduto({
+                        obrigatorio: produto?.adicional_obrigatorio,
+                        maximo: produto?.adicional_maximo,
+                      })}
+                      )
+                    </span>
                   </h2>
                   <div className="h-[1px] flex-1 bg-gray-200 dark:bg-[#2a2c30] transition-colors"></div>
                 </div>

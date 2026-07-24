@@ -12,6 +12,7 @@ import { Fragment, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import {
   Table,
   TableBody,
@@ -318,29 +319,54 @@ export function GerenciamentoCategorias() {
           {editandoId ? "Editar categoria" : "Nova categoria"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Input
-            placeholder="Nome (ex: Bebidas)"
-            value={nome}
-            onChange={(e) => handleNomeChange(e.target.value)}
-          />
-          <Input
-            placeholder="Slug (ex: bebidas)"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
-          />
-          <Input
-            placeholder="Ordem (número)"
-            type="number"
-            min={0}
-            value={ordem}
-            onChange={(e) => setOrdem(e.target.value)}
-          />
-          <Input
-            placeholder="Ícone (emoji opcional)"
-            value={icone}
-            onChange={(e) => setIcone(e.target.value)}
-            maxLength={8}
-          />
+          <div className="space-y-1.5">
+            <Label htmlFor="categoria-nome">Nome</Label>
+            <Input
+              id="categoria-nome"
+              placeholder="Ex: Bebidas"
+              value={nome}
+              onChange={(e) => handleNomeChange(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="categoria-slug">Slug</Label>
+            <Input
+              id="categoria-slug"
+              placeholder="Ex: bebidas"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase())}
+            />
+            <p className="text-[11px] text-gray-500">
+              Identificador na URL do cardápio.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="categoria-ordem">Ordem</Label>
+            <Input
+              id="categoria-ordem"
+              placeholder="Número (ex: 1)"
+              type="number"
+              min={0}
+              value={ordem}
+              onChange={(e) => setOrdem(e.target.value)}
+            />
+            <p className="text-[11px] text-gray-500">
+              Posição da categoria no cardápio.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="categoria-icone">Ícone</Label>
+            <Input
+              id="categoria-icone"
+              placeholder="Emoji opcional"
+              value={icone}
+              onChange={(e) => setIcone(e.target.value)}
+              maxLength={8}
+            />
+            <p className="text-[11px] text-gray-500">
+              Opcional — emoji exibido junto ao nome.
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={salvando}>

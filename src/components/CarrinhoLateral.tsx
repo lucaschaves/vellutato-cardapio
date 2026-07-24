@@ -505,8 +505,8 @@ export function CarrinhoLateral({
 
               {item.escolhasCombo && item.escolhasCombo.length > 0 && (
                 <div className="text-xs md:landscape:text-sm text-gray-700 dark:text-gray-300 mb-2 space-y-0.5 font-medium">
-                  {item.escolhasCombo.map((escolha) => (
-                    <p key={`${escolha.grupoId}-${escolha.opcaoId}`}>
+                  {item.escolhasCombo.map((escolha, idx) => (
+                    <p key={`${escolha.grupoId}-${escolha.opcaoId}-${idx}`}>
                       {escolha.grupoNome}: {escolha.produtoNome}
                       {escolha.deltaPreco > 0 && (
                         <span className="opacity-80">
