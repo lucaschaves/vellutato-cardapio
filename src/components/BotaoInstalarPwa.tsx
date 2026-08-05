@@ -8,6 +8,7 @@ const CLASSE_PADRAO =
 
 const MENSAGENS_SUCESSO: Record<TipoPwa, string> = {
   cardapio: "Cardápio instalado neste dispositivo.",
+  totem: "Totem instalado neste dispositivo.",
   admin: "App admin instalado neste dispositivo.",
 };
 

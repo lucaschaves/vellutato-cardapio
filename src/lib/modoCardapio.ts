@@ -14,6 +14,12 @@ export function marcarModoToten(ativo: boolean) {
   }
 }
 
+/** Só a configuração persistente do dispositivo, ignorando a rota atual. */
+export function modoTotenConfigurado(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(CHAVE_MODO_TOTEN) === "1";
+}
+
 export function emModoToten(): boolean {
   if (typeof window === "undefined") return false;
   // Rotas /totem (e legado /cardapio-toten) ativam o modo totem

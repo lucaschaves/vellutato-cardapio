@@ -8,6 +8,8 @@ import { Toaster } from "sonner";
 import { TecladoVirtualHost } from "../components/TecladoVirtual";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { modoTotenConfigurado } from "../lib/modoCardapio";
+import { estaEmModoStandalone } from "../lib/pwaInstalacao";
 
 // Páginas
 import { DashboardVendas } from "@/pages/admin/DashboardVendas";
@@ -57,6 +59,17 @@ function RedirecionarTotenLegado() {
   const location = useLocation();
   const rest = location.pathname.replace(/^\/cardapio-toten/, "") || "";
   return <Navigate to={`/totem${rest}${location.search}`} replace />;
+}
+
+/**
+ * Aparelho de totem instalado antes do manifest próprio abre em "/" (delivery).
+ * Enquanto estiver em standalone com o modo totem ligado, volta para /totem.
+ */
+function InicioDelivery() {
+  if (estaEmModoStandalone() && modoTotenConfigurado()) {
+    return <Navigate to="/totem" replace />;
+  }
+  return <DeliveryHome />;
 }
 
 /** /delivery/* → /* (delivery agora é a raiz) */
@@ -122,7 +135,7 @@ const router = createBrowserRouter([
     path: "/",
     element: <DeliveryLayout />,
     children: [
-      { index: true, element: <DeliveryHome /> },
+      { index: true, element: <InicioDelivery /> },
       { path: "item/:id", element: <DeliveryItem /> },
       { path: "checkout", element: <DeliveryCheckout /> },
       { path: "conta", element: <DeliveryConta /> },

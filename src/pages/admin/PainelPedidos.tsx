@@ -100,7 +100,12 @@ function formatarEnderecoEntrega(
         ? `CEP ${endereco.cep}`
         : null;
   // Sem complemento: o KDS tem botão separado para copiar apto/casa.
-  return [linha1, endereco.referencia ? `Ref.: ${endereco.referencia}` : null, linha2 || null, cepFmt]
+  return [
+    linha1,
+    endereco.referencia ? `Ref.: ${endereco.referencia}` : null,
+    linha2 || null,
+    cepFmt,
+  ]
     .filter(Boolean)
     .join("\n");
 }
@@ -337,7 +342,12 @@ export function PainelPedidos() {
   // Exemplo de como deve estar o seu disparador de status:
   const atualizarStatus = async (
     pedidoId: string,
-    novoStatus: "pendente" | "em_producao" | "pronto" | "entregue" | "cancelado",
+    novoStatus:
+      | "pendente"
+      | "em_producao"
+      | "pronto"
+      | "entregue"
+      | "cancelado",
   ) => {
     console.log("novoStatus", novoStatus);
     const { error } = await supabase
@@ -352,31 +362,6 @@ export function PainelPedidos() {
     toast.success("Status atualizado!");
 
     void dispararNotificacaoStatusPedido(pedidoId, novoStatus);
-  };
-
-  const chamarMotoboy = async (pedido: Pedido) => {
-    if (pedido.voa_order_id) {
-      toast.message("Motoboy já foi chamado para este pedido.");
-      return;
-    }
-    try {
-      const { data, error: voaErr } = await supabase.functions.invoke(
-        "voa-enviar-pedido",
-        { body: { pedido_id: pedido.id } },
-      );
-      if (voaErr) throw voaErr;
-      if (data?.erro) throw new Error(String(data.erro));
-      toast.success("Motoboy chamado (VOA Delivery)!");
-      void carregarPedidosAtivos();
-      void dispararNotificacaoStatusPedido(pedido.id, "pronto");
-    } catch (e: unknown) {
-      console.error("[VOA]", e);
-      toast.error(
-        e instanceof Error
-          ? `VOA: ${e.message}`
-          : "Falha ao chamar motoboy na VOA",
-      );
-    }
   };
 
   const abrirModalWhatsApp = (pedido: Pedido) => {
@@ -500,7 +485,8 @@ export function PainelPedidos() {
           )}
         </div>
         <div className="flex flex-wrap items-end justify-end gap-3">
-          {(pedido.status === "pendente" || pedido.status === "em_producao") && (
+          {(pedido.status === "pendente" ||
+            pedido.status === "em_producao") && (
             <div className="flex flex-col items-center gap-1">
               <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
                 Excluir
@@ -662,17 +648,6 @@ export function PainelPedidos() {
         )}
         {pedido.status === "pronto" && (
           <>
-            {pedido.origem === "delivery" &&
-              pedido.modalidade === "entrega" &&
-              !pedido.voa_order_id && (
-                <button
-                  type="button"
-                  onClick={() => void chamarMotoboy(pedido)}
-                  className="flex-1 bg-violet-600 text-white py-2 rounded font-bold flex justify-center items-center gap-2"
-                >
-                  <Bike size={18} /> Chamar motoboy
-                </button>
-              )}
             {pedido.origem === "delivery" &&
               pedido.modalidade === "entrega" &&
               pedido.voa_order_id && (

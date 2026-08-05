@@ -14,7 +14,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
-import { LogoMarca } from "../../components/LogoMarca";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
 import {
@@ -195,7 +194,7 @@ export function BemVindo() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden selection:bg-[#6b1d2a]/30">
+    <div className="relative min-h-screen overflow-hidden selection:bg-cookie-primary/30">
       {modoToten ? (
         <video
           ref={videoRef}
@@ -210,12 +209,14 @@ export function BemVindo() {
           className="absolute inset-0 w-full h-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] via-[#2d1810] to-[#6b1d2a]/40" />
+        <div className="absolute inset-0 bg-linear-to-br from-[#1a1a1a] via-[#2d1810] to-cookie-primary/40" />
       )}
 
       <div
-        className={`absolute inset-0 transition-colors duration-500 ${
-          etapa === 0 ? "bg-black/35" : "bg-black/60 backdrop-blur-sm"
+        className={`absolute inset-0 transition-all duration-500 ${
+          etapa === 0
+            ? "bg-linear-to-t from-black/85 via-black/20 to-black/45"
+            : "bg-black/60 backdrop-blur-sm"
         }`}
       />
 
@@ -224,7 +225,7 @@ export function BemVindo() {
           <div className="absolute top-5 left-5 z-20">
             <BotaoInstalarPwa
               className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white text-sm font-medium active:scale-95 transition-all border border-white/10 disabled:opacity-60"
-              tipo="cardapio"
+              tipo="totem"
             />
           </div>
 
@@ -247,28 +248,54 @@ export function BemVindo() {
       >
         <AnimatePresence mode="wait">
           {etapa === 0 && (
-            <motion.div
+            <motion.button
               key="etapa-0"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="flex flex-col items-center text-center"
+              type="button"
+              onClick={() => setEtapa(1)}
+              aria-label="Iniciar pedido"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="group absolute inset-0 flex flex-col items-center justify-end gap-12 px-6 pb-[14vh] text-center"
             >
-              <div className="mb-8 drop-shadow-2xl">
-                <LogoMarca size={72} tom="branco" className="drop-shadow-md" />
-              </div>
-              <p className="text-white/85 text-lg md:text-xl mb-10 max-w-sm drop-shadow-md">
-                Sabores que conquistam. Toque para fazer seu pedido.
-              </p>
-
-              <button
-                onClick={() => setEtapa(1)}
-                className="group relative px-10 py-4 rounded-2xl bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold text-base shadow-2xl shadow-[#6b1d2a]/40 active:scale-95 transition-all ring-1 ring-white/25"
-                aria-label="Iniciar pedido"
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15, duration: 0.7 }}
+                className="flex flex-col items-center"
               >
-                Iniciar pedido
-              </button>
-            </motion.div>
+                <span className="font-marca-cursiva text-6xl leading-none text-white drop-shadow-[0_6px_28px_rgba(0,0,0,0.65)] md:text-8xl">
+                  Vellutato
+                </span>
+                <span className="mt-5 flex items-center gap-4 text-white/85">
+                  <span className="h-px w-10 bg-white/45" />
+                  <span className="font-marca text-xs uppercase tracking-[0.4em] md:text-sm">
+                    Cookies &amp; Brownies
+                  </span>
+                  <span className="h-px w-10 bg-white/45" />
+                </span>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 28 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35, duration: 0.7 }}
+                className="flex flex-col items-center gap-5"
+              >
+                <span className="relative inline-flex">
+                  <span className="absolute inset-0 rounded-full bg-white/25 motion-safe:animate-ping" />
+                  <span className="relative inline-flex items-center gap-3 rounded-full bg-cookie-primary px-12 py-6 text-xl font-bold text-white shadow-2xl shadow-black/50 ring-1 ring-white/30 transition-transform group-active:scale-95 md:text-2xl">
+                    <ShoppingBag size={26} className="shrink-0" />
+                    Iniciar pedido
+                    <ArrowRight size={26} className="shrink-0" />
+                  </span>
+                </span>
+                <span className="text-sm tracking-wide text-white/70">
+                  Toque em qualquer lugar da tela para começar
+                </span>
+              </motion.div>
+            </motion.button>
           )}
 
           {etapa === 1 && (
@@ -295,13 +322,13 @@ export function BemVindo() {
                 )}
                 <div className="min-w-0">
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <UserCircle className="text-[#6b1d2a] shrink-0" /> Quem é
+                    <UserCircle className="text-cookie-primary shrink-0" /> Quem é
                     você?
                   </h2>
                   <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400 leading-snug flex items-start gap-1.5">
                     <Tag
                       size={14}
-                      className="text-[#6b1d2a] shrink-0 mt-0.5"
+                      className="text-cookie-primary shrink-0 mt-0.5"
                     />
                     <span>
                       Identifique-se para desbloquear cupons e descontos
@@ -323,7 +350,7 @@ export function BemVindo() {
                     placeholder="(00) 00000-0000"
                     value={celular}
                     onValorChange={handleCelularChange}
-                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6b1d2a] focus:border-transparent transition-all outline-none"
+                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-cookie-primary focus:border-transparent transition-all outline-none"
                   />
                   {buscandoCliente && (
                     <p className="text-xs text-gray-500 mt-1.5">
@@ -346,7 +373,7 @@ export function BemVindo() {
                     placeholder="Como devemos te chamar?"
                     value={nome}
                     onValorChange={setNome}
-                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6b1d2a] focus:border-transparent transition-all outline-none"
+                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-cookie-primary focus:border-transparent transition-all outline-none"
                   />
                 </div>
               </div>
@@ -356,7 +383,7 @@ export function BemVindo() {
                   type="button"
                   onClick={() => irParaConsumo(false)}
                   disabled={!podeContinuar}
-                  className="w-full bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
+                  className="w-full bg-cookie-primary hover:bg-cookie-primary-hover disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-cookie-primary/20"
                 >
                   <span>Continuar</span>
                   <ArrowRight size={20} />
@@ -365,7 +392,7 @@ export function BemVindo() {
                 <button
                   type="button"
                   onClick={() => irParaConsumo(true)}
-                  className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-[#6b1d2a]/40 hover:bg-[#6b1d2a]/5 dark:hover:bg-[#6b1d2a]/10"
+                  className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-cookie-primary/40 hover:bg-cookie-primary/5 dark:hover:bg-cookie-primary/10"
                 >
                   <span>Continuar sem informar</span>
                   <FastForward size={20} />
@@ -415,9 +442,9 @@ export function BemVindo() {
                 <button
                   type="button"
                   onClick={() => void selecionarConsumo("loja")}
-                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#6b1d2a] hover:bg-[#6b1d2a]/5 dark:hover:bg-[#6b1d2a]/10 active:scale-[0.98] transition-all text-left"
+                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-cookie-primary hover:bg-cookie-primary/5 dark:hover:bg-cookie-primary/10 active:scale-[0.98] transition-all text-left"
                 >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6b1d2a]/15 text-[#6b1d2a] shrink-0">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cookie-primary/15 text-cookie-primary shrink-0">
                     <Store size={28} />
                   </span>
                   <span className="min-w-0">
@@ -433,9 +460,9 @@ export function BemVindo() {
                 <button
                   type="button"
                   onClick={() => void selecionarConsumo("levar")}
-                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#6b1d2a] hover:bg-[#6b1d2a]/5 dark:hover:bg-[#6b1d2a]/10 active:scale-[0.98] transition-all text-left"
+                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-cookie-primary hover:bg-cookie-primary/5 dark:hover:bg-cookie-primary/10 active:scale-[0.98] transition-all text-left"
                 >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6b1d2a]/15 text-[#6b1d2a] shrink-0">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cookie-primary/15 text-cookie-primary shrink-0">
                     <ShoppingBag size={28} />
                   </span>
                   <span className="min-w-0">

@@ -1,4 +1,6 @@
-export type TipoPwa = "cardapio" | "admin";
+import { modoTotenConfigurado } from "./modoCardapio";
+
+export type TipoPwa = "cardapio" | "totem" | "admin";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -7,6 +9,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 const MANIFESTS: Record<TipoPwa, string> = {
   cardapio: "/manifest-cardapio.webmanifest",
+  totem: "/manifest-totem.webmanifest",
   admin: "/manifest-admin.webmanifest",
 };
 
@@ -16,6 +19,16 @@ const ouvintes = new Set<(tipo: TipoPwa) => void>();
 
 export function tipoPwaPorPath(path: string): TipoPwa {
   if (path.startsWith("/admin") || path === "/login") return "admin";
+  if (path.startsWith("/totem") || path.startsWith("/cardapio-toten")) {
+    return "totem";
+  }
+  // Telas da loja em aparelho já configurado como totem
+  if (
+    modoTotenConfigurado() &&
+    (path.startsWith("/cardapio") || path === "/inicio")
+  ) {
+    return "totem";
+  }
   return "cardapio";
 }
 
@@ -57,6 +70,14 @@ export function pwaInstalada(tipo: TipoPwa): boolean {
 
   const path = window.location.pathname;
   if (tipo === "admin") return path.startsWith("/admin");
+  if (tipo === "totem") {
+    return (
+      path.startsWith("/totem") ||
+      path.startsWith("/cardapio-toten") ||
+      path.startsWith("/cardapio") ||
+      path === "/inicio"
+    );
+  }
   return !path.startsWith("/admin") && path !== "/login";
 }
 
