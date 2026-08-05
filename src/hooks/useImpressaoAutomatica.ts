@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { usePedidosRealtime } from "../context/PedidosRealtimeContext";
+import {
+  criarUrlSomImpressoraOffline,
+  tocarUrlAudio,
+} from "../lib/alertaPedidoSom";
 import {
   enviarParaImpressoraLocal,
   obterUrlImpressoraLocal,
@@ -34,9 +39,39 @@ const MAX_TENTATIVAS_ITENS = 6;
 const INTERVALO_TENTATIVA_MS = 400;
 
 export function useImpressaoAutomatica() {
+  const { assinar, versaoConexao } = usePedidosRealtime();
   const [impressoraOffline, setImpressoraOffline] = useState(false);
   const pedidosEmProcessamentoRef = useRef<Set<string>>(new Set());
   const pedidosImpressosRef = useRef<Set<string>>(new Set());
+  const impressoraOfflineRef = useRef(false);
+  const somOfflineUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (somOfflineUrlRef.current) {
+        URL.revokeObjectURL(somOfflineUrlRef.current);
+        somOfflineUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const alertarImpressoraOffline = () => {
+    // Só toca na transição online → offline (evita spam a cada pedido).
+    if (impressoraOfflineRef.current) return;
+    impressoraOfflineRef.current = true;
+    setImpressoraOffline(true);
+
+    if (!somOfflineUrlRef.current) {
+      somOfflineUrlRef.current = criarUrlSomImpressoraOffline();
+    }
+    tocarUrlAudio(somOfflineUrlRef.current);
+
+    toast.error(
+      "Impressora local offline. Verifique o servidor em " +
+        obterUrlImpressoraLocal(),
+      { duration: 8000, id: "impressora-offline" },
+    );
+  };
 
   const buscarPedidoParaImpressao = async (pedidoId: string) => {
     const { data, error } = await supabase
@@ -82,6 +117,7 @@ export function useImpressaoAutomatica() {
       const sucesso = await enviarParaImpressoraLocal(pedido);
 
       if (sucesso) {
+        impressoraOfflineRef.current = false;
         setImpressoraOffline(false);
         pedidosImpressosRef.current.add(pedidoId);
         await supabase
@@ -91,12 +127,7 @@ export function useImpressaoAutomatica() {
         return true;
       }
 
-      setImpressoraOffline(true);
-      toast.error(
-        "Impressora local offline. Verifique o servidor em " +
-          obterUrlImpressoraLocal(),
-        { duration: 6000 },
-      );
+      alertarImpressoraOffline();
       return false;
     } finally {
       pedidosEmProcessamentoRef.current.delete(pedidoId);
@@ -124,85 +155,55 @@ export function useImpressaoAutomatica() {
   };
 
   useEffect(() => {
-    const canalImpressao = supabase
-      .channel("impressao_automatica")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "pedidos" },
-        (payload) => {
-          const novoPedido = payload.new as {
-            id?: string;
-            status?: string;
-            status_pagamento?: string | null;
-          };
-          if (!novoPedido.id) return;
-          if (novoPedido.status === "aguardando_pagamento") {
-            console.info(
-              "[IMPRESSÃO] Pedido aguardando pagamento — não imprime ainda:",
-              novoPedido.id,
-            );
-            return;
-          }
-          if (novoPedido.status !== "pendente") return;
-          if (!pagamentoLiberaImpressao(novoPedido.status_pagamento)) {
-            console.info(
-              "[IMPRESSÃO] Pedido aguardando pagamento — não imprime ainda:",
-              novoPedido.id,
-            );
-            return;
-          }
+    return assinar((payload) => {
+      if (payload.eventType !== "INSERT" && payload.eventType !== "UPDATE") {
+        return;
+      }
 
-          console.info(
-            "[IMPRESSÃO] Novo pedido detectado, agendando impressão:",
-            novoPedido.id,
-          );
-          agendarImpressaoPedido(novoPedido.id);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "pedidos" },
-        (payload) => {
-          const atualizado = payload.new as {
-            id?: string;
-            status?: string;
-            status_pagamento?: string | null;
-            impresso?: boolean;
-          };
-          const anterior = payload.old as {
-            status?: string;
-            status_pagamento?: string | null;
-          };
-          if (!atualizado.id) return;
-          if (atualizado.impresso) return;
-          if (!pagamentoLiberaImpressao(atualizado.status_pagamento)) return;
+      const pedido = payload.new as {
+        id?: string;
+        status?: string;
+        status_pagamento?: string | null;
+        impresso?: boolean;
+      };
+      if (!pedido.id || pedido.impresso) return;
+      if (pedido.status !== "pendente") return;
+      if (!pagamentoLiberaImpressao(pedido.status_pagamento)) return;
 
-          // Liberou pagamento agora (webhook Asaas: aguardando_pagamento → pendente)
-          const liberouStatus =
-            anterior.status === "aguardando_pagamento" &&
-            atualizado.status === "pendente";
-          const liberouPagamento =
-            anterior.status_pagamento === "aguardando" &&
-            pagamentoLiberaImpressao(atualizado.status_pagamento);
+      console.info(
+        "[IMPRESSÃO] Pedido liberado para a cozinha, agendando impressão:",
+        pedido.id,
+      );
+      agendarImpressaoPedido(pedido.id);
+    });
+  }, [assinar]);
 
-          if (
-            atualizado.status === "pendente" &&
-            (liberouStatus || liberouPagamento)
-          ) {
-            console.info(
-              "[IMPRESSÃO] Pagamento confirmado, agendando impressão:",
-              atualizado.id,
-            );
-            agendarImpressaoPedido(atualizado.id);
-          }
-        },
-      )
-      .subscribe();
+  // Recupera impressões perdidas enquanto o websocket esteve desconectado
+  // (inclui reinício do navegador/servidor da impressora).
+  useEffect(() => {
+    if (versaoConexao === 0) return;
+    let cancelado = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("id, status, status_pagamento, impresso")
+        .eq("status", "pendente")
+        .or("impresso.eq.false,impresso.is.null");
+      if (cancelado || error || !data) return;
 
+      for (const pedido of data) {
+        if (
+          pedido.id &&
+          pagamentoLiberaImpressao(pedido.status_pagamento)
+        ) {
+          agendarImpressaoPedido(pedido.id);
+        }
+      }
+    })();
     return () => {
-      supabase.removeChannel(canalImpressao);
+      cancelado = true;
     };
-  }, []);
+  }, [versaoConexao]);
 
   return {
     impressoraOffline,

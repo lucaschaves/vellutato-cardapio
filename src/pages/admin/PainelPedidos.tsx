@@ -11,12 +11,16 @@ import {
   Printer,
   Trash2,
   User,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { useAlertaNovoPedidoAdmin } from "../../context/AlertaNovoPedidoContext";
 import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
+import { usePedidosRealtime } from "../../context/PedidosRealtimeContext";
 import {
   buscarMensagensWhatsapp,
   MENSAGEM_WHATSAPP_PADRAO,
@@ -160,15 +164,97 @@ function dadosMensagemDoPedido(pedido: Pedido): DadosMensagemPedido {
 export function PainelPedidos() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [carregando, setCarregando] = useState(true);
-  const [statusConexao, setStatusConexao] = useState<
-    "conectado" | "desconectado"
-  >("desconectado");
+  const {
+    status: statusConexao,
+    versaoConexao,
+    assinar: assinarPedidos,
+    reconectar,
+  } = usePedidosRealtime();
   const { impressoraOffline, imprimirPedido } = useImpressaoAdmin();
+  const {
+    ativo: alertaSonoroAtivo,
+    precisaReativar,
+    ativar: ativarAlertaSonoro,
+    desativar: desativarAlertaSonoro,
+  } = useAlertaNovoPedidoAdmin();
 
   const [mensagensWhatsapp, setMensagensWhatsapp] = useState<
     MensagemWhatsapp[]
   >([]);
   const [pedidoWhatsApp, setPedidoWhatsApp] = useState<Pedido | null>(null);
+  const requisicaoAtualRef = useRef(0);
+  const debounceRef = useRef<number | null>(null);
+
+  const carregarPedidosAtivos = useCallback(
+    async (mostrarCarregamento = false) => {
+      const requisicao = ++requisicaoAtualRef.current;
+      if (mostrarCarregamento) setCarregando(true);
+
+      try {
+        const { data, error } = await supabase
+          .from("pedidos")
+          .select(
+            `
+            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, status, criado_em, voa_order_id, tracking_url, endereco_json,
+            pedido_itens (
+              id, quantidade, observacoes, modo_consumo,
+              produtos ( nome ),
+              pedido_item_combo_escolhas (
+                nome_grupo, nome_produto, delta_preco
+              )
+            )
+          `,
+          )
+          .not(
+            "status",
+            "in",
+            '("entregue","cancelado","pago","aguardando_pagamento")',
+          )
+          .order("criado_em", { ascending: false });
+
+        if (error) throw new Error(error.message);
+        // Uma resposta antiga nunca pode sobrescrever uma consulta mais nova.
+        if (requisicao !== requisicaoAtualRef.current) return;
+
+        const lista = ((data || []) as unknown as Pedido[]).filter(
+          (p) =>
+            p.status_pagamento !== "aguardando" &&
+            p.status !== "aguardando_pagamento",
+        );
+        setPedidos(lista);
+      } catch (erro: unknown) {
+        const mensagem = erro instanceof Error ? erro.message : String(erro);
+        console.error("[ERRO - PAINEL] Falha ao carregar:", mensagem);
+      } finally {
+        if (requisicao === requisicaoAtualRef.current) {
+          setCarregando(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const agendarAtualizacao = useCallback(() => {
+    if (debounceRef.current != null) {
+      window.clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null;
+      void carregarPedidosAtivos();
+    }, 300);
+  }, [carregarPedidosAtivos]);
+
+  const expirarPedidosSemPagamento = useCallback(async () => {
+    const { data, error } = await supabase.rpc(
+      "cancelar_pedidos_delivery_sem_pagamento",
+      { p_minutos: 30 },
+    );
+    if (error) {
+      console.warn("[KDS] Falha ao expirar pedidos:", error.message);
+      return;
+    }
+    if (Number(data ?? 0) > 0) agendarAtualizacao();
+  }, [agendarAtualizacao]);
 
   useEffect(() => {
     buscarMensagensWhatsapp()
@@ -179,42 +265,53 @@ export function PainelPedidos() {
       });
   }, []);
 
-  // Carrega os dados iniciais e monta o listener do Realtime
+  // Consulta inicial e expiração fora do callback do Realtime (evita loop UPDATE).
   useEffect(() => {
-    carregarPedidosAtivos();
+    void carregarPedidosAtivos(true);
+    void expirarPedidosSemPagamento();
+    const desassinar = assinarPedidos(() => agendarAtualizacao());
+    return () => {
+      desassinar();
+      if (debounceRef.current != null) {
+        window.clearTimeout(debounceRef.current);
+      }
+    };
+  }, [
+    agendarAtualizacao,
+    assinarPedidos,
+    carregarPedidosAtivos,
+    expirarPedidosSemPagamento,
+  ]);
 
-    // Inscrição no canal Realtime do Supabase
-    const canalPedidos = supabase
-      .channel("painel_cozinha")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pedidos" },
-        (payload) => {
-          console.info(
-            "[REALTIME] Atualização detectada na tabela pedidos:",
-            payload,
-          );
-          // Para garantir que temos os itens atrelados (joins), recarregamos os pedidos ativos
-          // Em um app de escala gigantesca, faríamos o patch manual no estado.
-          carregarPedidosAtivos();
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          setStatusConexao("conectado");
-        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
-          setStatusConexao("desconectado");
-          console.error(
-            "[ERRO - REALTIME] Conexão com o servidor perdida. Status:",
-            status,
-          );
-        }
-      });
+  // Postgres Changes não faz replay: refaz a consulta após cada reconexão.
+  useEffect(() => {
+    if (versaoConexao > 0) void carregarPedidosAtivos();
+  }, [carregarPedidosAtivos, versaoConexao]);
+
+  // Rede de segurança caso um evento seja perdido silenciosamente.
+  useEffect(() => {
+    const polling = window.setInterval(() => {
+      void carregarPedidosAtivos();
+    }, 30_000);
+    const expiracao = window.setInterval(() => {
+      void expirarPedidosSemPagamento();
+    }, 5 * 60_000);
+
+    const atualizarAoRetomar = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        void carregarPedidosAtivos();
+      }
+    };
+    document.addEventListener("visibilitychange", atualizarAoRetomar);
+    window.addEventListener("focus", atualizarAoRetomar);
 
     return () => {
-      supabase.removeChannel(canalPedidos);
+      window.clearInterval(polling);
+      window.clearInterval(expiracao);
+      document.removeEventListener("visibilitychange", atualizarAoRetomar);
+      window.removeEventListener("focus", atualizarAoRetomar);
     };
-  }, []);
+  }, [carregarPedidosAtivos, expirarPedidosSemPagamento]);
 
   const cancelarPedido = async (pedidoId: string) => {
     try {
@@ -230,51 +327,6 @@ export function PainelPedidos() {
     } catch (erro: any) {
       console.error("Erro ao cancelar:", erro);
       toast.error("Falha ao cancelar pedido.");
-    }
-  };
-
-  const carregarPedidosAtivos = async () => {
-    try {
-      setCarregando(true);
-      await supabase.rpc("cancelar_pedidos_delivery_sem_pagamento", {
-        p_minutos: 30,
-      });
-      // Removemos o filtro 'in' para garantir que nada fique oculto por erro de digitação de status
-      const { data, error } = await supabase
-        .from("pedidos")
-        .select(
-          `
-          id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, status, criado_em, voa_order_id, tracking_url, endereco_json,
-          pedido_itens (
-            id, quantidade, observacoes, modo_consumo,
-            produtos ( nome ),
-            pedido_item_combo_escolhas (
-              nome_grupo, nome_produto, delta_preco
-            )
-          )
-        `,
-        )
-        // KDS: exclui entregue, cancelado, pago (conta fechada) e aguardando pagamento Asaas
-        .not(
-          "status",
-          "in",
-          '("entregue","cancelado","pago","aguardando_pagamento")',
-        )
-        .order("criado_em", { ascending: false }); // Pedidos novos primeiro
-
-      if (error) throw new Error(error.message);
-
-      // Delivery aguardando pagamento não entra na fila da cozinha
-      const lista = ((data || []) as unknown as Pedido[]).filter(
-        (p) =>
-          p.status_pagamento !== "aguardando" &&
-          p.status !== "aguardando_pagamento",
-      );
-      setPedidos(lista);
-    } catch (erro: any) {
-      console.error("[ERRO - PAINEL] Falha ao carregar:", erro.message);
-    } finally {
-      setCarregando(false);
     }
   };
 
@@ -644,10 +696,42 @@ export function PainelPedidos() {
               <Printer size={16} /> Impressora offline
             </span>
           )}
-          {statusConexao === "desconectado" && (
-            <span className="flex items-center gap-1 text-red-500 font-bold text-sm bg-red-100 px-3 py-1 rounded-full">
-              <AlertCircle size={16} /> Sem Conexão Realtime
-            </span>
+          {statusConexao !== "conectado" && (
+            <button
+              type="button"
+              onClick={reconectar}
+              className="flex items-center gap-1 text-red-600 font-bold text-sm bg-red-100 dark:bg-red-900/30 px-3 py-1.5 rounded-full hover:bg-red-200"
+              title="Tentar reconectar agora"
+            >
+              <AlertCircle size={16} />
+              {statusConexao === "reconectando"
+                ? "Reconectando..."
+                : "Realtime desconectado"}
+            </button>
+          )}
+          {alertaSonoroAtivo ? (
+            <button
+              type="button"
+              onClick={desativarAlertaSonoro}
+              title="Desligar alertas sonoros"
+              className="flex items-center gap-1.5 text-sm font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-3 py-2 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors"
+            >
+              <Volume2 size={16} /> Som ativo
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void ativarAlertaSonoro()}
+              title="O Chrome exige um clique para liberar o som (funciona com a aba em segundo plano)"
+              className={`flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg transition-colors ${
+                precisaReativar
+                  ? "bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+                  : "bg-red-600 text-white hover:bg-red-700"
+              }`}
+            >
+              <VolumeX size={16} />
+              {precisaReativar ? "Reativar som" : "Ativar som"}
+            </button>
           )}
           <span className="text-sm bg-cookie-primary text-white px-4 py-2 rounded-lg font-medium">
             Total Ativos: {pedidos.length}

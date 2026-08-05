@@ -1,13 +1,55 @@
-import { LogOut, X } from "lucide-react";
+import { LogOut, Volume2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ImpressaoAdminProvider } from "../context/ImpressaoAdminContext";
+import {
+  AlertaNovoPedidoProvider,
+  useAlertaNovoPedidoAdmin,
+} from "../context/AlertaNovoPedidoContext";
 import { useAuth } from "../context/AuthContext";
+import { ImpressaoAdminProvider } from "../context/ImpressaoAdminContext";
+import { PedidosRealtimeProvider } from "../context/PedidosRealtimeContext";
 import { GRUPOS_NAVEGACAO_ADMIN } from "../lib/adminNavegacao";
 import { AdminBreadcrumbHeader } from "./AdminBreadcrumbHeader";
 import { BotaoInstalarPwa } from "./BotaoInstalarPwa";
 import { LogoMarca } from "./LogoMarca";
+
+function BotaoAlertaSonoro() {
+  const { ativo, precisaReativar, ativar, desativar } =
+    useAlertaNovoPedidoAdmin();
+
+  if (ativo) {
+    return (
+      <button
+        type="button"
+        onClick={desativar}
+        title="Desligar alertas de novo pedido"
+        className="flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+      >
+        <Volume2 size={18} className="shrink-0" />
+        <span>Som de pedidos ativo</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void ativar()}
+      title="Ativar som e avisos de novo pedido em todo o admin"
+      className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+        precisaReativar
+          ? "bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+          : "text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+      }`}
+    >
+      <VolumeX size={18} className="shrink-0" />
+      <span>
+        {precisaReativar ? "Reativar som de pedidos" : "Ativar som de pedidos"}
+      </span>
+    </button>
+  );
+}
 
 export function AdminLayout() {
   const { sair } = useAuth();
@@ -38,86 +80,91 @@ export function AdminLayout() {
   const fecharMenuMobile = () => setMenuMobileAberto(false);
 
   return (
-    <ImpressaoAdminProvider>
-      <div className="h-screen overflow-hidden bg-gray-50 dark:bg-background-dark flex">
-        {menuMobileAberto && (
-          <button
-            type="button"
-            aria-label="Fechar menu"
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-            onClick={fecharMenuMobile}
-          />
-        )}
-
-        <aside
-          className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark transition-transform duration-300 lg:static lg:translate-x-0 ${
-            menuMobileAberto ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <div className="flex h-16 items-center justify-between gap-2 border-b border-gray-200 dark:border-gray-800 px-4 shrink-0">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <LogoMarca size={32} />
-              <span className="font-bold text-base tracking-tight text-gray-900 dark:text-white truncate">
-                Admin
-              </span>
-            </div>
+    <PedidosRealtimeProvider>
+      <ImpressaoAdminProvider>
+        <AlertaNovoPedidoProvider>
+        <div className="h-screen overflow-hidden bg-gray-50 dark:bg-background-dark flex">
+          {menuMobileAberto && (
             <button
               type="button"
+              aria-label="Fechar menu"
+              className="fixed inset-0 z-40 bg-black/50 lg:hidden"
               onClick={fecharMenuMobile}
-              className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-              aria-label="Fechar navegação"
-            >
-              <X size={20} />
-            </button>
-          </div>
+            />
+          )}
 
-          <nav className="flex-1 overflow-y-auto p-3 space-y-4 hide-scrollbar">
-            {GRUPOS_NAVEGACAO_ADMIN.map((grupo) => (
-              <div key={grupo.titulo} className="space-y-1">
-                <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                  {grupo.titulo}
-                </p>
-                {grupo.itens.map(({ to, rotulo, icone: Icone }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    className={classeLink}
-                    onClick={fecharMenuMobile}
-                  >
-                    <Icone size={18} className="shrink-0" />
-                    <span>{rotulo}</span>
-                  </NavLink>
-                ))}
+          <aside
+            className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark transition-transform duration-300 lg:static lg:translate-x-0 ${
+              menuMobileAberto ? "translate-x-0" : "-translate-x-full"
+            }`}
+          >
+            <div className="flex h-16 items-center justify-between gap-2 border-b border-gray-200 dark:border-gray-800 px-4 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <LogoMarca size={32} />
+                <span className="font-bold text-base tracking-tight text-gray-900 dark:text-white truncate">
+                  Admin
+                </span>
               </div>
-            ))}
-          </nav>
+              <button
+                type="button"
+                onClick={fecharMenuMobile}
+                className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Fechar navegação"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-          <div className="border-t border-gray-200 dark:border-gray-800 p-3 shrink-0 space-y-1">
-            <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-              Configurações
-            </p>
-            <BotaoInstalarPwa tipo="admin" />
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              className="flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors"
-            >
-              <LogOut size={18} />
-              <span>Sair</span>
-            </button>
+            <nav className="flex-1 overflow-y-auto p-3 space-y-4 hide-scrollbar">
+              {GRUPOS_NAVEGACAO_ADMIN.map((grupo) => (
+                <div key={grupo.titulo} className="space-y-1">
+                  <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                    {grupo.titulo}
+                  </p>
+                  {grupo.itens.map(({ to, rotulo, icone: Icone }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      className={classeLink}
+                      onClick={fecharMenuMobile}
+                    >
+                      <Icone size={18} className="shrink-0" />
+                      <span>{rotulo}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              ))}
+            </nav>
+
+            <div className="border-t border-gray-200 dark:border-gray-800 p-3 shrink-0 space-y-1">
+              <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                Configurações
+              </p>
+              <BotaoAlertaSonoro />
+              <BotaoInstalarPwa tipo="admin" />
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <LogOut size={18} />
+                <span>Sair</span>
+              </button>
+            </div>
+          </aside>
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <AdminBreadcrumbHeader
+              onAbrirMenu={() => setMenuMobileAberto(true)}
+            />
+
+            <main className="flex flex-1 min-h-0 flex-col overflow-hidden">
+              <Outlet />
+            </main>
           </div>
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <AdminBreadcrumbHeader
-            onAbrirMenu={() => setMenuMobileAberto(true)}
-          />
-
-          <main className="flex flex-1 min-h-0 flex-col overflow-hidden">
-            <Outlet />
-          </main>
         </div>
-      </div>
-    </ImpressaoAdminProvider>
+        </AlertaNovoPedidoProvider>
+      </ImpressaoAdminProvider>
+    </PedidosRealtimeProvider>
   );
 }

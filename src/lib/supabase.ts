@@ -159,6 +159,11 @@ const clienteBase = createClient(supabaseUrl || "", supabaseAnonKey || "", {
   global: {
     fetch: criarFetchComInterceptacao(),
   },
+  realtime: {
+    // Web Worker evita que o Chrome estrangule heartbeat em abas sem foco.
+    worker: true,
+    heartbeatIntervalMs: 15_000,
+  },
 });
 
 export const supabase = aplicarInterceptadores(clienteBase);
