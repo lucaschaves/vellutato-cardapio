@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/input";
 import { useClienteDeliverySessao } from "../../hooks/useClienteDeliverySessao";
 import {
   buscarCep,
+  formatarCep,
   listarEnderecos,
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
@@ -21,7 +22,6 @@ import {
 import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { track } from "../../lib/analytics";
 import {
-  formatarCep,
   lerRascunhoEndereco,
   salvarRascunhoEndereco,
   type RascunhoEnderecoDelivery,
@@ -402,6 +402,8 @@ export function DeliveryHome() {
                 onChange={(e) => setCepInput(formatarCep(e.target.value))}
                 placeholder="00000-000"
                 inputMode="numeric"
+                autoComplete="postal-code"
+                maxLength={9}
                 className="flex-1"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void buscarCepHome();

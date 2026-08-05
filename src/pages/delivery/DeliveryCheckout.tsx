@@ -11,6 +11,7 @@ import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
   cpfValido,
+  formatarCep,
   formatarCpf,
   garantirClienteCheckout,
   geocodificarEndereco,
@@ -124,9 +125,8 @@ export function DeliveryCheckout() {
         longitude: null as number | null,
       };
     }
-    const d = end.cep.replace(/\D/g, "");
     return {
-      cep: d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : end.cep,
+      cep: formatarCep(end.cep),
       rua: end.rua,
       numero: end.numero,
       bairro: end.bairro,
@@ -165,6 +165,7 @@ export function DeliveryCheckout() {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [redirecionandoPagamento, setRedirecionandoPagamento] = useState(false);
   const [freteMsg, setFreteMsg] = useState<string | null>(null);
+  const [avaliandoFrete, setAvaliandoFrete] = useState(false);
   const [taxaFrete, setTaxaFrete] = useState(0);
   const [acrescimoClima, setAcrescimoClima] = useState(0);
   const [distanciaKm, setDistanciaKm] = useState<number | null>(null);
@@ -436,15 +437,18 @@ export function DeliveryCheckout() {
       setAcrescimoClima(0);
       setFreteMsg(null);
       setDistanciaKm(null);
+      setAvaliandoFrete(false);
       return;
     }
     if (enderecoAtivo.latitude == null || enderecoAtivo.longitude == null) {
       setFreteMsg("Informe o endereço completo para calcular o frete.");
       setTaxaFrete(0);
       setAcrescimoClima(0);
+      setAvaliandoFrete(false);
       return;
     }
     let ativo = true;
+    setAvaliandoFrete(true);
     void (async () => {
       const r = await avaliarEntrega(
         config,
@@ -453,6 +457,7 @@ export function DeliveryCheckout() {
         subtotal,
       );
       if (!ativo) return;
+      setAvaliandoFrete(false);
       if (!r.ok) {
         setFreteMsg(r.erro);
         setTaxaFrete(0);
@@ -500,6 +505,7 @@ export function DeliveryCheckout() {
 
   const freteConfirmado =
     modalidade === "entrega" &&
+    !avaliandoFrete &&
     !freteMsg &&
     enderecoAtivo.latitude != null &&
     enderecoAtivo.longitude != null;
@@ -674,6 +680,7 @@ export function DeliveryCheckout() {
       !!enderecoAtivo.uf?.trim() &&
       enderecoAtivo.latitude != null &&
       enderecoAtivo.longitude != null &&
+      !avaliandoFrete &&
       !freteMsg);
 
   const precisaEmailPagamento = !(modalidade === "retirada" && pagarNaLoja);
@@ -745,6 +752,8 @@ export function DeliveryCheckout() {
       toast.warning("Sacola vazia");
       return;
     }
+    let taxaEntregaFinal = 0;
+    let distanciaFinal: number | null = null;
     if (modalidade === "entrega") {
       if (!enderecoAtivo.rua?.trim() || !enderecoAtivo.numero?.trim()) {
         toast.error("Preencha o endereço completo (CEP, rua e número).");
@@ -758,10 +767,31 @@ export function DeliveryCheckout() {
         toast.error("Busque o CEP para localizar o endereço no mapa.");
         return;
       }
-      if (freteMsg) {
-        toast.error(freteMsg);
+      if (!config) {
+        toast.error("Não foi possível calcular o frete. Recarregue a página.");
         return;
       }
+      // Revalida na hora: o estado pode estar desatualizado ou ainda calculando.
+      const avaliacao = await avaliarEntrega(
+        config,
+        enderecoAtivo.latitude,
+        enderecoAtivo.longitude,
+        subtotal,
+      );
+      if (!avaliacao.ok) {
+        setFreteMsg(avaliacao.erro);
+        setTaxaFrete(0);
+        setAcrescimoClima(0);
+        setDistanciaKm(avaliacao.distancia_km ?? null);
+        toast.error(avaliacao.erro);
+        return;
+      }
+      taxaEntregaFinal = avaliacao.taxa;
+      distanciaFinal = avaliacao.distancia_km;
+      setFreteMsg(null);
+      setTaxaFrete(avaliacao.taxa);
+      setAcrescimoClima(avaliacao.acrescimo_clima);
+      setDistanciaKm(avaliacao.distancia_km);
     }
 
     const statusPagamento =
@@ -786,6 +816,8 @@ export function DeliveryCheckout() {
       toast.error("Informe um CPF válido para o pagamento (obrigatório).");
       return;
     }
+
+    const totalFinal = Math.max(0, subtotal - desconto) + taxaEntregaFinal;
 
     try {
       setEnviando(true);
@@ -815,8 +847,8 @@ export function DeliveryCheckout() {
         cupom_id: cupomAplicado?.id || null,
         desconto,
         identificador: modalidade === "entrega" ? "DELIVERY" : "RETIRADA",
-        total,
-        valor_total: total,
+        total: totalFinal,
+        valor_total: totalFinal,
         itens: itens.map((item) => ({
           produto_id: item.produtoId,
           quantidade: item.quantidade,
@@ -837,7 +869,7 @@ export function DeliveryCheckout() {
         })),
         modalidade,
         status_pagamento: statusPagamento,
-        taxa_entrega: modalidade === "entrega" ? taxaFrete : 0,
+        taxa_entrega: taxaEntregaFinal,
         subtotal_itens: subtotal,
         cpf_nota: cpfNota.replace(/\D/g, "") || cpfCliente,
         endereco:
@@ -855,7 +887,7 @@ export function DeliveryCheckout() {
                 longitude: enderecoAtivo.longitude!,
               }
             : null,
-        distancia_km: distanciaKm,
+        distancia_km: distanciaFinal,
       });
 
       lembrarClienteAnalytics(clienteId);
@@ -866,7 +898,7 @@ export function DeliveryCheckout() {
         props: {
           modalidade,
           status_pagamento: statusPagamento,
-          total,
+          total: totalFinal,
         },
       });
       if (statusPagamento === "na_loja") {
@@ -1355,11 +1387,12 @@ export function DeliveryCheckout() {
                         value={formEndereco.cep}
                         inputMode="numeric"
                         autoComplete="postal-code"
+                        maxLength={9}
                         className="font-mono tracking-wide"
                         onChange={(e) =>
                           setFormEndereco((f) => ({
                             ...f,
-                            cep: e.target.value,
+                            cep: formatarCep(e.target.value),
                             cidade: "",
                             uf: "",
                             latitude: null,
@@ -1473,7 +1506,7 @@ export function DeliveryCheckout() {
                         </label>
                         <Input
                           id="entrega-complemento"
-                          placeholder="Apto, bloco, referência…"
+                          placeholder="Apto, casa, bloco…"
                           value={formEndereco.complemento}
                           onChange={(e) =>
                             setFormEndereco((f) => ({
@@ -1512,12 +1545,15 @@ export function DeliveryCheckout() {
                   )}
                 </div>
               )}
-              {freteMsg && (
+              {avaliandoFrete && (
+                <p className="text-sm text-zinc-600">Calculando frete…</p>
+              )}
+              {!avaliandoFrete && freteMsg && (
                 <p className="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">
                   {freteMsg}
                 </p>
               )}
-              {!freteMsg && (
+              {!avaliandoFrete && !freteMsg && (
                 <p className="text-sm text-zinc-600">
                   Frete: R$ {taxaFrete.toFixed(2).replace(".", ",")}
                   {acrescimoClima > 0

@@ -9,6 +9,7 @@ import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
   excluirEndereco,
+  formatarCep,
   formatarCpf,
   garantirClienteCheckout,
   geocodificarEndereco,
@@ -475,6 +476,11 @@ export function DeliveryConta() {
                     </span>
                   )}
                 </p>
+                {e.complemento?.trim() && (
+                  <p className="text-zinc-600 text-xs mt-0.5">
+                    Compl.: {e.complemento}
+                  </p>
+                )}
                 <p className="text-zinc-500">
                   {e.bairro} — {e.cidade}/{e.uf}
                 </p>
@@ -496,10 +502,13 @@ export function DeliveryConta() {
           <div className="bg-white border rounded-2xl p-4 space-y-2">
             <p className="font-bold text-sm">Novo endereço</p>
             <Input
-              placeholder="CEP"
+              placeholder="00000-000"
               value={formEnd.cep}
+              inputMode="numeric"
+              autoComplete="postal-code"
+              maxLength={9}
               onChange={(e) =>
-                setFormEnd((f) => ({ ...f, cep: e.target.value }))
+                setFormEnd((f) => ({ ...f, cep: formatarCep(e.target.value) }))
               }
               onBlur={() =>
                 void buscarCep(formEnd.cep).then((r) => {
@@ -530,13 +539,48 @@ export function DeliveryConta() {
                 }
               />
               <Input
-                placeholder="Bairro"
-                value={formEnd.bairro}
+                placeholder="Complemento (apto, casa…)"
+                value={formEnd.complemento}
                 onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, bairro: e.target.value }))
+                  setFormEnd((f) => ({ ...f, complemento: e.target.value }))
                 }
               />
             </div>
+            <Input
+              placeholder="Bairro"
+              value={formEnd.bairro}
+              onChange={(e) =>
+                setFormEnd((f) => ({ ...f, bairro: e.target.value }))
+              }
+            />
+            <div className="grid grid-cols-3 gap-2">
+              <Input
+                className="col-span-2"
+                placeholder="Cidade"
+                value={formEnd.cidade}
+                onChange={(e) =>
+                  setFormEnd((f) => ({ ...f, cidade: e.target.value }))
+                }
+              />
+              <Input
+                placeholder="UF"
+                value={formEnd.uf}
+                maxLength={2}
+                onChange={(e) =>
+                  setFormEnd((f) => ({
+                    ...f,
+                    uf: e.target.value.toUpperCase(),
+                  }))
+                }
+              />
+            </div>
+            <Input
+              placeholder="Ponto de referência (opcional)"
+              value={formEnd.referencia}
+              onChange={(e) =>
+                setFormEnd((f) => ({ ...f, referencia: e.target.value }))
+              }
+            />
             <Button
               className="w-full"
               onClick={async () => {
@@ -560,6 +604,19 @@ export function DeliveryConta() {
                     longitude: lng,
                   });
                   setEnderecos(await listarEnderecos(cliente.id));
+                  setFormEnd({
+                    cep: "",
+                    rua: "",
+                    numero: "",
+                    bairro: "",
+                    cidade: "",
+                    uf: "",
+                    complemento: "",
+                    referencia: "",
+                    latitude: null,
+                    longitude: null,
+                    padrao: true,
+                  });
                   toast.success("Endereço salvo");
                 } catch (e: unknown) {
                   toast.error(e instanceof Error ? e.message : "Erro");

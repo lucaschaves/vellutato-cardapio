@@ -42,6 +42,13 @@ export function formatarCpf(valor: string): string {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
+/** Máscara de CEP: 00000-000 (só dígitos, máx. 8). */
+export function formatarCep(valor: string): string {
+  const d = valor.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
 export function cpfValido(cpf: string): boolean {
   const d = soDigitosCpf(cpf);
   if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;

@@ -60,10 +60,12 @@ export async function criarPedidoDelivery(
   });
 
   if (error) {
+    const prefixosNegocio =
+      /^(LOJA_FECHADA|LOJA_CHEIA|FORA_AREA|DELIVERY_INDISPONIVEL):\s*/;
     const ehNegocio =
-      /^(LOJA_FECHADA|LOJA_CHEIA):/.test(error.message) ||
+      prefixosNegocio.test(error.message) ||
       error.message.includes("Estoque insuficiente");
-    const mensagem = error.message.replace(/^(LOJA_FECHADA|LOJA_CHEIA):\s*/, "");
+    const mensagem = error.message.replace(prefixosNegocio, "");
     if (ehNegocio) throw new ErroNegocioCheckout(mensagem);
     throw new Error(mensagem);
   }

@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
 import {
+  formatarCep,
   geocodificarEndereco,
   salvarEndereco,
 } from "../../lib/deliveryCliente";
@@ -42,12 +43,6 @@ export function salvarRascunhoEndereco(dados: RascunhoEnderecoDelivery) {
 
 export function limparRascunhoEndereco() {
   sessionStorage.removeItem(STORAGE_KEY);
-}
-
-function formatarCep(valor: string): string {
-  const d = valor.replace(/\D/g, "").slice(0, 8);
-  if (d.length <= 5) return d;
-  return `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
 export function DeliveryEndereco() {
@@ -217,7 +212,7 @@ export function DeliveryEndereco() {
             <Input
               value={complemento}
               onChange={(e) => setComplemento(e.target.value)}
-              placeholder="Apto, bloco…"
+              placeholder="Apto, casa, bloco…"
             />
           </div>
         </div>
@@ -292,4 +287,4 @@ export function DeliveryEndereco() {
   );
 }
 
-export { formatarCep };
+export { formatarCep } from "../../lib/deliveryCliente";

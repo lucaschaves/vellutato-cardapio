@@ -25,6 +25,7 @@ import {
 import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
+  formatarCep,
   geocodificarEndereco,
   listarEnderecos,
   type EnderecoCliente,
@@ -538,16 +539,41 @@ export function AdminNovoPedido() {
       toast.warning("Selecione a mesa");
       return;
     }
+    let taxaEntregaFinal = 0;
+    let distanciaFinal: number | null = null;
     if (canal === "entrega") {
       if (!enderecoAtivo) {
         toast.warning("Informe e localize o endereço completo");
         return;
       }
-      if (freteMsg) {
-        toast.error(freteMsg);
+      if (!config) {
+        toast.error("Configuração de delivery não carregada.");
         return;
       }
+      // Revalida na hora: o estado pode estar desatualizado ou ainda calculando.
+      const avaliacao = await avaliarEntrega(
+        config,
+        enderecoAtivo.latitude,
+        enderecoAtivo.longitude,
+        subtotal,
+      );
+      if (!avaliacao.ok) {
+        setFreteMsg(avaliacao.erro);
+        setTaxaFrete(0);
+        setAcrescimoClima(0);
+        setDistanciaKm(avaliacao.distancia_km ?? null);
+        toast.error(avaliacao.erro);
+        return;
+      }
+      taxaEntregaFinal = avaliacao.taxa;
+      distanciaFinal = avaliacao.distancia_km;
+      setFreteMsg(null);
+      setTaxaFrete(avaliacao.taxa);
+      setAcrescimoClima(avaliacao.acrescimo_clima);
+      setDistanciaKm(avaliacao.distancia_km);
     }
+
+    const totalFinal = Math.max(0, subtotal) + taxaEntregaFinal;
 
     setEnviando(true);
     try {
@@ -567,16 +593,16 @@ export function AdminNovoPedido() {
           cupom_id: null,
           desconto: 0,
           identificador: canal === "entrega" ? "DELIVERY" : "RETIRADA",
-          total,
-          valor_total: total,
+          total: totalFinal,
+          valor_total: totalFinal,
           itens: mapearItens(),
           modalidade: canal,
           status_pagamento: "pago",
-          taxa_entrega: canal === "entrega" ? taxaFrete : 0,
+          taxa_entrega: taxaEntregaFinal,
           subtotal_itens: subtotal,
           cpf_nota: null,
           endereco: canal === "entrega" ? enderecoAtivo : null,
-          distancia_km: canal === "entrega" ? distanciaKm : null,
+          distancia_km: distanciaFinal,
         });
         toast.success(`Pedido #${resultado.sequencia_pedido} criado (pago)`);
         navigate("/admin/pedidos");
@@ -778,10 +804,16 @@ export function AdminNovoPedido() {
             <div className="grid md:grid-cols-2 gap-2">
               <div className="flex gap-2 md:col-span-2">
                 <Input
-                  placeholder="CEP"
+                  placeholder="00000-000"
                   value={formEnd.cep}
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  maxLength={9}
                   onChange={(e) =>
-                    setFormEnd((f) => ({ ...f, cep: e.target.value }))
+                    setFormEnd((f) => ({
+                      ...f,
+                      cep: formatarCep(e.target.value),
+                    }))
                   }
                 />
                 <Button type="button" variant="outline" onClick={() => void aplicarCep()}>
@@ -824,7 +856,7 @@ export function AdminNovoPedido() {
                 }
               />
               <Input
-                placeholder="Complemento"
+                placeholder="Complemento (apto, casa…)"
                 value={formEnd.complemento}
                 onChange={(e) =>
                   setFormEnd((f) => ({ ...f, complemento: e.target.value }))

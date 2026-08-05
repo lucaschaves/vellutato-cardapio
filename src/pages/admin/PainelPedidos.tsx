@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
   Bike,
+  Building2,
   CheckCircle2,
   ChefHat,
   Clock,
@@ -98,15 +99,17 @@ function formatarEnderecoEntrega(
       : endereco.cep
         ? `CEP ${endereco.cep}`
         : null;
-  return [
-    linha1,
-    endereco.complemento ? `Compl.: ${endereco.complemento}` : null,
-    endereco.referencia ? `Ref.: ${endereco.referencia}` : null,
-    linha2 || null,
-    cepFmt,
-  ]
+  // Sem complemento: o KDS tem botão separado para copiar apto/casa.
+  return [linha1, endereco.referencia ? `Ref.: ${endereco.referencia}` : null, linha2 || null, cepFmt]
     .filter(Boolean)
     .join("\n");
+}
+
+function complementoPedido(
+  endereco: EnderecoPedido | null | undefined,
+): string | null {
+  const texto = endereco?.complemento?.trim();
+  return texto || null;
 }
 
 const STATUS_MENSAGEM_WHATSAPP: Record<Pedido["status"], string> = {
@@ -449,6 +452,15 @@ export function PainelPedidos() {
         : "Este pedido não tem endereço de entrega.",
     );
 
+  const copiarComplementoEntrega = (pedido: Pedido) =>
+    void copiarTexto(
+      complementoPedido(pedido.endereco_json) || "",
+      "Complemento copiado!",
+      complementoPedido(pedido.endereco_json)
+        ? "Não foi possível copiar o complemento."
+        : "Este pedido não tem complemento.",
+    );
+
   // Separação em colunas (Kanban)
   const pendentes = pedidos.filter((p) => p.status === "pendente");
   const emProducao = pedidos.filter((p) => p.status === "em_producao");
@@ -572,6 +584,18 @@ export function PainelPedidos() {
                       title="Copiar endereço de entrega"
                     >
                       <MapPin size={20} />
+                    </button>
+                  )}
+                {pedido.origem === "delivery" &&
+                  pedido.modalidade === "entrega" &&
+                  complementoPedido(pedido.endereco_json) && (
+                    <button
+                      type="button"
+                      onClick={() => copiarComplementoEntrega(pedido)}
+                      className="p-2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-md hover:bg-amber-200 dark:hover:bg-amber-900 transition-colors"
+                      title="Copiar complemento (apto, casa…)"
+                    >
+                      <Building2 size={20} />
                     </button>
                   )}
               </div>
