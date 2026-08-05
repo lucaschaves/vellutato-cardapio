@@ -7,6 +7,14 @@ export const STATUS_PEDIDO_LABEL: Record<string, string> = {
   entregue: "Entregue",
   pago: "Pago",
   cancelado: "Cancelado",
+  aguardando_pagamento: "Aguardando pagamento",
+};
+
+export const ORIGEM_PEDIDO_LABEL: Record<string, string> = {
+  mesa: "Mesa",
+  totem: "Totem",
+  balcao: "Balcão",
+  delivery: "Delivery",
 };
 
 export const STATUS_VENDA_CONCLUIDA = new Set(["pago", "entregue"]);

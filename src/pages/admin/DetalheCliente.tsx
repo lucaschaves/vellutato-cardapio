@@ -8,6 +8,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Badge } from "../../components/ui/badge";
 import {
   formatarDataHora,
@@ -107,15 +108,15 @@ export function DetalheCliente() {
 
   if (carregando) {
     return (
-      <div className="flex justify-center py-20">
+      <AdminPageShell contentClassName="flex justify-center py-20">
         <Loader2 className="animate-spin text-cookie-primary" size={40} />
-      </div>
+      </AdminPageShell>
     );
   }
 
   if (!cliente) {
     return (
-      <div className="p-6 max-w-4xl mx-auto text-center py-20">
+      <AdminPageShell contentClassName="text-center py-20">
         <p className="text-gray-500 mb-4">Cliente não encontrado.</p>
         <Link
           to="/admin/clientes"
@@ -123,42 +124,42 @@ export function DetalheCliente() {
         >
           Voltar para clientes
         </Link>
-      </div>
+      </AdminPageShell>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <Link
-        to="/admin/clientes"
-        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-cookie-primary transition-colors"
-      >
-        <ArrowLeft size={16} />
-        Voltar para clientes
-      </Link>
-
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2 truncate">
+          <User size={28} className="text-cookie-primary shrink-0" />
+          {cliente.nome}
+        </h1>
+      }
+      description={
+        <>
+          {formatarTelefoneDeSalvo(cliente.celular)}
+          {cliente.created_at && (
+            <>
+              {" · "}Cliente desde{" "}
+              {new Date(cliente.created_at).toLocaleDateString("pt-BR")}
+            </>
+          )}
+        </>
+      }
+      actions={
+        <Link
+          to="/admin/clientes"
+          className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-cookie-primary transition-colors"
+        >
+          <ArrowLeft size={16} />
+          Voltar para clientes
+        </Link>
+      }
+      contentClassName="space-y-6"
+    >
       <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-6">
-        <div className="flex items-start gap-4">
-          <div className="p-3 rounded-full bg-cookie-primary/10 text-cookie-primary">
-            <User size={28} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
-              {cliente.nome}
-            </h1>
-            <p className="text-gray-500 mt-1">
-              {formatarTelefoneDeSalvo(cliente.celular)}
-            </p>
-            {cliente.created_at && (
-              <p className="text-xs text-gray-400 mt-1">
-                Cliente desde{" "}
-                {new Date(cliente.created_at).toLocaleDateString("pt-BR")}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="rounded-xl bg-gray-50 dark:bg-[#1a1815] p-4">
             <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">
               Pedidos
@@ -283,6 +284,6 @@ export function DetalheCliente() {
           </div>
         )}
       </div>
-    </div>
+    </AdminPageShell>
   );
 }

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { IdentificarTelefoneDelivery } from "../../components/IdentificarTelefoneDelivery";
 import { Button } from "../../components/ui/button";
-import { IconeGoogle } from "../../components/IconeGoogle";
-import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
+import { useClienteDeliverySessao } from "../../hooks/useClienteDeliverySessao";
 import {
   enviarMensagem,
   listarMensagens,
@@ -13,8 +13,8 @@ import {
 import { supabase } from "../../lib/supabase";
 
 export function DeliveryChat() {
-  const { logado, cliente, carregando, entrarComGoogle, cadastroCompleto } =
-    useDeliveryCliente();
+  const { cliente, carregando, precisaIdentificar, identificarPorTelefone } =
+    useClienteDeliverySessao();
   const [params] = useSearchParams();
   const pedidoId = params.get("pedido");
   const [conversaId, setConversaId] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function DeliveryChat() {
   const fimRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!cliente?.id || !cadastroCompleto) return;
+    if (!cliente?.id) return;
     void (async () => {
       try {
         const id = await obterOuCriarConversa({
@@ -38,7 +38,7 @@ export function DeliveryChat() {
         toast.error("Falha ao abrir chat");
       }
     })();
-  }, [cliente?.id, cadastroCompleto, pedidoId]);
+  }, [cliente?.id, pedidoId]);
 
   useEffect(() => {
     if (!conversaId) return;
@@ -72,27 +72,20 @@ export function DeliveryChat() {
   if (carregando) {
     return (
       <div className="flex justify-center py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
       </div>
     );
   }
 
-  if (!logado || !cadastroCompleto) {
+  if (precisaIdentificar) {
     return (
-      <div className="text-center py-16 space-y-3">
-        <p className="font-bold">Entre para conversar conosco</p>
-        <Button
-          className="bg-red-600 hover:bg-red-700"
-          onClick={() =>
-            void entrarComGoogle(
-              `${window.location.origin}/delivery/auth/callback`,
-            )
-          }
-        >
-          <IconeGoogle className="h-5 w-5 mr-2" />
-          Entrar com Google
-        </Button>
-      </div>
+      <IdentificarTelefoneDelivery
+        titulo="Chat"
+        descricao="Informe seu celular com DDD (11 dígitos) para conversar conosco."
+        onIdentificar={(tel) =>
+          identificarPorTelefone(tel, { criarSeAusente: true })
+        }
+      />
     );
   }
 
@@ -127,7 +120,7 @@ export function DeliveryChat() {
             key={m.id}
             className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
               m.autor === "cliente"
-                ? "ml-auto bg-red-600 text-white"
+                ? "ml-auto bg-cookie-primary text-white"
                 : "mr-auto bg-zinc-100 text-zinc-900"
             }`}
           >
@@ -147,7 +140,7 @@ export function DeliveryChat() {
           }}
         />
         <Button
-          className="bg-red-600 hover:bg-red-700"
+          className="bg-cookie-primary hover:bg-cookie-primary-hover"
           disabled={enviando}
           onClick={() => void enviar()}
         >

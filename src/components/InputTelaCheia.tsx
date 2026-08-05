@@ -123,7 +123,7 @@ export function InputTelaCheia({
       className={cn(
         className,
         "caret-transparent cursor-pointer",
-        ativo && "ring-2 ring-[#ff5722] border-transparent",
+        ativo && "ring-2 ring-[#6b1d2a] border-transparent",
       )}
     />
   );

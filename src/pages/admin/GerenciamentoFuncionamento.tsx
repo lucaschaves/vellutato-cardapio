@@ -16,6 +16,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
+import { AdminPageShell } from "../../components/AdminPageShell";
 
 function horaParaInput(hora: string): string {
   return hora.slice(0, 5); // "HH:MM:SS" → "HH:MM"
@@ -98,20 +99,16 @@ export function GerenciamentoFuncionamento() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-gray-950 dark:text-white flex items-center gap-2">
-            <Clock className="text-[#ff5722]" size={26} />
-            Funcionamento
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Horários da loja, pausa temporária e limite de pedidos. Fora do
-            horário, o checkout é bloqueado automaticamente.
-          </p>
-        </div>
-
-        {status && (
+    <AdminPageShell
+      title={
+        <span className="flex items-center gap-2">
+          <Clock className="text-[#6b1d2a]" size={26} />
+          Funcionamento
+        </span>
+      }
+      description="Horários da loja, pausa temporária e limite de pedidos. Fora do horário, o checkout é bloqueado automaticamente."
+      actions={
+        status ? (
           <span
             className={`px-4 py-2 rounded-full text-sm font-bold ${
               status.aberta
@@ -121,15 +118,32 @@ export function GerenciamentoFuncionamento() {
           >
             {status.aberta ? "Loja aberta agora" : "Loja fechada agora"}
           </span>
-        )}
-      </div>
-
+        ) : null
+      }
+      footer={
+        <Button
+          onClick={() => void salvarTudo()}
+          disabled={salvando}
+          className="bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold px-6"
+        >
+          {salvando ? (
+            <Loader2 className="animate-spin" size={18} />
+          ) : (
+            <>
+              <Save size={18} className="mr-2" />
+              Salvar tudo
+            </>
+          )}
+        </Button>
+      }
+      contentClassName="space-y-6"
+    >
       {/* Pausa temporária */}
       <section className="rounded-2xl border border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] p-5 space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-bold text-gray-950 dark:text-white flex items-center gap-2">
-              <PauseCircle size={18} className="text-[#ff5722]" />
+              <PauseCircle size={18} className="text-[#6b1d2a]" />
               Pausa temporária
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -276,23 +290,6 @@ export function GerenciamentoFuncionamento() {
           ))}
         </div>
       </section>
-
-      <div className="flex justify-end">
-        <Button
-          onClick={() => void salvarTudo()}
-          disabled={salvando}
-          className="bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold px-6"
-        >
-          {salvando ? (
-            <Loader2 className="animate-spin" size={18} />
-          ) : (
-            <>
-              <Save size={18} className="mr-2" />
-              Salvar tudo
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
+    </AdminPageShell>
   );
 }

@@ -41,6 +41,42 @@ export type Database = {
         }
         Relationships: []
       }
+      analytics_eventos: {
+        Row: {
+          id: string
+          criado_em: string
+          canal: string
+          sessao_id: string
+          cliente_id: string | null
+          evento: string
+          produto_id: string | null
+          pedido_id: string | null
+          props: Json
+        }
+        Insert: {
+          id?: string
+          criado_em?: string
+          canal: string
+          sessao_id: string
+          cliente_id?: string | null
+          evento: string
+          produto_id?: string | null
+          pedido_id?: string | null
+          props?: Json
+        }
+        Update: {
+          id?: string
+          criado_em?: string
+          canal?: string
+          sessao_id?: string
+          cliente_id?: string | null
+          evento?: string
+          produto_id?: string | null
+          pedido_id?: string | null
+          props?: Json
+        }
+        Relationships: []
+      }
       categorias: {
         Row: {
           criado_em: string
@@ -672,7 +708,7 @@ export type Database = {
       }
     }
     Enums: {
-      tipo_origem_pedido: "mesa" | "balcao"
+      tipo_origem_pedido: "mesa" | "balcao" | "delivery" | "totem"
       tipo_produto: "simples" | "combo"
       disponibilidade_produto: "loja" | "levar" | "ambos"
       unidade_medida_produto: "g" | "kg" | "ml" | "L"
@@ -811,7 +847,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      tipo_origem_pedido: ["mesa", "balcao"],
+      tipo_origem_pedido: ["mesa", "balcao", "delivery", "totem"],
       tipo_produto: ["simples", "combo"],
       disponibilidade_produto: ["loja", "levar", "ambos"],
       unidade_medida_produto: ["g", "kg", "ml", "L"],

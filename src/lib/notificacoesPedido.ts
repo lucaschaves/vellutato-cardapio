@@ -30,16 +30,89 @@ export function labelStatusPedido(status: string): string {
   return LABEL_STATUS_CURTO[status] || status;
 }
 
+export type DadosWhatsappAcompanhamento = {
+  sequencia: number | null | undefined;
+  pedidoId: string;
+  clienteNome?: string | null;
+  clienteCelular?: string | null;
+  modalidade?: string | null;
+  statusRotulo?: string | null;
+  total?: number | null;
+  enderecoLinha?: string | null;
+  itensResumo?: string[];
+  passosTimeline?: { titulo: string; estado: string }[];
+  urlAcompanhar?: string | null;
+};
+
 /** Texto que o cliente envia ao abrir o WhatsApp da loja (wa.me). */
 export function textoInicioWhatsappAcompanhamento(
   sequencia: number | null | undefined,
   pedidoId: string,
 ): string {
-  const num = sequencia != null ? `#${sequencia}` : "";
-  return (
-    `Olá! Gostaria de acompanhar o pedido ${num}`.trim() +
-    `\n(Ref: ${pedidoId.slice(0, 8)})`
-  );
+  return textoWhatsappAcompanhamentoPedido({ sequencia, pedidoId });
+}
+
+/** Mensagem completa: cliente + pedido + passo a passo. */
+export function textoWhatsappAcompanhamentoPedido(
+  dados: DadosWhatsappAcompanhamento,
+): string {
+  const num = dados.sequencia != null ? `#${dados.sequencia}` : "";
+  const linhas: string[] = [
+    `Olá! Gostaria de acompanhar o pedido ${num}`.trim(),
+    `(Ref: ${dados.pedidoId.slice(0, 8)})`,
+    "",
+  ];
+
+  if (dados.clienteNome?.trim()) {
+    linhas.push(`Cliente: ${dados.clienteNome.trim()}`);
+  }
+  if (dados.clienteCelular?.trim()) {
+    linhas.push(`Telefone: ${dados.clienteCelular.trim()}`);
+  }
+  if (dados.modalidade?.trim()) {
+    const mod =
+      dados.modalidade.toLowerCase() === "retirada" ? "Retirada" : "Entrega";
+    linhas.push(`Modalidade: ${mod}`);
+  }
+  if (dados.enderecoLinha?.trim()) {
+    linhas.push(`Endereço: ${dados.enderecoLinha.trim()}`);
+  }
+  if (dados.statusRotulo?.trim()) {
+    linhas.push(`Status atual: ${dados.statusRotulo.trim()}`);
+  }
+  if (dados.total != null && Number.isFinite(dados.total)) {
+    linhas.push(
+      `Total: R$ ${Number(dados.total).toFixed(2).replace(".", ",")}`,
+    );
+  }
+
+  if (dados.itensResumo && dados.itensResumo.length > 0) {
+    linhas.push("", "Itens:");
+    for (const item of dados.itensResumo) {
+      linhas.push(`• ${item}`);
+    }
+  }
+
+  if (dados.passosTimeline && dados.passosTimeline.length > 0) {
+    linhas.push("", "Passo a passo:");
+    for (const passo of dados.passosTimeline) {
+      const marca =
+        passo.estado === "completed"
+          ? "✅"
+          : passo.estado === "current"
+            ? "▶️"
+            : passo.estado === "cancelled"
+              ? "❌"
+              : "○";
+      linhas.push(`${marca} ${passo.titulo}`);
+    }
+  }
+
+  if (dados.urlAcompanhar?.trim()) {
+    linhas.push("", `Acompanhar online: ${dados.urlAcompanhar.trim()}`);
+  }
+
+  return linhas.join("\n");
 }
 
 export function montarLinkWhatsappLoja(

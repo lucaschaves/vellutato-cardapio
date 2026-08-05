@@ -33,8 +33,34 @@ export function formatarTelefoneDeSalvo(valor: string | null | undefined): strin
   return formatarTelefoneBr(valor);
 }
 
+/**
+ * Celular BR válido: exatamente 11 dígitos (DDD + 9 + número).
+ * Ex.: 11987654321 → (11) 98765-4321
+ */
+export function mensagemTelefoneInvalido(valor: string): string | null {
+  const digitos = extrairDigitosTelefone(valor);
+  if (!digitos) return "Informe o celular com DDD.";
+  if (digitos.length < TELEFONE_DIGITOS_MAX) {
+    return `Celular incompleto (${digitos.length}/${TELEFONE_DIGITOS_MAX} dígitos).`;
+  }
+  if (digitos.length > TELEFONE_DIGITOS_MAX) {
+    return `Use só DDD + número (${TELEFONE_DIGITOS_MAX} dígitos).`;
+  }
+  const ddd = Number(digitos.slice(0, 2));
+  if (ddd < 11 || ddd > 99) return "DDD inválido.";
+  if (digitos[2] !== "9") {
+    return "Informe um celular (9 dígitos após o DDD).";
+  }
+  return null;
+}
+
+export function telefoneCelularValido(valor: string): boolean {
+  return mensagemTelefoneInvalido(valor) === null;
+}
+
+/** Alias: celular completo e válido (11 dígitos). */
 export function telefoneDigitosCompleto(valor: string): boolean {
-  return extrairDigitosTelefone(valor).length === TELEFONE_DIGITOS_MAX;
+  return telefoneCelularValido(valor);
 }
 
 /** E.164 para Supabase Auth / Twilio (+55 + DDD + número). */

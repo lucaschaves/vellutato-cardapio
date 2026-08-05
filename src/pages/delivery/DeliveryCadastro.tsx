@@ -39,11 +39,11 @@ export function DeliveryCadastro() {
   }, [cliente]);
 
   if (!carregando && !usuario) {
-    return <Navigate to="/delivery" replace />;
+    return <Navigate to="/" replace />;
   }
 
   if (!carregando && cadastroCompleto) {
-    return <Navigate to="/delivery" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const buscarPorTelefone = async () => {
@@ -117,7 +117,7 @@ export function DeliveryCadastro() {
           ? "Conta vinculada com sucesso!"
           : "Cadastro completo!",
       );
-      navigate("/delivery", { replace: true });
+      navigate("/", { replace: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar");
     } finally {
@@ -158,7 +158,7 @@ export function DeliveryCadastro() {
             />
           </div>
           <Button
-            className="w-full bg-red-600 hover:bg-red-700"
+            className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
             disabled={buscando}
             onClick={() => void buscarPorTelefone()}
           >
@@ -176,7 +176,7 @@ export function DeliveryCadastro() {
             <Input value={celular} disabled className="bg-zinc-50" />
             <button
               type="button"
-              className="text-xs text-red-600 font-semibold mt-1"
+              className="text-xs text-cookie-primary font-semibold mt-1"
               onClick={() => {
                 setEtapa("telefone");
                 setClienteEncontrado(false);
@@ -203,7 +203,7 @@ export function DeliveryCadastro() {
             />
           </div>
           <Button
-            className="w-full bg-red-600 hover:bg-red-700"
+            className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
             disabled={salvando}
             onClick={() => void salvar()}
           >

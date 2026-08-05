@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { supabase } from "../../lib/supabase";
 import {
   buscarMensagensWhatsapp,
@@ -134,18 +135,16 @@ export function GerenciamentoMensagens() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto h-full space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
           <MessageCircle size={28} className="text-cookie-primary" />
           Mensagens de WhatsApp
         </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Modelos usados no botão de WhatsApp do KDS. Use as tags para
-          preencher automaticamente os dados do pedido.
-        </p>
-      </div>
-
+      }
+      description="Modelos usados no botão de WhatsApp do KDS. Use as tags para preencher automaticamente os dados do pedido."
+      contentClassName="space-y-8"
+    >
       <div className="bg-white dark:bg-surface-dark p-6 rounded-xl border dark:border-gray-800 shadow-sm space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold dark:text-white">
@@ -291,6 +290,6 @@ export function GerenciamentoMensagens() {
           ))
         )}
       </div>
-    </div>
+    </AdminPageShell>
   );
 }

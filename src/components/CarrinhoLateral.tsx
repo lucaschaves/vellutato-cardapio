@@ -24,6 +24,7 @@ import {
 } from "../lib/clientes";
 import { validarCupom } from "../lib/cupons";
 import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
+import { lembrarClienteAnalytics, track } from "../lib/analytics";
 import { buscarStatusLoja, type StatusLoja } from "../lib/lojaStatus";
 import { somarDeltasCombo } from "../lib/combos";
 import {
@@ -33,6 +34,7 @@ import {
   telefoneDigitosCompleto,
 } from "../lib/telefone";
 import { urlCardapio } from "../lib/urlCardapio";
+import { urlBoasVindasCardapio } from "../lib/modoCardapio";
 import {
   lerTipoConsumo,
   montarOrigemIdentificadorPedido,
@@ -235,7 +237,7 @@ export function CarrinhoLateral({
     const modoSessao = lerTipoConsumo();
     if (!modoSessao) {
       toast.error("Escolha se é para comer na loja ou para levar.");
-      navigate("/");
+      navigate(urlBoasVindasCardapio());
       return;
     }
 
@@ -291,6 +293,17 @@ export function CarrinhoLateral({
         })),
       });
 
+      lembrarClienteAnalytics(clienteId);
+      track("order_created", {
+        pedidoId: pedido.pedido_id,
+        clienteId,
+        props: {
+          sequencia: pedido.sequencia_pedido,
+          origem,
+          total: totalPedido,
+        },
+      });
+
       limparCarrinho();
       setCodigoCupom("");
       setEtapaMobile("itens");
@@ -323,7 +336,7 @@ export function CarrinhoLateral({
   ) => (
     <div className="space-y-3">
       {lojaFechada && (
-        <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
+        <div className="rounded-xl bg-cookie-primary/10 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
           Estamos fechados no momento.
           {statusLoja?.motivo ? ` ${statusLoja.motivo}` : ""}
         </div>
@@ -353,7 +366,7 @@ export function CarrinhoLateral({
           Total a pagar
         </span>
         <span
-          className={`font-black text-[#ff5722] ${tamanhoTotal === "grande" ? "text-3xl" : "text-2xl"}`}
+          className={`font-black text-[#6b1d2a] ${tamanhoTotal === "grande" ? "text-3xl" : "text-2xl"}`}
         >
           R$ {totalFinal.toFixed(2)}
         </span>
@@ -378,7 +391,7 @@ export function CarrinhoLateral({
               removerCupom();
               setCodigoCupom("");
             }}
-            className="text-xs font-bold text-red-600 hover:text-red-700"
+            className="text-xs font-bold text-cookie-primary hover:text-red-700"
           >
             Remover
           </button>
@@ -390,7 +403,7 @@ export function CarrinhoLateral({
             value={codigoCupom}
             onValorChange={setCodigoCupom}
             placeholder="Código promocional"
-            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white uppercase outline-none focus:ring-2 focus:ring-[#ff5722]"
+            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white uppercase outline-none focus:ring-2 focus:ring-[#6b1d2a]"
           />
           <button
             type="button"
@@ -419,7 +432,7 @@ export function CarrinhoLateral({
           placeholder="(00) 00000-0000"
           value={celularCliente}
           onValorChange={handleCelularChange}
-          className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
+          className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#6b1d2a] focus:border-transparent transition-all outline-none"
         />
         {buscandoCliente && (
           <p className="text-xs text-gray-500 mt-1">Buscando cadastro...</p>
@@ -436,7 +449,7 @@ export function CarrinhoLateral({
           placeholder="Como devemos te chamar?"
           value={nomeCliente}
           onValorChange={setNomeCliente}
-          className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
+          className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white focus:ring-2 focus:ring-[#6b1d2a] focus:border-transparent transition-all outline-none"
           autoComplete="off"
         />
       </div>
@@ -620,7 +633,7 @@ export function CarrinhoLateral({
                   </button>
                   <div className="min-w-0">
                     <h2 className="text-lg md:landscape:text-2xl font-extrabold text-gray-950 dark:text-white flex items-center gap-2">
-                      <ShoppingBag className="text-[#ff5722] shrink-0" /> Meu
+                      <ShoppingBag className="text-[#6b1d2a] shrink-0" /> Meu
                       Pedido
                     </h2>
                     <p className="text-xs text-gray-600 dark:text-gray-300 font-medium truncate">
@@ -644,7 +657,7 @@ export function CarrinhoLateral({
                   type="button"
                   onClick={() => setEtapaMobile("identificacao")}
                   disabled={itens.length === 0}
-                  className="w-full mt-4 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                  className="w-full mt-4 bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                 >
                   <span>Enviar pedido</span>
                   <ArrowRight size={20} />
@@ -707,7 +720,7 @@ export function CarrinhoLateral({
                   <button
                     type="submit"
                     disabled={itens.length === 0 || enviando || lojaFechada}
-                    className="w-full mt-4 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                    className="w-full mt-4 bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                   >
                     {enviando ? (
                       <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -775,7 +788,7 @@ export function CarrinhoLateral({
                 <button
                   type="submit"
                   disabled={itens.length === 0 || enviando || lojaFechada}
-                  className="w-full mt-4 md:landscape:mt-5 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                  className="w-full mt-4 md:landscape:mt-5 bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                 >
                   {enviando ? (
                     <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />

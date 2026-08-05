@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { version } from "../../../package.json";
 import { CarrinhoLateral } from "../../components/CarrinhoLateral";
 import { InatividadeToten } from "../../components/InatividadeToten";
+import { LogoMarca } from "../../components/LogoMarca";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { formatarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
@@ -33,6 +34,7 @@ import {
   type ModoConsumoItem,
 } from "../../lib/disponibilidadeProduto";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
+import { lembrarMesaAnalytics, track } from "../../lib/analytics";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
 import {
@@ -40,6 +42,7 @@ import {
   lerContextoCardapio,
   limparIdentificacaoCliente,
   marcarModoToten,
+  urlBoasVindasCardapio,
 } from "../../lib/modoCardapio";
 import {
   lerEscalaFonte,
@@ -182,6 +185,13 @@ export function FeedProdutos() {
   );
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
 
+  useEffect(() => {
+    lembrarMesaAnalytics(contextoCardapio.mesa);
+    track("page_view", {
+      props: { path: location.pathname, mesa: contextoCardapio.mesa },
+    });
+  }, [contextoCardapio.mesa, location.pathname]);
+
   // Status da loja (horário de funcionamento) — atualiza a cada minuto
   useEffect(() => {
     let ativo = true;
@@ -215,7 +225,7 @@ export function FeedProdutos() {
   // Sem escolha comer/levar, volta ao onboarding
   useEffect(() => {
     if (!lerTipoConsumo()) {
-      navigate("/", { replace: true });
+      navigate(urlBoasVindasCardapio(), { replace: true });
     }
   }, [navigate]);
 
@@ -269,7 +279,7 @@ export function FeedProdutos() {
     limparTipoConsumo();
     setCarrinhoAberto(false);
     setModalVoltarHomeAberto(false);
-    navigate("/");
+    navigate(urlBoasVindasCardapio());
   };
 
   const tipoConsumo: ModoConsumoItem | null = lerTipoConsumo();
@@ -310,7 +320,7 @@ export function FeedProdutos() {
           className="w-full aspect-square mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative"
         >
           {produto.em_promocao && !esgotado && (
-            <div className="absolute top-2 left-2 z-20 bg-[#ff5722] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
+            <div className="absolute top-2 left-2 z-20 bg-[#6b1d2a] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
               <Tag size={10} strokeWidth={3} />
               PROMO
             </div>
@@ -342,7 +352,7 @@ export function FeedProdutos() {
                 e.stopPropagation();
                 navigate(urlItemProduto(produto.id, location.search));
               }}
-              className="absolute top-2 right-2 z-20 bg-[#ff5722] p-2 rounded-full text-white shadow-md hover:bg-[#e64a19] active:scale-90 transition-all"
+              className="absolute top-2 right-2 z-20 bg-[#6b1d2a] p-2 rounded-full text-white shadow-md hover:bg-[#541622] active:scale-90 transition-all"
               aria-label="Adicionar item"
             >
               <Plus size={18} strokeWidth={3} />
@@ -363,7 +373,7 @@ export function FeedProdutos() {
             className="mb-1.5 self-start"
           />
 
-          <p className="text-sm md:text-base font-extrabold text-[#ff5722] leading-snug">
+          <p className="text-sm md:text-base font-extrabold text-[#6b1d2a] leading-snug">
             {esgotado ? (
               <span className="text-gray-500 dark:text-gray-400 font-medium">
                 Indisponível no momento.
@@ -410,7 +420,7 @@ export function FeedProdutos() {
           .sort(ordenarProdutosCategoria);
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32 font-sans transition-colors duration-300 selection:bg-[#ff5722]/30">
+    <div className="min-h-screen bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32 font-sans transition-colors duration-300 selection:bg-[#6b1d2a]/30">
       {/* Header Fixo */}
       <header className="sticky top-0 z-30 bg-white dark:bg-[#181a1b] border-b border-gray-200 dark:border-[#2a2c30] shadow-sm pb-4 pt-4 transition-colors duration-300">
         <div className="px-5 flex justify-between items-center mb-4">
@@ -438,7 +448,7 @@ export function FeedProdutos() {
             {!contextoCardapio.sessaoPersistente && modoToten && (
               <button
                 onClick={() => setModalVoltarHomeAberto(true)}
-                className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-[#ff5722] active:scale-95 transition-transform"
+                className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-[#6b1d2a] active:scale-95 transition-transform"
                 aria-label="Limpar tudo e voltar ao início"
                 title="Voltar ao início"
               >
@@ -447,12 +457,11 @@ export function FeedProdutos() {
             )}
           </div>
 
-          <div className="flex-1 text-center min-w-0 px-2">
-            <h1 className="text-xl md:text-2xl font-extrabold tracking-wide text-gray-950 dark:text-white">
-              Cardápio
-            </h1>
-            <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#ff5722]">
+          <div className="flex-1 text-center min-w-0 px-2 flex flex-col items-center">
+            <LogoMarca size={36} className="mb-0.5" />
+            <p className="text-[0.6875rem] font-bold uppercase tracking-wider text-[#6b1d2a]">
               {[
+                "Cardápio",
                 tipoConsumo ? rotuloModoConsumo(tipoConsumo) : null,
                 contextoCardapio.tipo === "mesa"
                   ? contextoCardapio.rotuloDestino
@@ -467,7 +476,7 @@ export function FeedProdutos() {
             onClick={() => setCarrinhoAberto(true)}
             className={`relative rounded-full active:scale-95 transition-all duration-300 ${
               quantidadeTotalCarrinho > 0
-                ? "p-4 bg-[#ff5722] text-white shadow-lg shadow-[#ff5722]/35 scale-110"
+                ? "p-4 bg-[#6b1d2a] text-white shadow-lg shadow-[#6b1d2a]/35 scale-110"
                 : "p-3 bg-gray-100 dark:bg-[#2a2c30] text-gray-900 dark:text-white"
             }`}
             aria-label={
@@ -477,14 +486,14 @@ export function FeedProdutos() {
             }
           >
             {quantidadeTotalCarrinho > 0 && (
-              <span className="absolute inset-0 rounded-full bg-[#ff5722] animate-ping opacity-25" />
+              <span className="absolute inset-0 rounded-full bg-[#6b1d2a] animate-ping opacity-25" />
             )}
             <ShoppingBag
               size={quantidadeTotalCarrinho > 0 ? 28 : 24}
               className="relative z-10"
             />
             {quantidadeTotalCarrinho > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 z-20 bg-white text-[#ff5722] text-xs font-black min-w-6 h-6 px-1 flex items-center justify-center rounded-full shadow-md border-2 border-[#ff5722]">
+              <span className="absolute -top-1.5 -right-1.5 z-20 bg-white text-[#6b1d2a] text-xs font-black min-w-6 h-6 px-1 flex items-center justify-center rounded-full shadow-md border-2 border-[#6b1d2a]">
                 {quantidadeTotalCarrinho > 99 ? "99+" : quantidadeTotalCarrinho}
               </span>
             )}
@@ -546,7 +555,7 @@ export function FeedProdutos() {
                 className={`hidden lg:landscape:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[6.25rem] transition-colors border ${
                   categoriaAtiva === "all"
                     ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                    : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#ff5722]/40"
+                    : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#6b1d2a]/40"
                 }`}
               >
                 <span className="text-sm font-bold">Todos</span>
@@ -564,7 +573,7 @@ export function FeedProdutos() {
                   className={`hidden lg:landscape:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[7.5rem] transition-colors border ${
                     categoriaAtiva === cat.id
                       ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                      : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#ff5722]/40"
+                      : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#6b1d2a]/40"
                   }`}
                 >
                   <span className="text-sm font-bold whitespace-nowrap">
@@ -584,7 +593,7 @@ export function FeedProdutos() {
       </header>
 
       {statusLoja && !statusLoja.aberta && (
-        <div className="sticky top-0 z-20 bg-red-600 text-white text-center text-sm font-bold px-5 py-2.5">
+        <div className="sticky top-0 z-20 bg-cookie-primary text-white text-center text-sm font-bold px-5 py-2.5">
           Estamos fechados no momento.
           {statusLoja.motivo ? ` ${statusLoja.motivo}` : ""} Você pode ver o
           cardápio, mas não é possível enviar pedidos agora.
@@ -606,7 +615,7 @@ export function FeedProdutos() {
                 >
                   <div className="flex items-center justify-between gap-4 mb-5 px-1">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-1.5 h-8 rounded-full bg-[#ff5722] shrink-0" />
+                      <div className="w-1.5 h-8 rounded-full bg-[#6b1d2a] shrink-0" />
                       <h2 className="text-lg md:text-xl font-black text-gray-950 dark:text-white truncate">
                         {categoria.nome}
                       </h2>
@@ -707,7 +716,7 @@ export function FeedProdutos() {
                     onClick={alternarModoToten}
                     className={`px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform ${
                       modoToten
-                        ? "bg-[#ff5722] text-white"
+                        ? "bg-[#6b1d2a] text-white"
                         : "bg-gray-100 dark:bg-[#181a1b] text-gray-900 dark:text-white"
                     }`}
                   >
@@ -723,19 +732,19 @@ export function FeedProdutos() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => setEscalaFonte(100)}
-                      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors border ${escalaFonte === 100 ? "bg-[#ff5722] text-white border-[#ff5722]" : "bg-gray-100 dark:bg-[#181a1b] text-gray-600 dark:text-gray-400 border-transparent"}`}
+                      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors border ${escalaFonte === 100 ? "bg-[#6b1d2a] text-white border-[#6b1d2a]" : "bg-gray-100 dark:bg-[#181a1b] text-gray-600 dark:text-gray-400 border-transparent"}`}
                     >
                       Padrão
                     </button>
                     <button
                       onClick={() => setEscalaFonte(110)}
-                      className={`flex-1 py-2 rounded-xl text-base font-bold transition-colors border ${escalaFonte === 110 ? "bg-[#ff5722] text-white border-[#ff5722]" : "bg-gray-100 dark:bg-[#181a1b] text-gray-600 dark:text-gray-400 border-transparent"}`}
+                      className={`flex-1 py-2 rounded-xl text-base font-bold transition-colors border ${escalaFonte === 110 ? "bg-[#6b1d2a] text-white border-[#6b1d2a]" : "bg-gray-100 dark:bg-[#181a1b] text-gray-600 dark:text-gray-400 border-transparent"}`}
                     >
                       Média
                     </button>
                     <button
                       onClick={() => setEscalaFonte(120)}
-                      className={`flex-1 py-2 rounded-xl text-lg font-bold transition-colors border ${escalaFonte === 120 ? "bg-[#ff5722] text-white border-[#ff5722]" : "bg-gray-100 dark:bg-[#181a1b] text-gray-600 dark:text-gray-400 border-transparent"}`}
+                      className={`flex-1 py-2 rounded-xl text-lg font-bold transition-colors border ${escalaFonte === 120 ? "bg-[#6b1d2a] text-white border-[#6b1d2a]" : "bg-gray-100 dark:bg-[#181a1b] text-gray-600 dark:text-gray-400 border-transparent"}`}
                     >
                       Grande
                     </button>

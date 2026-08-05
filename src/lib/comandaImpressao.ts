@@ -187,7 +187,9 @@ function rotuloLocal(
   const id = (identificador || "").trim();
   if (id) return id;
   if (origem === "balcao") return "Balcão";
+  if (origem === "totem") return "Totem";
   if (origem === "mesa") return "Mesa";
+  if (origem === "delivery") return "Delivery";
   return "Balcão";
 }
 

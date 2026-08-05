@@ -243,7 +243,7 @@ export function Perfil() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-extrabold text-gray-950 dark:text-white flex items-center gap-2">
-            <UserCircle size={20} className="text-[#ff5722]" />
+            <UserCircle size={20} className="text-[#6b1d2a]" />
             Minha conta
           </h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -267,7 +267,7 @@ export function Perfil() {
         {!celularValido && (
           <div className="bg-white dark:bg-[#181a1b] rounded-2xl p-5 border border-gray-200 dark:border-[#2a2c30] space-y-4">
             <div className="flex items-start gap-2 text-gray-700 dark:text-gray-300">
-              <Phone size={18} className="text-[#ff5722] shrink-0 mt-0.5" />
+              <Phone size={18} className="text-[#6b1d2a] shrink-0 mt-0.5" />
               <p className="text-sm font-medium">
                 Informe celular e nome para acessar sua conta, pedidos e
                 cupons.
@@ -301,7 +301,7 @@ export function Perfil() {
               type="button"
               onClick={() => void identificar()}
               disabled={identificando}
-              className="w-full bg-[#ff5722] hover:bg-[#e64a19] disabled:opacity-60 text-white font-bold py-3 rounded-xl active:scale-[0.98] transition-all"
+              className="w-full bg-[#6b1d2a] hover:bg-[#541622] disabled:opacity-60 text-white font-bold py-3 rounded-xl active:scale-[0.98] transition-all"
             >
               {identificando ? "Salvando…" : "Entrar / criar conta"}
             </button>
@@ -310,7 +310,7 @@ export function Perfil() {
 
         {carregando && celularValido && (
           <div className="flex justify-center py-16">
-            <Loader2 className="animate-spin text-[#ff5722]" size={36} />
+            <Loader2 className="animate-spin text-[#6b1d2a]" size={36} />
           </div>
         )}
 
@@ -336,7 +336,7 @@ export function Perfil() {
                     />
                   )}
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 flex items-center gap-1.5">
-                    <Phone size={14} className="text-[#ff5722]" />
+                    <Phone size={14} className="text-[#6b1d2a]" />
                     {formatarTelefoneDeSalvo(celularNormalizado)}
                   </p>
                 </div>
@@ -368,7 +368,7 @@ export function Perfil() {
                     type="button"
                     onClick={() => void salvarNome()}
                     disabled={salvandoNome}
-                    className="flex-1 py-2.5 rounded-xl bg-[#ff5722] text-white font-bold text-sm disabled:opacity-60"
+                    className="flex-1 py-2.5 rounded-xl bg-[#6b1d2a] text-white font-bold text-sm disabled:opacity-60"
                   >
                     {salvandoNome ? "Salvando…" : "Salvar"}
                   </button>
@@ -386,7 +386,7 @@ export function Perfil() {
                         setNomeEdicao("");
                         setEditandoNome(true);
                       }}
-                      className="block mt-2 font-bold text-[#ff5722]"
+                      className="block mt-2 font-bold text-[#6b1d2a]"
                     >
                       Informar nome agora
                     </button>
@@ -395,7 +395,7 @@ export function Perfil() {
                     <button
                       type="button"
                       onClick={() => void identificar()}
-                      className="block mt-2 font-bold text-[#ff5722]"
+                      className="block mt-2 font-bold text-[#6b1d2a]"
                     >
                       Salvar cadastro
                     </button>
@@ -428,7 +428,7 @@ export function Perfil() {
                   <p className="text-[0.625rem] font-bold uppercase tracking-wider text-gray-500">
                     Gasto
                   </p>
-                  <p className="text-sm font-black text-[#ff5722] mt-1.5">
+                  <p className="text-sm font-black text-[#6b1d2a] mt-1.5">
                     {formatarMoeda(cliente.valor_gasto)}
                   </p>
                 </div>
@@ -448,7 +448,7 @@ export function Perfil() {
             {/* Cupons */}
             <section className="bg-white dark:bg-[#181a1b] rounded-2xl border border-gray-200 dark:border-[#2a2c30] p-5">
               <div className="flex items-center gap-2 mb-3">
-                <Ticket size={18} className="text-[#ff5722]" />
+                <Ticket size={18} className="text-[#6b1d2a]" />
                 <h3 className="font-bold text-gray-950 dark:text-white">
                   Seus cupons
                 </h3>
@@ -472,7 +472,7 @@ export function Perfil() {
                         <span className="font-black tracking-wide text-gray-950 dark:text-white">
                           {cupom.codigo}
                         </span>
-                        <span className="text-xs font-bold text-[#ff5722]">
+                        <span className="text-xs font-bold text-[#6b1d2a]">
                           {rotuloCupomResumo(cupom)}
                         </span>
                       </div>
@@ -494,7 +494,7 @@ export function Perfil() {
             {/* Pedidos */}
             <section>
               <div className="flex items-center gap-2 mb-3 px-1">
-                <ClipboardList size={18} className="text-[#ff5722]" />
+                <ClipboardList size={18} className="text-[#6b1d2a]" />
                 <h3 className="font-bold text-gray-950 dark:text-white">
                   Meus pedidos
                 </h3>
@@ -519,7 +519,7 @@ export function Perfil() {
                           animate={{ opacity: 1, y: 0 }}
                           className={`bg-white dark:bg-[#181a1b] rounded-2xl border overflow-hidden ${
                             ativo
-                              ? "border-[#ff5722]/50 shadow-sm shadow-[#ff5722]/10"
+                              ? "border-[#6b1d2a]/50 shadow-sm shadow-[#6b1d2a]/10"
                               : "border-gray-200 dark:border-[#2a2c30]"
                           }`}
                         >
@@ -539,7 +539,7 @@ export function Perfil() {
                               {formatarDataHora(pedido.criado_em)} ·{" "}
                               {pedido.identificador}
                             </p>
-                            <p className="text-lg font-black text-[#ff5722] mt-2">
+                            <p className="text-lg font-black text-[#6b1d2a] mt-2">
                               {formatarMoeda(Number(pedido.total || 0))}
                             </p>
                             {Number(pedido.desconto_aplicado || 0) > 0 && (

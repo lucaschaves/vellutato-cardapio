@@ -1,6 +1,6 @@
 /* Handler de Web Push — importado pelo service worker do vite-plugin-pwa */
 self.addEventListener("push", (event) => {
-  let data = { title: "Vellutato", body: "Atualização do pedido", url: "/delivery" };
+  let data = { title: "Vellutato", body: "Atualização do pedido", url: "/" };
   try {
     if (event.data) {
       data = { ...data, ...event.data.json() };
@@ -19,7 +19,7 @@ self.addEventListener("push", (event) => {
       icon: "/pwa-192x192.png",
       badge: "/pwa-192x192.png",
       tag: data.tag || "vellutato-pedido",
-      data: { url: data.url || "/delivery" },
+      data: { url: data.url || "/" },
       renotify: true,
     }),
   );
@@ -27,7 +27,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/delivery";
+  const url = event.notification.data?.url || "/";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientes) => {
       for (const cliente of clientes) {

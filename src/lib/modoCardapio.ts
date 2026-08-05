@@ -16,8 +16,11 @@ export function marcarModoToten(ativo: boolean) {
 
 export function emModoToten(): boolean {
   if (typeof window === "undefined") return false;
-  // Rota legada /cardapio-toten continua funcionando e ativa o modo
-  if (window.location.pathname.startsWith("/cardapio-toten")) return true;
+  // Rotas /totem (e legado /cardapio-toten) ativam o modo totem
+  const path = window.location.pathname;
+  if (path.startsWith("/totem") || path.startsWith("/cardapio-toten")) {
+    return true;
+  }
   return localStorage.getItem(CHAVE_MODO_TOTEN) === "1";
 }
 
@@ -31,6 +34,11 @@ export function limparIdentificacaoCliente() {
   if (emModoToten()) {
     localStorage.removeItem("cliente_celular");
   }
+}
+
+/** Tela inicial do cardápio (vídeo / identificação). Totem usa /totem. */
+export function urlBoasVindasCardapio(): string {
+  return emModoToten() ? "/totem" : "/inicio";
 }
 
 /** Encerra a sessão local do cliente (sair / trocar conta), inclusive o celular. */

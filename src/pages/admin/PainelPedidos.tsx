@@ -5,13 +5,17 @@ import {
   CheckCircle2,
   ChefHat,
   Clock,
+  MapPin,
   MessageCircle,
+  Phone,
   Printer,
   Trash2,
+  User,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
 import {
   buscarMensagensWhatsapp,
@@ -43,7 +47,7 @@ interface ItemPedido {
 interface Pedido {
   id: string;
   sequencia_pedido: number;
-  origem: "mesa" | "balcao" | "delivery";
+  origem: "mesa" | "balcao" | "totem" | "delivery";
   modalidade?: "entrega" | "retirada" | null;
   status_pagamento?: string | null;
   identificador: string;
@@ -60,7 +64,45 @@ interface Pedido {
   criado_em: string;
   voa_order_id?: string | null;
   tracking_url?: string | null;
+  endereco_json?: EnderecoPedido | null;
   pedido_itens: ItemPedido[];
+}
+
+interface EnderecoPedido {
+  cep?: string | null;
+  rua?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  complemento?: string | null;
+  referencia?: string | null;
+}
+
+function formatarEnderecoEntrega(
+  endereco: EnderecoPedido | null | undefined,
+): string | null {
+  if (!endereco?.rua) return null;
+  const linha1 = [endereco.rua, endereco.numero].filter(Boolean).join(", ");
+  const linha2 = [endereco.bairro, endereco.cidade, endereco.uf]
+    .filter(Boolean)
+    .join(" - ");
+  const cepDigits = endereco.cep ? String(endereco.cep).replace(/\D/g, "") : "";
+  const cepFmt =
+    cepDigits.length === 8
+      ? `CEP ${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}`
+      : endereco.cep
+        ? `CEP ${endereco.cep}`
+        : null;
+  return [
+    linha1,
+    endereco.complemento ? `Compl.: ${endereco.complemento}` : null,
+    endereco.referencia ? `Ref.: ${endereco.referencia}` : null,
+    linha2 || null,
+    cepFmt,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 const STATUS_MENSAGEM_WHATSAPP: Record<Pedido["status"], string> = {
@@ -202,7 +244,7 @@ export function PainelPedidos() {
         .from("pedidos")
         .select(
           `
-          id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, status, criado_em, voa_order_id, tracking_url,
+          id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, status, criado_em, voa_order_id, tracking_url, endereco_json,
           pedido_itens (
             id, quantidade, observacoes, modo_consumo,
             produtos ( nome ),
@@ -318,6 +360,43 @@ export function PainelPedidos() {
     }
   };
 
+  const copiarTexto = async (texto: string, sucesso: string, erro: string) => {
+    const valor = texto.trim();
+    if (!valor) {
+      toast.error(erro);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(valor);
+      toast.success(sucesso);
+    } catch {
+      toast.error(erro);
+    }
+  };
+
+  const copiarNomeCliente = (pedido: Pedido) =>
+    void copiarTexto(
+      pedido.cliente_nome || "",
+      "Nome copiado!",
+      "Não foi possível copiar o nome.",
+    );
+
+  const copiarTelefoneCliente = (pedido: Pedido) =>
+    void copiarTexto(
+      pedido.cliente_celular || "",
+      "Telefone copiado!",
+      "Não foi possível copiar o telefone.",
+    );
+
+  const copiarEnderecoEntrega = (pedido: Pedido) =>
+    void copiarTexto(
+      formatarEnderecoEntrega(pedido.endereco_json) || "",
+      "Endereço copiado!",
+      pedido.endereco_json
+        ? "Não foi possível copiar o endereço."
+        : "Este pedido não tem endereço de entrega.",
+    );
+
   // Separação em colunas (Kanban)
   const pendentes = pedidos.filter((p) => p.status === "pendente");
   const emProducao = pedidos.filter((p) => p.status === "em_producao");
@@ -356,31 +435,96 @@ export function PainelPedidos() {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-end justify-end gap-3">
           {(pedido.status === "pendente" || pedido.status === "em_producao") && (
-              <button
-                onClick={() => cancelarPedido(pedido.id)}
-                className="p-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex justify-center items-center gap-2"
-              >
-                <Trash2 size={18} className="text-white" />
-              </button>
-            )}
-          {pedido.cliente_celular && (
-            <button
-              onClick={() => abrirModalWhatsApp(pedido)}
-              className="p-2 bg-[#25D366] text-white rounded-md hover:bg-[#1ebe5b] transition-colors"
-              title="Enviar mensagem no WhatsApp"
-            >
-              <MessageCircle size={20} />
-            </button>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                Excluir
+              </span>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => cancelarPedido(pedido.id)}
+                  className="p-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex justify-center items-center"
+                  title="Excluir pedido"
+                >
+                  <Trash2 size={18} className="text-white" />
+                </button>
+              </div>
+            </div>
           )}
-          <button
-            onClick={() => enviarParaImpressora(pedido)}
-            className="p-2 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 transition-colors"
-            title="Imprimir Cupom"
-          >
-            <Printer size={20} className="text-gray-700 dark:text-gray-300" />
-          </button>
+
+          <div className="flex flex-col items-center gap-1 pl-3 border-l border-gray-200 dark:border-gray-700">
+            <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              Ações
+            </span>
+            <div className="flex gap-1.5">
+              {pedido.cliente_celular && (
+                <button
+                  onClick={() => abrirModalWhatsApp(pedido)}
+                  className="p-2 bg-[#25D366] text-white rounded-md hover:bg-[#1ebe5b] transition-colors"
+                  title="Enviar mensagem no WhatsApp"
+                >
+                  <MessageCircle size={20} />
+                </button>
+              )}
+              <button
+                onClick={() => enviarParaImpressora(pedido)}
+                className="p-2 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                title="Imprimir Cupom"
+              >
+                <Printer
+                  size={20}
+                  className="text-gray-700 dark:text-gray-300"
+                />
+              </button>
+            </div>
+          </div>
+
+          {(pedido.cliente_nome?.trim() ||
+            pedido.cliente_celular?.trim() ||
+            (pedido.origem === "delivery" &&
+              pedido.modalidade === "entrega" &&
+              formatarEnderecoEntrega(pedido.endereco_json))) && (
+            <div className="flex flex-col items-center gap-1 pl-3 border-l border-gray-200 dark:border-gray-700">
+              <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                Copiar
+              </span>
+              <div className="flex gap-1.5">
+                {pedido.cliente_nome?.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => copiarNomeCliente(pedido)}
+                    className="p-2 bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 rounded-md hover:bg-sky-200 dark:hover:bg-sky-900 transition-colors"
+                    title="Copiar nome do cliente"
+                  >
+                    <User size={20} />
+                  </button>
+                )}
+                {pedido.cliente_celular?.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => copiarTelefoneCliente(pedido)}
+                    className="p-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-md hover:bg-emerald-200 dark:hover:bg-emerald-900 transition-colors"
+                    title="Copiar telefone do cliente"
+                  >
+                    <Phone size={20} />
+                  </button>
+                )}
+                {pedido.origem === "delivery" &&
+                  pedido.modalidade === "entrega" &&
+                  formatarEnderecoEntrega(pedido.endereco_json) && (
+                    <button
+                      type="button"
+                      onClick={() => copiarEnderecoEntrega(pedido)}
+                      className="p-2 bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 rounded-md hover:bg-violet-200 dark:hover:bg-violet-900 transition-colors"
+                      title="Copiar endereço de entrega"
+                    >
+                      <MapPin size={20} />
+                    </button>
+                  )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -491,10 +635,10 @@ export function PainelPedidos() {
   );
 
   return (
-    <div className="h-full bg-gray-50 dark:bg-background-dark p-4 flex flex-col">
-      <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold dark:text-white">Fila de Produção</h1>
-        <div className="flex items-center gap-2">
+    <AdminPageShell
+      title="Fila de Produção"
+      actions={
+        <>
           {impressoraOffline && (
             <span className="flex items-center gap-1 text-orange-600 font-bold text-sm bg-orange-100 dark:bg-orange-900/30 px-3 py-1 rounded-full">
               <Printer size={16} /> Impressora offline
@@ -508,9 +652,11 @@ export function PainelPedidos() {
           <span className="text-sm bg-cookie-primary text-white px-4 py-2 rounded-lg font-medium">
             Total Ativos: {pedidos.length}
           </span>
-        </div>
-      </header>
-
+        </>
+      }
+      scroll={false}
+      contentClassName="overflow-hidden"
+    >
       {carregando && pedidos.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin h-10 w-10 border-4 border-cookie-accent border-t-transparent rounded-full"></div>
@@ -641,6 +787,6 @@ export function PainelPedidos() {
           </>
         )}
       </AnimatePresence>
-    </div>
+    </AdminPageShell>
   );
 }

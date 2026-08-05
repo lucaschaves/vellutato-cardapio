@@ -16,6 +16,7 @@ import { supabase } from "../../lib/supabase";
 
 // Shadcn/ui
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -426,21 +427,19 @@ export function GerenciamentoEstoque() {
     null;
 
   return (
-    <div className="h-full min-h-0 max-h-full flex flex-col overflow-hidden p-6 max-w-5xl mx-auto gap-4">
-      {/* Cabeçalho */}
-      <div className="shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-            <Package size={28} className="text-cookie-primary" /> Gestão de
-            Estoque
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {aba === "ativos"
-              ? "Produtos no cardápio — quantidade, extras e visibilidade."
-              : "Produtos ocultos. Quem já teve venda não pode ser excluído (histórico)."}
-          </p>
-        </div>
-
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
+          <Package size={28} className="text-cookie-primary" /> Gestão de
+          Estoque
+        </h1>
+      }
+      description={
+        aba === "ativos"
+          ? "Produtos no cardápio — quantidade, extras e visibilidade."
+          : "Produtos ocultos. Quem já teve venda não pode ser excluído (histórico)."
+      }
+      actions={
         <div className="relative w-full md:w-80">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -453,8 +452,10 @@ export function GerenciamentoEstoque() {
             className="pl-9 dark:bg-[#1a1815]"
           />
         </div>
-      </div>
-
+      }
+      scroll={false}
+      contentClassName="gap-4"
+    >
       <div className="shrink-0 flex gap-1 overflow-x-auto">
         {(
           [
@@ -569,7 +570,7 @@ export function GerenciamentoEstoque() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium">{produto.nome}</span>
                             {produto.em_promocao && (
-                              <Badge className="bg-[#ff5722] hover:bg-[#ff5722] text-white text-[0.625rem]">
+                              <Badge className="bg-[#6b1d2a] hover:bg-[#6b1d2a] text-white text-[0.625rem]">
                                 PROMO
                               </Badge>
                             )}
@@ -864,6 +865,6 @@ export function GerenciamentoEstoque() {
           </>
         )}
       </AnimatePresence>
-    </div>
+    </AdminPageShell>
   );
 }

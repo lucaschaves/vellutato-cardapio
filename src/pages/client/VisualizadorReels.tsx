@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, memo, type Ref } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
+import { track } from "../../lib/analytics";
 import { ModalOfertaPosAdicionar } from "../../components/ModalOfertaPosAdicionar";
 import {
   obterQuantidadeMaxima,
@@ -242,7 +243,7 @@ const ColunaMidiaProduto = memo(function ColunaMidiaProduto({
   const conteudo = (
     <>
       {produto.em_promocao && (
-        <div className="absolute top-4 right-4 z-20 bg-red-600 text-white text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+        <div className="absolute top-4 right-4 z-20 bg-cookie-primary text-white text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
           <Tag size={12} strokeWidth={3} />
           Promoção
         </div>
@@ -366,6 +367,10 @@ export function VisualizadorReels() {
         if (cancelado) return;
         if (errProd) throw errProd;
         setProduto(prod);
+        track("product_view", {
+          produtoId: prod.id,
+          props: { nome: prod.nome },
+        });
 
         if (prod.tipo === "combo") {
           setCarregandoCombo(true);
@@ -807,7 +812,7 @@ export function VisualizadorReels() {
                   />
 
                   <div className="flex items-end gap-3 flex-wrap">
-                    <span className="text-2xl md:landscape:text-3xl font-black text-[#ff5722]">
+                    <span className="text-2xl md:landscape:text-3xl font-black text-[#6b1d2a]">
                       R$ {(precoAtivo + deltaCombo).toFixed(2)}
                     </span>
                     {produto.em_promocao && (
@@ -864,7 +869,7 @@ export function VisualizadorReels() {
                               className={`text-[11px] font-bold ${
                                 completo
                                   ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-[#ff5722]"
+                                  : "text-[#6b1d2a]"
                               }`}
                             >
                               {rotuloEscolhasGrupo(grupo)}
@@ -912,7 +917,7 @@ export function VisualizadorReels() {
                                 }
                                 className={`flex justify-between items-center gap-3 p-4 rounded-2xl border-2 transition-all active:scale-[0.98] text-left ${
                                   selecionada
-                                    ? "border-[#ff5722] bg-[#ff5722]/10"
+                                    ? "border-[#6b1d2a] bg-[#6b1d2a]/10"
                                     : "border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b]"
                                 }`}
                               >
@@ -929,7 +934,7 @@ export function VisualizadorReels() {
                                   <span
                                     className={`font-bold truncate ${
                                       selecionada
-                                        ? "text-[#ff5722]"
+                                        ? "text-[#6b1d2a]"
                                         : "text-gray-900 dark:text-white"
                                     }`}
                                   >
@@ -942,7 +947,7 @@ export function VisualizadorReels() {
                                 <span
                                   className={`shrink-0 text-sm font-bold ${
                                     delta > 0 || selecionada
-                                      ? "text-[#ff5722]"
+                                      ? "text-[#6b1d2a]"
                                       : "text-gray-400 dark:text-gray-500"
                                   }`}
                                 >
@@ -974,7 +979,7 @@ export function VisualizadorReels() {
             {!carregandoOfertas && ofertasPendentes.length > 0 && (
               <div className="mb-8 space-y-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <Sparkles size={16} className="text-[#ff5722]" />
+                  <Sparkles size={16} className="text-[#6b1d2a]" />
                   <h2 className="text-sm font-bold text-gray-500 dark:text-gray-300 uppercase tracking-widest">
                     Aproveite também
                   </h2>
@@ -994,7 +999,7 @@ export function VisualizadorReels() {
                   return (
                     <div
                       key={oferta.id}
-                      className="flex gap-3 p-3 rounded-2xl bg-[#ff5722]/5 border border-[#ff5722]/20"
+                      className="flex gap-3 p-3 rounded-2xl bg-[#6b1d2a]/5 border border-[#6b1d2a]/20"
                     >
                       <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0">
                         <img
@@ -1023,7 +1028,7 @@ export function VisualizadorReels() {
                             </>
                           ) : (
                             <>
-                              <span className="font-black text-[#ff5722] text-sm">
+                              <span className="font-black text-[#6b1d2a] text-sm">
                                 R$ {precoOferta.toFixed(2)}
                               </span>
                               {precoOferta < precoBase && (
@@ -1038,7 +1043,7 @@ export function VisualizadorReels() {
                       <button
                         type="button"
                         onClick={() => adicionarOfertaCruzada(oferta)}
-                        className="self-center shrink-0 px-3 py-2 rounded-xl bg-[#ff5722] text-white text-xs font-bold active:scale-95"
+                        className="self-center shrink-0 px-3 py-2 rounded-xl bg-[#6b1d2a] text-white text-xs font-bold active:scale-95"
                       >
                         + Add
                       </button>
@@ -1058,7 +1063,7 @@ export function VisualizadorReels() {
                     <span
                       className={`normal-case tracking-normal ${
                         produto?.adicional_obrigatorio
-                          ? "font-bold text-[#ff5722]"
+                          ? "font-bold text-[#6b1d2a]"
                           : "font-medium text-gray-400 dark:text-gray-500"
                       }`}
                     >
@@ -1084,13 +1089,13 @@ export function VisualizadorReels() {
                         onClick={() => alternarAdicional(adc)}
                         className={`flex justify-between items-center p-4 rounded-2xl border-2 transition-all active:scale-[0.98] ${
                           selecionado
-                            ? "bg-[#ff5722]/10 border-[#ff5722] text-gray-900 dark:text-white"
+                            ? "bg-[#6b1d2a]/10 border-[#6b1d2a] text-gray-900 dark:text-white"
                             : "bg-white dark:bg-[#242629] border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2a2c30] shadow-sm dark:shadow-none"
                         }`}
                       >
                         <span className="font-semibold">{adc.nome}</span>
                         <span
-                          className={`text-sm font-bold ${selecionado ? "text-[#ff5722]" : "text-gray-500 dark:text-gray-400"}`}
+                          className={`text-sm font-bold ${selecionado ? "text-[#6b1d2a]" : "text-gray-500 dark:text-gray-400"}`}
                         >
                           + R$ {adc.preco.toFixed(2)}
                         </span>
@@ -1150,7 +1155,7 @@ export function VisualizadorReels() {
                   type="button"
                   onClick={confirmarPedido}
                   disabled={esgotado}
-                  className="flex-1 bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-5 md:landscape:px-6 rounded-2xl flex items-center justify-between active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                  className="flex-1 bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-4 px-5 md:landscape:px-6 rounded-2xl flex items-center justify-between active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                 >
                   <span className="flex items-center gap-2 text-sm md:landscape:text-base">
                     <ShoppingBag size={20} />{" "}

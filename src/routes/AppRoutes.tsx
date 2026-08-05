@@ -2,6 +2,7 @@ import {
   createBrowserRouter,
   Navigate,
   RouterProvider,
+  useLocation,
 } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TecladoVirtualHost } from "../components/TecladoVirtual";
@@ -10,7 +11,9 @@ import { useIsMobile } from "../hooks/useIsMobile";
 
 // Páginas
 import { DashboardVendas } from "@/pages/admin/DashboardVendas";
+import { DashboardAnalytics } from "@/pages/admin/DashboardAnalytics";
 import { DetalheCliente } from "@/pages/admin/DetalheCliente";
+import { AdminNovoPedido } from "@/pages/admin/AdminNovoPedido";
 import { GerenciamentoAdicionais } from "@/pages/admin/GerenciamentoAdicionais";
 import { GerenciamentoCategorias } from "@/pages/admin/GerenciamentoCategorias";
 import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
@@ -19,6 +22,7 @@ import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
 import { GerenciamentoChatDelivery } from "@/pages/admin/GerenciamentoChatDelivery";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
+import { GerenciamentoIntegracoes } from "@/pages/admin/GerenciamentoIntegracoes";
 import { GerenciamentoMensagens } from "@/pages/admin/GerenciamentoMensagens";
 import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
 import { GerenciamentoVendasCruzadas } from "@/pages/admin/GerenciamentoVendasCruzadas";
@@ -47,6 +51,21 @@ import { DeliveryChat } from "../pages/delivery/DeliveryChat";
 import { DeliveryAuthCallback } from "../pages/delivery/DeliveryAuthCallback";
 import { DeliveryCadastro } from "../pages/delivery/DeliveryCadastro";
 import { DeliveryEndereco } from "../pages/delivery/DeliveryEndereco";
+
+/** /cardapio-toten/* → /totem/* */
+function RedirecionarTotenLegado() {
+  const location = useLocation();
+  const rest = location.pathname.replace(/^\/cardapio-toten/, "") || "";
+  return <Navigate to={`/totem${rest}${location.search}`} replace />;
+}
+
+/** /delivery/* → /* (delivery agora é a raiz) */
+function RedirecionarDeliveryLegado() {
+  const location = useLocation();
+  const rest = location.pathname.replace(/^\/delivery/, "") || "/";
+  const destino = rest.startsWith("/") ? rest : `/${rest}`;
+  return <Navigate to={`${destino}${location.search}`} replace />;
+}
 
 const RotaProtegida = () => {
   const { sessao, carregando } = useAuth();
@@ -78,26 +97,29 @@ const rotasFilhasCardapio = [
 ];
 
 const router = createBrowserRouter([
+  // Legados (mantêm links antigos funcionando)
+  { path: "/cardapio-toten/*", element: <RedirecionarTotenLegado /> },
+  { path: "/delivery/*", element: <RedirecionarDeliveryLegado /> },
+
+  // Totem
+  { path: "/totem", element: <BemVindo /> },
   {
-    path: "/",
-    element: <BemVindo />,
+    path: "/totem/cardapio",
+    element: <FeedProdutos />,
+    children: rotasFilhasCardapio,
   },
-  {
-    path: "/cardapio-toten",
-    element: <BemVindo />,
-  },
+
+  // Cardápio loja / mesa (boas-vindas sem forçar totem)
+  { path: "/inicio", element: <BemVindo /> },
   {
     path: "/cardapio",
     element: <FeedProdutos />,
     children: rotasFilhasCardapio,
   },
+
+  // Delivery na raiz
   {
-    path: "/cardapio-toten/cardapio",
-    element: <FeedProdutos />,
-    children: rotasFilhasCardapio,
-  },
-  {
-    path: "/delivery",
+    path: "/",
     element: <DeliveryLayout />,
     children: [
       { index: true, element: <DeliveryHome /> },
@@ -112,16 +134,16 @@ const router = createBrowserRouter([
       { path: "endereco", element: <DeliveryEndereco /> },
     ],
   },
-  {
-    path: "/login",
-    element: <Login />,
-  },
+
+  { path: "/login", element: <Login /> },
   {
     element: <RotaProtegida />,
     children: [
       { path: "/admin/dashboard", element: <DashboardVendas /> },
+      { path: "/admin/analytics", element: <DashboardAnalytics /> },
       { path: "/admin/historico", element: <HistoricoPedidos /> },
       { path: "/admin/pedidos", element: <PainelPedidos /> },
+      { path: "/admin/novo-pedido", element: <AdminNovoPedido /> },
       { path: "/admin/catalogo", element: <GerenciamentoCatalogo /> },
       { path: "/admin/categorias", element: <GerenciamentoCategorias /> },
       { path: "/admin/mesas", element: <GerenciamentoMesas /> },
@@ -137,6 +159,7 @@ const router = createBrowserRouter([
         element: <GerenciamentoFuncionamento />,
       },
       { path: "/admin/delivery", element: <GerenciamentoDelivery /> },
+      { path: "/admin/integracoes", element: <GerenciamentoIntegracoes /> },
       { path: "/admin/chat", element: <GerenciamentoChatDelivery /> },
       {
         path: "/admin/vendas-cruzadas",

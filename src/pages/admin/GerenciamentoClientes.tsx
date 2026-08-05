@@ -2,6 +2,7 @@ import { Loader2, Search, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Input } from "../../components/ui/input";
 import {
   Pagination,
@@ -127,19 +128,16 @@ export function GerenciamentoClientes() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-            <Users size={28} className="text-cookie-primary" />
-            Clientes
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Base de clientes identificados pelo celular. Clique para ver o
-            histórico de pedidos.
-          </p>
-        </div>
-        <div className="relative w-full md:w-80">
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
+          <Users size={28} className="text-cookie-primary" />
+          Clientes
+        </h1>
+      }
+      description="Base de clientes identificados pelo celular. Clique para ver o histórico de pedidos."
+      actions={
+        <div className="relative w-full sm:w-80">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
             size={16}
@@ -151,8 +149,9 @@ export function GerenciamentoClientes() {
             className="pl-9 dark:bg-[#1a1815]"
           />
         </div>
-      </div>
-
+      }
+      contentClassName="space-y-6"
+    >
       {carregando ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
@@ -283,6 +282,6 @@ export function GerenciamentoClientes() {
           )}
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

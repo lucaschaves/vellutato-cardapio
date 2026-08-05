@@ -1,6 +1,7 @@
 import { Loader2, Pencil, PlusCircle, Search, Ticket, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -245,17 +246,30 @@ export function GerenciamentoCupons() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
           <Ticket size={28} className="text-cookie-primary" />
           Cupons
         </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Crie, edite e exclua códigos promocionais públicos ou exclusivos.
-        </p>
-      </div>
-
+      }
+      description="Crie, edite e exclua códigos promocionais públicos ou exclusivos."
+      actions={
+        <div className="relative w-full sm:w-80">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            size={16}
+          />
+          <Input
+            placeholder="Buscar cupom ou cliente..."
+            value={termoBusca}
+            onChange={(e) => setTermoBusca(e.target.value)}
+            className="pl-9 dark:bg-[#1a1815]"
+          />
+        </div>
+      }
+      contentClassName="space-y-6"
+    >
       <form
         onSubmit={salvarCupom}
         className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl p-5 space-y-4"
@@ -358,19 +372,6 @@ export function GerenciamentoCupons() {
         </div>
       </form>
 
-      <div className="relative w-full md:w-80">
-        <Search
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          size={16}
-        />
-        <Input
-          placeholder="Buscar cupom ou cliente..."
-          value={termoBusca}
-          onChange={(e) => setTermoBusca(e.target.value)}
-          className="pl-9 dark:bg-[#1a1815]"
-        />
-      </div>
-
       {carregando ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
@@ -471,6 +472,6 @@ export function GerenciamentoCupons() {
           </Table>
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

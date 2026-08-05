@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { lerSegredo } from "../_shared/segredos.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,7 +14,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const tokenEsperado = Deno.env.get("ASAAS_WEBHOOK_TOKEN");
+    const tokenEsperado = await lerSegredo("ASAAS_WEBHOOK_TOKEN");
     const tokenRecebido =
       req.headers.get("asaas-access-token") ||
       new URL(req.url).searchParams.get("token");

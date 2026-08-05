@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ import {
   obterInicioPeriodo,
   obterValorPedido,
   pedidoContaComoVenda,
+  ORIGEM_PEDIDO_LABEL,
   STATUS_PEDIDO_LABEL,
   type PeriodoRelatorio,
 } from "../../lib/pedidosAdmin";
@@ -263,18 +265,15 @@ export function DashboardVendas() {
   }, [pedidos]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-            <BarChart3 size={28} className="text-cookie-primary" />
-            Dashboard de Vendas
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Visão geral de faturamento, ticket médio e produtos em destaque.
-          </p>
-        </div>
-
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
+          <BarChart3 size={28} className="text-cookie-primary" />
+          Dashboard de Vendas
+        </h1>
+      }
+      description="Visão geral de faturamento, ticket médio e produtos em destaque."
+      actions={
         <div className="flex flex-wrap gap-2">
           {PERIODOS.map((item) => (
             <button
@@ -291,8 +290,9 @@ export function DashboardVendas() {
             </button>
           ))}
         </div>
-      </div>
-
+      }
+      contentClassName="space-y-6"
+    >
       {carregando ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
@@ -419,7 +419,7 @@ export function DashboardVendas() {
                       className="flex items-center justify-between text-sm"
                     >
                       <span className="font-medium capitalize text-gray-700 dark:text-gray-300">
-                        {origem}
+                        {ORIGEM_PEDIDO_LABEL[origem] || origem}
                       </span>
                       <span className="font-bold text-gray-900 dark:text-white">
                         {qtd}
@@ -606,6 +606,6 @@ export function DashboardVendas() {
           )}
         </>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

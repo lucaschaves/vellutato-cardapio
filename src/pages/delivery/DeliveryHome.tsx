@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
+import { useClienteDeliverySessao } from "../../hooks/useClienteDeliverySessao";
 import {
   buscarCep,
   listarEnderecos,
@@ -14,11 +14,16 @@ import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
 import type { DeliveryConfig } from "../../lib/deliveryFrete";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { supabase } from "../../lib/supabase";
-import { lerEnderecoDeliveryLocal } from "../../lib/deliveryGuestStorage";
+import {
+  lerEnderecoDeliveryLocal,
+  salvarEnderecoDeliveryLocal,
+} from "../../lib/deliveryGuestStorage";
 import { TagMedidaProduto } from "../../components/TagMedidaProduto";
+import { track } from "../../lib/analytics";
 import {
   formatarCep,
   lerRascunhoEndereco,
+  salvarRascunhoEndereco,
   type RascunhoEnderecoDelivery,
 } from "./DeliveryEndereco";
 
@@ -99,7 +104,7 @@ function CardProduto({
           </p>
         )}
         <div className="mt-auto pt-2 flex items-baseline gap-2">
-          <span className="font-black text-red-600">
+          <span className="font-black text-cookie-primary">
             R$ {preco.toFixed(2).replace(".", ",")}
           </span>
           {promo && (
@@ -115,8 +120,7 @@ function CardProduto({
 
 export function DeliveryHome() {
   const navigate = useNavigate();
-  const { logado, cadastroCompleto, cliente, carregando } =
-    useDeliveryCliente();
+  const { cliente, carregando: carregandoCliente } = useClienteDeliverySessao();
   const [config, setConfig] = useState<DeliveryConfig | null>(null);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -129,6 +133,10 @@ export function DeliveryHome() {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const scrollLockRef = useRef(false);
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    track("page_view", { canal: "delivery", props: { path: "/" } });
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -168,7 +176,10 @@ export function DeliveryHome() {
     })();
   }, []);
 
+  /** Após login por telefone: puxa endereço cadastrado e atualiza home + storage. */
   useEffect(() => {
+    if (carregandoCliente) return;
+
     void (async () => {
       if (cliente?.id) {
         try {
@@ -176,12 +187,37 @@ export function DeliveryHome() {
           const padrao = lista.find((e) => e.padrao) || lista[0] || null;
           if (padrao) {
             setEndereco(padrao);
+            salvarEnderecoDeliveryLocal({
+              cep: padrao.cep,
+              rua: padrao.rua,
+              numero: padrao.numero,
+              bairro: padrao.bairro,
+              cidade: padrao.cidade,
+              uf: padrao.uf,
+              complemento: padrao.complemento || "",
+              referencia: padrao.referencia || "",
+              latitude: padrao.latitude,
+              longitude: padrao.longitude,
+            });
+            salvarRascunhoEndereco({
+              cep: padrao.cep,
+              rua: padrao.rua,
+              numero: padrao.numero,
+              bairro: padrao.bairro,
+              cidade: padrao.cidade,
+              uf: padrao.uf,
+              complemento: padrao.complemento || undefined,
+              referencia: padrao.referencia || undefined,
+              latitude: padrao.latitude,
+              longitude: padrao.longitude,
+            });
             return;
           }
         } catch (e) {
-          console.error(e);
+          console.error("[HOME] endereços cliente", e);
         }
       }
+
       const rascunho = lerRascunhoEndereco();
       if (rascunho?.rua) {
         setEndereco(rascunho);
@@ -203,9 +239,9 @@ export function DeliveryHome() {
         });
         return;
       }
-      setEndereco(null);
+      if (!cliente?.id) setEndereco(null);
     })();
-  }, [cliente?.id]);
+  }, [cliente?.id, carregandoCliente]);
 
   const secoes = useMemo(() => {
     return categorias
@@ -294,7 +330,7 @@ export function DeliveryHome() {
         toast.error("CEP não encontrado. Confira e tente de novo.");
         return;
       }
-      navigate("/delivery/endereco", {
+      navigate("/endereco", {
         state: {
           cep: limpo,
           rua: dados.rua,
@@ -310,10 +346,10 @@ export function DeliveryHome() {
     }
   };
 
-  if (loading || carregando) {
+  if (loading || carregandoCliente) {
     return (
       <div className="flex justify-center py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -342,7 +378,7 @@ export function DeliveryHome() {
         {!temEnderecoCompleto ? (
           <>
             <div className="flex items-start gap-2">
-              <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+              <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cookie-primary/10 text-cookie-primary">
                 <MapPin size={18} />
               </span>
               <div className="min-w-0 flex-1">
@@ -372,7 +408,7 @@ export function DeliveryHome() {
                 }}
               />
               <Button
-                className="bg-red-600 hover:bg-red-700 shrink-0"
+                className="bg-cookie-primary hover:bg-cookie-primary-hover shrink-0"
                 disabled={buscandoCep}
                 onClick={() => void buscarCepHome()}
               >
@@ -391,7 +427,7 @@ export function DeliveryHome() {
           <button
             type="button"
             onClick={() =>
-              navigate("/delivery/endereco", {
+              navigate("/endereco", {
                 state: {
                   cep: endereco!.cep,
                   rua: endereco!.rua,
@@ -412,7 +448,7 @@ export function DeliveryHome() {
             }
             className="w-full flex items-center gap-3 text-left"
           >
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cookie-primary/10 text-cookie-primary">
               <MapPin size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -437,7 +473,7 @@ export function DeliveryHome() {
                 {endereco!.bairro} — {endereco!.cidade}/{endereco!.uf}
               </p>
             </div>
-            <span className="text-xs font-semibold text-red-600 shrink-0">
+            <span className="text-xs font-semibold text-cookie-primary shrink-0">
               Alterar
             </span>
           </button>
@@ -446,18 +482,6 @@ export function DeliveryHome() {
         <p className="text-[11px] text-zinc-400 pl-12">
           Pedido mínimo R$ {pedidoMinimo.toFixed(2).replace(".", ",")}
         </p>
-
-        {logado && !cadastroCompleto && (
-          <div className="pl-12">
-            <button
-              type="button"
-              className="text-[11px] font-semibold text-red-600"
-              onClick={() => navigate("/delivery/cadastro")}
-            >
-              Completar cadastro
-            </button>
-          </div>
-        )}
       </section>
 
       {/* Barra sticky: atalho de scroll (não filtra) */}
@@ -500,7 +524,7 @@ export function DeliveryHome() {
                 <CardProduto
                   key={p.id}
                   produto={p}
-                  onClick={() => navigate(`/delivery/item/${p.id}`)}
+                  onClick={() => navigate(`/item/${p.id}`)}
                 />
               ))}
             </div>

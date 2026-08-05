@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Badge } from "../../components/ui/badge";
 import { Input } from "../../components/ui/input";
 import {
@@ -218,64 +219,59 @@ export function HistoricoPedidos() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-            <History size={28} className="text-cookie-primary" />
-            Histórico de Pedidos
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Consulte pedidos finalizados, pagos e em andamento — do mais recente
-            ao mais antigo.
-          </p>
-        </div>
-
-        <div className="relative w-full lg:w-80">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            size={16}
-          />
-          <Input
-            placeholder="Buscar cliente, mesa ou produto..."
-            value={termoBusca}
-            onChange={(evento) => setTermoBusca(evento.target.value)}
-            className="pl-9 dark:bg-[#1a1815]"
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {PERIODOS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setPeriodo(item.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                periodo === item.id
-                  ? "bg-cookie-primary text-white border-cookie-primary"
-                  : "bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        <select
-          value={filtroStatus}
-          onChange={(evento) => setFiltroStatus(evento.target.value)}
-          className="h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1815] px-3 text-sm text-gray-900 dark:text-white"
-        >
-          {FILTROS_STATUS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
+          <History size={28} className="text-cookie-primary" />
+          Histórico de Pedidos
+        </h1>
+      }
+      description="Consulte pedidos finalizados, pagos e em andamento — do mais recente ao mais antigo."
+      actions={
+        <>
+          <div className="relative w-full sm:w-80">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              size={16}
+            />
+            <Input
+              placeholder="Buscar cliente, mesa ou produto..."
+              value={termoBusca}
+              onChange={(evento) => setTermoBusca(evento.target.value)}
+              className="pl-9 dark:bg-[#1a1815]"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PERIODOS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setPeriodo(item.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                  periodo === item.id
+                    ? "bg-cookie-primary text-white border-cookie-primary"
+                    : "bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <select
+            value={filtroStatus}
+            onChange={(evento) => setFiltroStatus(evento.target.value)}
+            className="h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1815] px-3 text-sm text-gray-900 dark:text-white"
+          >
+            {FILTROS_STATUS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </>
+      }
+      contentClassName="space-y-6"
+    >
       {carregando ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
@@ -526,6 +522,6 @@ export function HistoricoPedidos() {
           </div>
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

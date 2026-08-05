@@ -8,6 +8,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
+import { Button } from "../../components/ui/button";
 import {
   calcularDeltaOpcao,
   listarProdutosParaOpcaoCombo,
@@ -424,41 +426,39 @@ export function GerenciamentoCombos() {
 
   if (produtoId) {
     return (
-      <div className="p-6 max-w-4xl mx-auto space-y-6">
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-800 pb-4">
-          <div>
-            <button
-              type="button"
-              onClick={() => setSearchParams({})}
-              className="text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 mb-2"
-            >
-              ← Voltar aos combos
-            </button>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {comboAtual?.nome || "Configurar combo"}
-            </h1>
-            {comboAtual && (
-              <p className="text-sm text-gray-500">
-                Preço base: R$ {comboAtual.preco.toFixed(2)} — o cliente paga
-                base + deltas das escolhas.
-              </p>
-            )}
-          </div>
-          <button
+      <AdminPageShell
+        title={comboAtual?.nome || "Configurar combo"}
+        description={
+          comboAtual
+            ? `Preço base: R$ ${comboAtual.preco.toFixed(2)} — o cliente paga base + deltas das escolhas.`
+            : undefined
+        }
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setSearchParams({})}
+          >
+            ← Voltar aos combos
+          </Button>
+        }
+        footer={
+          <Button
             type="button"
             onClick={() => void salvarEstrutura()}
             disabled={salvando || carregandoEditor}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cookie-primary text-white font-bold disabled:opacity-50"
+            className="bg-cookie-primary text-white font-bold"
           >
             {salvando ? (
-              <Loader2 size={18} className="animate-spin" />
+              <Loader2 size={18} className="animate-spin mr-2" />
             ) : (
-              <Save size={18} />
+              <Save size={18} className="mr-2" />
             )}
             Salvar estrutura
-          </button>
-        </header>
-
+          </Button>
+        }
+        contentClassName="space-y-4"
+      >
         {carregandoEditor ? (
           <div className="flex justify-center py-16">
             <Loader2 className="animate-spin text-cookie-primary" size={32} />
@@ -641,26 +641,29 @@ export function GerenciamentoCombos() {
             </button>
           </div>
         )}
-      </div>
+      </AdminPageShell>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <header className="border-b border-gray-200 dark:border-gray-800 pb-4">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+    <AdminPageShell
+      title={
+        <span className="flex items-center gap-2">
           <Layers className="text-cookie-primary" /> Combos
-        </h1>
-        <p className="text-gray-500 mt-1">
+        </span>
+      }
+      description={
+        <>
           Monte grupos e opções reutilizando produtos do cardápio. Cadastre o
           produto como tipo <strong>Combo</strong> no{" "}
           <Link to="/admin/catalogo" className="text-cookie-primary underline">
             Catálogo
           </Link>
           .
-        </p>
-      </header>
-
+        </>
+      }
+      contentClassName="space-y-4"
+    >
       {carregandoLista ? (
         <div className="flex justify-center py-16">
           <Loader2 className="animate-spin text-cookie-primary" size={32} />
@@ -695,6 +698,6 @@ export function GerenciamentoCombos() {
           ))}
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

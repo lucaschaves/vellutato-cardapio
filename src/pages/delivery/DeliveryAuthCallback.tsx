@@ -8,17 +8,17 @@ export function DeliveryAuthCallback() {
 
   useEffect(() => {
     if (carregando) return;
-    if (sessao) navigate("/delivery/cadastro", { replace: true });
-    else navigate("/delivery", { replace: true });
+    if (sessao) navigate("/cadastro", { replace: true });
+    else navigate("/", { replace: true });
   }, [sessao, carregando, navigate]);
 
   if (!carregando && !sessao) {
-    return <Navigate to="/delivery" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return (
     <div className="flex h-40 items-center justify-center">
-      <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+      <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
     </div>
   );
 }

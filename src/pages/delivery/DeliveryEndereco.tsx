@@ -82,7 +82,7 @@ export function DeliveryEndereco() {
   useEffect(() => {
     if (!rua && !cep) {
       toast.message("Informe o CEP na tela inicial para começar.");
-      navigate("/delivery", { replace: true });
+      navigate("/", { replace: true });
     }
     // só na montagem
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,13 +163,13 @@ export function DeliveryEndereco() {
         toast.message("Endereço guardado. Entre para salvar na sua conta.");
       } else if (!cadastroCompleto) {
         toast.message("Endereço guardado. Complete o cadastro para salvar.");
-        navigate("/delivery/cadastro");
+        navigate("/cadastro");
         return;
       } else {
         toast.success("Endereço definido para entrega!");
       }
 
-      navigate("/delivery", { replace: true });
+      navigate("/", { replace: true });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Falha ao salvar endereço");
     } finally {
@@ -181,7 +181,7 @@ export function DeliveryEndereco() {
     <div className="space-y-5 max-w-md mx-auto">
       <div>
         <h1 className="text-2xl font-black flex items-center gap-2">
-          <MapPin className="text-red-600" size={22} />
+          <MapPin className="text-cookie-primary" size={22} />
           Completar endereço
         </h1>
         <p className="text-sm text-zinc-500 mt-1">
@@ -260,10 +260,10 @@ export function DeliveryEndereco() {
             Você pode definir o endereço agora e{" "}
             <button
               type="button"
-              className="text-red-600 font-semibold underline"
+              className="text-cookie-primary font-semibold underline"
               onClick={() =>
                 void entrarComGoogle(
-                  `${window.location.origin}/delivery/auth/callback`,
+                  `${window.location.origin}/auth/callback`,
                 )
               }
             >
@@ -274,7 +274,7 @@ export function DeliveryEndereco() {
         )}
 
         <Button
-          className="w-full bg-red-600 hover:bg-red-700"
+          className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
           disabled={salvando}
           onClick={() => void confirmar()}
         >
@@ -283,7 +283,7 @@ export function DeliveryEndereco() {
         <Button
           variant="outline"
           className="w-full"
-          onClick={() => navigate("/delivery")}
+          onClick={() => navigate("/")}
         >
           Voltar
         </Button>

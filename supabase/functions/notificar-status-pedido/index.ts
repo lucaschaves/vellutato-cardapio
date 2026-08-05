@@ -5,6 +5,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
+import { lerSegredos } from "../_shared/segredos.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,10 +75,18 @@ Deno.serve(async (req) => {
     const frase = FRASE_STATUS[status] || `Status: ${status}`;
     const label = LABEL[status] || status;
     const titulo = `Pedido #${pedido.sequencia_pedido ?? ""}`.trim();
-    const siteUrl = (Deno.env.get("SITE_URL") || "").replace(/\/$/, "");
+    const segredos = await lerSegredos([
+      "SITE_URL",
+      "VAPID_PUBLIC_KEY",
+      "VAPID_PRIVATE_KEY",
+      "VAPID_SUBJECT",
+      "WHATSAPP_TOKEN",
+      "WHATSAPP_PHONE_NUMBER_ID",
+    ]);
+    const siteUrl = (segredos.SITE_URL || "").replace(/\/$/, "");
     const urlPedido = siteUrl
-      ? `${siteUrl}/delivery/pedido/${pedido.id}`
-      : `/delivery/pedido/${pedido.id}`;
+      ? `${siteUrl}/pedido/${pedido.id}`
+      : `/pedido/${pedido.id}`;
 
     const resultados = {
       push: 0,
@@ -87,9 +96,10 @@ Deno.serve(async (req) => {
     };
 
     // --- Web Push ---
-    const vapidPublic = Deno.env.get("VAPID_PUBLIC_KEY");
-    const vapidPrivate = Deno.env.get("VAPID_PRIVATE_KEY");
-    const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "mailto:contato@vellutato.com";
+    const vapidPublic = segredos.VAPID_PUBLIC_KEY;
+    const vapidPrivate = segredos.VAPID_PRIVATE_KEY;
+    const vapidSubject =
+      segredos.VAPID_SUBJECT || "mailto:contato@vellutato.com";
 
     if (vapidPublic && vapidPrivate) {
       webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
@@ -139,8 +149,8 @@ Deno.serve(async (req) => {
     }
 
     // --- WhatsApp (só se janela 24h ativa) ---
-    const waToken = Deno.env.get("WHATSAPP_TOKEN");
-    const waPhoneId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+    const waToken = segredos.WHATSAPP_TOKEN;
+    const waPhoneId = segredos.WHATSAPP_PHONE_NUMBER_ID;
     const telefone = telefoneDigitos(pedido.cliente_celular);
 
     if (!waToken || !waPhoneId) {

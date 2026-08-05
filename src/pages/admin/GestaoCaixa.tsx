@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { supabase } from "../../lib/supabase";
 
 // Componentes UI (Ajuste os caminhos se necessário)
@@ -125,19 +126,16 @@ export function GestaoCaixa() {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto h-full space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-            <Calculator size={28} className="text-cookie-primary" /> Caixa e
-            Comandas
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Fechamento de contas por mesa ou cliente.
-          </p>
-        </div>
-
-        <div className="relative w-full md:w-80">
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
+          <Calculator size={28} className="text-cookie-primary" /> Caixa e
+          Comandas
+        </h1>
+      }
+      description="Fechamento de contas por mesa ou cliente."
+      actions={
+        <div className="relative w-full sm:w-80">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
             size={16}
@@ -149,8 +147,9 @@ export function GestaoCaixa() {
             className="pl-9 dark:bg-[#1a1815]"
           />
         </div>
-      </div>
-
+      }
+      contentClassName="space-y-6"
+    >
       {carregando ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
@@ -243,6 +242,6 @@ export function GestaoCaixa() {
           ))}
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

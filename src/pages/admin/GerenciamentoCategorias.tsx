@@ -5,22 +5,20 @@ import {
   Loader2,
   Pencil,
   PlusCircle,
-  Search,
   Trash2,
 } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs";
 import { gerarSlug } from "../../lib/slug";
 import { supabase } from "../../lib/supabase";
 
@@ -41,11 +39,13 @@ interface ProdutoCategoria {
   imagem_url: string | null;
 }
 
+const ABA_NOVA = "__nova__";
+
 export function GerenciamentoCategorias() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [termoBusca, setTermoBusca] = useState("");
+  const [aba, setAba] = useState(ABA_NOVA);
 
   const [nome, setNome] = useState("");
   const [slug, setSlug] = useState("");
@@ -53,9 +53,6 @@ export function GerenciamentoCategorias() {
   const [icone, setIcone] = useState("");
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
-  const [categoriaExpandidaId, setCategoriaExpandidaId] = useState<
-    string | null
-  >(null);
   const [produtosCategoria, setProdutosCategoria] = useState<
     ProdutoCategoria[]
   >([]);
@@ -75,7 +72,19 @@ export function GerenciamentoCategorias() {
         .order("ordem", { ascending: true });
 
       if (error) throw error;
-      setCategorias((data as Categoria[]) || []);
+      const lista = (data as Categoria[]) || [];
+      setCategorias(lista);
+      if (lista.length > 0) {
+        setAba((atual) =>
+          atual === ABA_NOVA || lista.some((c) => c.id === atual)
+            ? atual === ABA_NOVA
+              ? lista[0].id
+              : atual
+            : lista[0].id,
+        );
+      } else {
+        setAba(ABA_NOVA);
+      }
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - CATEGORIAS]", mensagem);
@@ -107,15 +116,22 @@ export function GerenciamentoCategorias() {
     }
   };
 
-  const alternarExpandir = (categoriaId: string) => {
-    if (categoriaExpandidaId === categoriaId) {
-      setCategoriaExpandidaId(null);
+  const selecionarAba = (valor: string) => {
+    setAba(valor);
+    if (valor === ABA_NOVA) {
+      limparFormulario();
       setProdutosCategoria([]);
-      return;
     }
-    setCategoriaExpandidaId(categoriaId);
-    void carregarProdutosDaCategoria(categoriaId);
   };
+
+  useEffect(() => {
+    if (carregando || aba === ABA_NOVA) return;
+    const cat = categorias.find((c) => c.id === aba);
+    if (!cat) return;
+    iniciarEdicao(cat);
+    void carregarProdutosDaCategoria(cat.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ao trocar aba após load
+  }, [carregando, aba]);
 
   const moverProduto = async (produtoId: string, direcao: -1 | 1) => {
     const idx = produtosCategoria.findIndex((p) => p.id === produtoId);
@@ -128,7 +144,6 @@ export function GerenciamentoCategorias() {
     novaLista[idx] = vizinho;
     novaLista[alvo] = atual;
 
-    // Atualiza ordens locais 0..n-1
     const comOrdem = novaLista.map((p, i) => ({ ...p, ordem: i }));
     setProdutosCategoria(comOrdem);
 
@@ -145,9 +160,7 @@ export function GerenciamentoCategorias() {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - CATEGORIAS] reordenar:", mensagem);
       toast.error("Não foi possível salvar a ordem.");
-      if (categoriaExpandidaId) {
-        void carregarProdutosDaCategoria(categoriaExpandidaId);
-      }
+      if (aba !== ABA_NOVA) void carregarProdutosDaCategoria(aba);
     } finally {
       setReordenandoId(null);
     }
@@ -176,8 +189,7 @@ export function GerenciamentoCategorias() {
     }
   };
 
-  const salvarCategoria = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const salvarCategoria = async () => {
     const nomeLimpo = nome.trim();
     const slugLimpo = (slug.trim() || gerarSlug(nomeLimpo)).toLowerCase();
 
@@ -227,154 +239,247 @@ export function GerenciamentoCategorias() {
           .single();
 
         if (error) throw error;
+        const criada = data as Categoria;
         setCategorias((prev) =>
-          [...prev, data as Categoria].sort((a, b) => a.ordem - b.ordem),
+          [...prev, criada].sort((a, b) => a.ordem - b.ordem),
         );
         toast.success("Categoria criada!");
+        setAba(criada.id);
+        iniciarEdicao(criada);
+        setProdutosCategoria([]);
       }
-
-      limparFormulario();
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
-      console.error("[ERRO - CATEGORIAS]", mensagem);
-      toast.error(
-        mensagem.includes("duplicate") || mensagem.includes("unique")
-          ? "Já existe uma categoria com este slug."
-          : "Erro ao salvar categoria.",
-      );
+      console.error("[ERRO - CATEGORIAS] salvar:", mensagem);
+      toast.error("Erro ao salvar categoria.");
     } finally {
       setSalvando(false);
     }
   };
 
-  const excluirCategoria = async (id: string, nomeCategoria: string) => {
-    const { count, error: erroCount } = await supabase
-      .from("produtos")
-      .select("id", { count: "exact", head: true })
-      .eq("categoria_id", id);
-
-    if (erroCount) {
-      toast.error("Não foi possível verificar produtos vinculados.");
-      return;
-    }
-
-    if (count && count > 0) {
-      toast.error(
-        `Não é possível excluir: ${count} produto(s) usam "${nomeCategoria}".`,
-      );
-      return;
-    }
-
+  const excluirCategoria = async (id: string, nomeCat: string) => {
     if (
       !window.confirm(
-        `Excluir a categoria "${nomeCategoria}"? Esta ação não pode ser desfeita.`,
+        `Excluir a categoria "${nomeCat}"? Produtos vinculados podem impedir a exclusão.`,
       )
     ) {
       return;
     }
 
     const { error } = await supabase.from("categorias").delete().eq("id", id);
-
     if (error) {
-      toast.error("Erro ao excluir categoria.");
+      console.error("[ERRO - CATEGORIAS] excluir:", error.message);
+      toast.error("Não foi possível excluir. Verifique se há produtos.");
       return;
     }
 
-    setCategorias((prev) => prev.filter((c) => c.id !== id));
-    if (editandoId === id) limparFormulario();
-    if (categoriaExpandidaId === id) {
-      setCategoriaExpandidaId(null);
-      setProdutosCategoria([]);
-    }
+    setCategorias((prev) => {
+      const resto = prev.filter((c) => c.id !== id);
+      if (aba === id) {
+        if (resto[0]) {
+          setAba(resto[0].id);
+          iniciarEdicao(resto[0]);
+          void carregarProdutosDaCategoria(resto[0].id);
+        } else {
+          setAba(ABA_NOVA);
+          limparFormulario();
+          setProdutosCategoria([]);
+        }
+      }
+      return resto;
+    });
     toast.success("Categoria excluída.");
   };
 
-  const categoriasFiltradas = categorias.filter((c) => {
-    const termo = termoBusca.trim().toLowerCase();
-    if (!termo) return true;
-    return (
-      c.nome.toLowerCase().includes(termo) ||
-      c.slug.toLowerCase().includes(termo)
-    );
-  });
+  const formulario = (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-5 flex flex-col gap-4">
+      <h2 className="font-bold text-gray-900 dark:text-white">
+        {editandoId ? "Editar categoria" : "Nova categoria"}
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="categoria-nome">Nome</Label>
+          <Input
+            id="categoria-nome"
+            placeholder="Ex: Bebidas"
+            value={nome}
+            onChange={(e) => handleNomeChange(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="categoria-slug">Slug</Label>
+          <Input
+            id="categoria-slug"
+            placeholder="Ex: bebidas"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value.toLowerCase())}
+          />
+          <p className="text-[11px] text-gray-500">
+            Identificador na URL do cardápio.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="categoria-ordem">Ordem</Label>
+          <Input
+            id="categoria-ordem"
+            placeholder="Número (ex: 1)"
+            type="number"
+            min={0}
+            value={ordem}
+            onChange={(e) => setOrdem(e.target.value)}
+          />
+          <p className="text-[11px] text-gray-500">
+            Posição da categoria no cardápio.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="categoria-icone">Ícone</Label>
+          <Input
+            id="categoria-icone"
+            placeholder="Emoji opcional"
+            value={icone}
+            onChange={(e) => setIcone(e.target.value)}
+            maxLength={8}
+          />
+          <p className="text-[11px] text-gray-500">
+            Opcional — emoji exibido junto ao nome.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 
-  return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-          <FolderTree size={28} className="text-cookie-primary" />
-          Categorias
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Clique numa categoria para abrir e ordenar os produtos dela no
-          cardápio.
+  const listaProdutos = (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark flex flex-col min-h-0 flex-1 overflow-hidden">
+      <div className="shrink-0 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+          Produtos nesta categoria
         </p>
       </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        {carregandoProdutos ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="animate-spin text-cookie-primary" size={24} />
+          </div>
+        ) : produtosCategoria.length === 0 ? (
+          <p className="text-sm text-gray-500 py-2">
+            Nenhum produto nesta categoria.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {produtosCategoria.map((produto, index) => (
+              <li
+                key={produto.id}
+                className="flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1815] px-3 py-2"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={index === 0 || reordenandoId === produto.id}
+                    title="Subir"
+                    onClick={() => void moverProduto(produto.id, -1)}
+                  >
+                    <ChevronUp size={14} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={
+                      index === produtosCategoria.length - 1 ||
+                      reordenandoId === produto.id
+                    }
+                    title="Descer"
+                    onClick={() => void moverProduto(produto.id, 1)}
+                  >
+                    <ChevronDown size={14} />
+                  </Button>
+                </div>
+                <div className="h-10 w-10 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 border">
+                  {produto.imagem_url ? (
+                    <img
+                      src={produto.imagem_url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : null}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm truncate">
+                    {produto.nome}
+                    {!produto.ativo && (
+                      <span className="ml-2 text-[10px] uppercase text-zinc-400">
+                        oculto
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-zinc-400 font-mono">
+                    posição {index + 1}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 
-      <form
-        onSubmit={salvarCategoria}
-        className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl p-5 space-y-4"
-      >
-        <h2 className="font-bold text-gray-900 dark:text-white">
-          {editandoId ? "Editar categoria" : "Nova categoria"}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="categoria-nome">Nome</Label>
-            <Input
-              id="categoria-nome"
-              placeholder="Ex: Bebidas"
-              value={nome}
-              onChange={(e) => handleNomeChange(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="categoria-slug">Slug</Label>
-            <Input
-              id="categoria-slug"
-              placeholder="Ex: bebidas"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase())}
-            />
-            <p className="text-[11px] text-gray-500">
-              Identificador na URL do cardápio.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="categoria-ordem">Ordem</Label>
-            <Input
-              id="categoria-ordem"
-              placeholder="Número (ex: 1)"
-              type="number"
-              min={0}
-              value={ordem}
-              onChange={(e) => setOrdem(e.target.value)}
-            />
-            <p className="text-[11px] text-gray-500">
-              Posição da categoria no cardápio.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="categoria-icone">Ícone</Label>
-            <Input
-              id="categoria-icone"
-              placeholder="Emoji opcional"
-              value={icone}
-              onChange={(e) => setIcone(e.target.value)}
-              maxLength={8}
-            />
-            <p className="text-[11px] text-gray-500">
-              Opcional — emoji exibido junto ao nome.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={salvando}>
+  return (
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
+          <FolderTree size={24} className="text-cookie-primary" />
+          Categorias
+        </h1>
+      }
+      description="Organize categorias em abas e ordene os produtos de cada uma."
+      scroll={false}
+      contentClassName="gap-4"
+      footer={
+        <>
+          {editandoId && (
+            <Button
+              type="button"
+              variant="outline"
+              className="text-red-600 mr-auto"
+              onClick={() => {
+                const cat = categorias.find((c) => c.id === editandoId);
+                if (cat) void excluirCategoria(cat.id, cat.nome);
+              }}
+            >
+              <Trash2 size={16} className="mr-2" />
+              Excluir
+            </Button>
+          )}
+          {aba === ABA_NOVA ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAba(ABA_NOVA);
+                limparFormulario();
+                setProdutosCategoria([]);
+              }}
+            >
+              Nova categoria
+            </Button>
+          )}
+          <Button
+            type="button"
+            disabled={salvando}
+            onClick={() => void salvarCategoria()}
+            className="bg-cookie-primary hover:bg-cookie-primary-hover text-white"
+          >
             {salvando ? (
               <Loader2 className="animate-spin" size={18} />
             ) : editandoId ? (
               <>
-                <Pencil size={18} className="mr-2" /> Salvar alterações
+                <Pencil size={18} className="mr-2" /> Salvar
               </>
             ) : (
               <>
@@ -382,216 +487,65 @@ export function GerenciamentoCategorias() {
               </>
             )}
           </Button>
-          {editandoId && (
-            <Button type="button" variant="outline" onClick={limparFormulario}>
-              Cancelar edição
-            </Button>
-          )}
-        </div>
-      </form>
-
-      <div className="relative w-full md:w-80">
-        <Search
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          size={16}
-        />
-        <Input
-          placeholder="Buscar categoria..."
-          value={termoBusca}
-          onChange={(e) => setTermoBusca(e.target.value)}
-          className="pl-9 dark:bg-[#1a1815]"
-        />
-      </div>
-
+        </>
+      }
+    >
       {carregando ? (
-        <div className="flex justify-center py-20">
+        <div className="flex flex-1 items-center justify-center">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
         </div>
       ) : (
-        <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10" />
-                <TableHead>Ordem</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Ícone</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {categoriasFiltradas.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center py-10 text-gray-500"
-                  >
-                    Nenhuma categoria encontrada.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                categoriasFiltradas.map((categoria) => {
-                  const expandida = categoriaExpandidaId === categoria.id;
-                  return (
-                    <Fragment key={categoria.id}>
-                      <TableRow
-                        className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/30"
-                        onClick={() => alternarExpandir(categoria.id)}
-                      >
-                        <TableCell className="w-10">
-                          {expandida ? (
-                            <ChevronUp size={16} className="text-gray-500" />
-                          ) : (
-                            <ChevronDown size={16} className="text-gray-500" />
-                          )}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {categoria.ordem}
-                        </TableCell>
-                        <TableCell className="font-semibold">
-                          {categoria.icone && (
-                            <span className="mr-2">{categoria.icone}</span>
-                          )}
-                          {categoria.nome}
-                        </TableCell>
-                        <TableCell className="text-gray-500 font-mono text-sm">
-                          {categoria.slug}
-                        </TableCell>
-                        <TableCell>{categoria.icone || "—"}</TableCell>
-                        <TableCell
-                          className="text-right"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => iniciarEdicao(categoria)}
-                              title="Editar"
-                            >
-                              <Pencil size={16} />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="text-red-600 hover:text-red-700"
-                              onClick={() =>
-                                void excluirCategoria(
-                                  categoria.id,
-                                  categoria.nome,
-                                )
-                              }
-                              title="Excluir"
-                            >
-                              <Trash2 size={16} />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {expandida && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={6}
-                            className="bg-gray-50/80 dark:bg-gray-900/40 p-0"
-                          >
-                            <div className="px-4 py-3 space-y-2">
-                              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                                Produtos nesta categoria
-                              </p>
-                              {carregandoProdutos ? (
-                                <div className="flex justify-center py-6">
-                                  <Loader2
-                                    className="animate-spin text-cookie-primary"
-                                    size={24}
-                                  />
-                                </div>
-                              ) : produtosCategoria.length === 0 ? (
-                                <p className="text-sm text-gray-500 py-2">
-                                  Nenhum produto nesta categoria.
-                                </p>
-                              ) : (
-                                <ul className="space-y-1.5">
-                                  {produtosCategoria.map((produto, index) => (
-                                    <li
-                                      key={produto.id}
-                                      className="flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark px-3 py-2"
-                                    >
-                                      <div className="flex flex-col gap-0.5">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7"
-                                          disabled={
-                                            index === 0 ||
-                                            reordenandoId === produto.id
-                                          }
-                                          title="Subir"
-                                          onClick={() =>
-                                            void moverProduto(produto.id, -1)
-                                          }
-                                        >
-                                          <ChevronUp size={14} />
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7"
-                                          disabled={
-                                            index ===
-                                              produtosCategoria.length - 1 ||
-                                            reordenandoId === produto.id
-                                          }
-                                          title="Descer"
-                                          onClick={() =>
-                                            void moverProduto(produto.id, 1)
-                                          }
-                                        >
-                                          <ChevronDown size={14} />
-                                        </Button>
-                                      </div>
-                                      <div className="h-10 w-10 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 border">
-                                        {produto.imagem_url ? (
-                                          <img
-                                            src={produto.imagem_url}
-                                            alt=""
-                                            className="h-full w-full object-cover"
-                                          />
-                                        ) : null}
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <p className="font-medium text-sm truncate">
-                                          {produto.nome}
-                                          {!produto.ativo && (
-                                            <span className="ml-2 text-[10px] uppercase text-zinc-400">
-                                              oculto
-                                            </span>
-                                          )}
-                                        </p>
-                                        <p className="text-[11px] text-zinc-400 font-mono">
-                                          posição {index + 1}
-                                        </p>
-                                      </div>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </Fragment>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        <Tabs
+          value={aba}
+          onValueChange={selecionarAba}
+          className="flex-1 min-h-0 overflow-hidden gap-3"
+        >
+          <TabsList
+            variant="line"
+            className="shrink-0 w-full h-auto justify-start overflow-x-auto flex-nowrap rounded-none border-b border-gray-200 dark:border-gray-800 bg-transparent p-0 gap-0"
+          >
+            {categorias.map((c) => (
+              <TabsTrigger
+                key={c.id}
+                value={c.id}
+                className="shrink-0 rounded-none px-3 py-2.5 data-active:shadow-none"
+              >
+                {c.icone ? `${c.icone} ` : ""}
+                {c.nome}
+              </TabsTrigger>
+            ))}
+            <TabsTrigger
+              value={ABA_NOVA}
+              className="shrink-0 rounded-none px-3 py-2.5 data-active:shadow-none gap-1"
+            >
+              <PlusCircle size={14} />
+              Nova
+            </TabsTrigger>
+          </TabsList>
+
+          {categorias.map((c) => (
+            <TabsContent
+              key={c.id}
+              value={c.id}
+              className="flex-1 min-h-0 mt-0 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden"
+            >
+              {aba === c.id ? (
+                <>
+                  {formulario}
+                  {listaProdutos}
+                </>
+              ) : null}
+            </TabsContent>
+          ))}
+
+          <TabsContent
+            value={ABA_NOVA}
+            className="flex-1 min-h-0 mt-0 overflow-y-auto data-[state=inactive]:hidden"
+          >
+            {aba === ABA_NOVA ? formulario : null}
+          </TabsContent>
+        </Tabs>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

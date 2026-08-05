@@ -4,7 +4,6 @@ import {
   FastForward,
   Maximize,
   Minimize,
-  Play,
   ShoppingBag,
   Store,
   Tag,
@@ -15,6 +14,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
+import { LogoMarca } from "../../components/LogoMarca";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
 import {
@@ -63,8 +63,8 @@ export function BemVindo() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Modo totem é configuração do dispositivo; a rota /cardapio-toten
-  // (legada) apenas ativa a configuração de forma persistente.
+  // Modo totem é configuração do dispositivo; a rota /totem
+  // (e o legado /cardapio-toten) apenas ativa a configuração de forma persistente.
   const modoToten = emModoToten();
 
   const [etapa, setEtapa] = useState(modoToten ? 0 : 1);
@@ -81,7 +81,10 @@ export function BemVindo() {
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
 
   useEffect(() => {
-    if (location.pathname.startsWith("/cardapio-toten")) {
+    if (
+      location.pathname.startsWith("/totem") ||
+      location.pathname.startsWith("/cardapio-toten")
+    ) {
       marcarModoToten(true);
     }
   }, [location.pathname]);
@@ -192,7 +195,7 @@ export function BemVindo() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden selection:bg-[#ff5722]/30">
+    <div className="relative min-h-screen overflow-hidden selection:bg-[#6b1d2a]/30">
       {modoToten ? (
         <video
           ref={videoRef}
@@ -207,7 +210,7 @@ export function BemVindo() {
           className="absolute inset-0 w-full h-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] via-[#2d1810] to-[#ff5722]/40" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] via-[#2d1810] to-[#6b1d2a]/40" />
       )}
 
       <div
@@ -251,25 +254,20 @@ export function BemVindo() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="flex flex-col items-center text-center"
             >
-              <h1 className="text-5xl md:text-6xl font-black font-serif italic tracking-tight text-white mb-3 drop-shadow-lg">
-                Vellutato
-              </h1>
-              <p className="text-white/80 text-lg md:text-xl mb-10 max-w-sm drop-shadow-md">
+              <div className="mb-8 drop-shadow-2xl">
+                <LogoMarca size={72} tom="branco" className="drop-shadow-md" />
+              </div>
+              <p className="text-white/85 text-lg md:text-xl mb-10 max-w-sm drop-shadow-md">
                 Sabores que conquistam. Toque para fazer seu pedido.
               </p>
 
               <button
                 onClick={() => setEtapa(1)}
-                className="group relative flex items-center justify-center w-28 h-28 md:w-32 md:h-32 rounded-full bg-[#ff5722] hover:bg-[#e64a19] text-white shadow-2xl shadow-[#ff5722]/40 active:scale-95 transition-all"
+                className="group relative px-10 py-4 rounded-2xl bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold text-base shadow-2xl shadow-[#6b1d2a]/40 active:scale-95 transition-all ring-1 ring-white/25"
                 aria-label="Iniciar pedido"
               >
-                <span className="absolute inset-0 rounded-full bg-[#ff5722] animate-ping opacity-20" />
-                <Play size={40} className="ml-1 fill-white" strokeWidth={0} />
+                Iniciar pedido
               </button>
-
-              <span className="mt-6 text-sm font-bold uppercase tracking-[0.2em] text-white/90">
-                Iniciar Pedido
-              </span>
             </motion.div>
           )}
 
@@ -297,13 +295,13 @@ export function BemVindo() {
                 )}
                 <div className="min-w-0">
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <UserCircle className="text-[#ff5722] shrink-0" /> Quem é
+                    <UserCircle className="text-[#6b1d2a] shrink-0" /> Quem é
                     você?
                   </h2>
                   <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400 leading-snug flex items-start gap-1.5">
                     <Tag
                       size={14}
-                      className="text-[#ff5722] shrink-0 mt-0.5"
+                      className="text-[#6b1d2a] shrink-0 mt-0.5"
                     />
                     <span>
                       Identifique-se para desbloquear cupons e descontos
@@ -325,7 +323,7 @@ export function BemVindo() {
                     placeholder="(00) 00000-0000"
                     value={celular}
                     onValorChange={handleCelularChange}
-                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
+                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6b1d2a] focus:border-transparent transition-all outline-none"
                   />
                   {buscandoCliente && (
                     <p className="text-xs text-gray-500 mt-1.5">
@@ -348,7 +346,7 @@ export function BemVindo() {
                     placeholder="Como devemos te chamar?"
                     value={nome}
                     onValorChange={setNome}
-                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#ff5722] focus:border-transparent transition-all outline-none"
+                    className="w-full px-4 py-3.5 text-base rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6b1d2a] focus:border-transparent transition-all outline-none"
                   />
                 </div>
               </div>
@@ -358,7 +356,7 @@ export function BemVindo() {
                   type="button"
                   onClick={() => irParaConsumo(false)}
                   disabled={!podeContinuar}
-                  className="w-full bg-[#ff5722] hover:bg-[#e64a19] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20"
+                  className="w-full bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                 >
                   <span>Continuar</span>
                   <ArrowRight size={20} />
@@ -367,7 +365,7 @@ export function BemVindo() {
                 <button
                   type="button"
                   onClick={() => irParaConsumo(true)}
-                  className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-[#ff5722]/40 hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10"
+                  className="w-full py-4 px-6 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] text-gray-800 dark:text-gray-100 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all hover:border-[#6b1d2a]/40 hover:bg-[#6b1d2a]/5 dark:hover:bg-[#6b1d2a]/10"
                 >
                   <span>Continuar sem informar</span>
                   <FastForward size={20} />
@@ -417,9 +415,9 @@ export function BemVindo() {
                 <button
                   type="button"
                   onClick={() => void selecionarConsumo("loja")}
-                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 active:scale-[0.98] transition-all text-left"
+                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#6b1d2a] hover:bg-[#6b1d2a]/5 dark:hover:bg-[#6b1d2a]/10 active:scale-[0.98] transition-all text-left"
                 >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ff5722]/15 text-[#ff5722] shrink-0">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6b1d2a]/15 text-[#6b1d2a] shrink-0">
                     <Store size={28} />
                   </span>
                   <span className="min-w-0">
@@ -435,9 +433,9 @@ export function BemVindo() {
                 <button
                   type="button"
                   onClick={() => void selecionarConsumo("levar")}
-                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#ff5722] hover:bg-[#ff5722]/5 dark:hover:bg-[#ff5722]/10 active:scale-[0.98] transition-all text-left"
+                  className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#242629] hover:border-[#6b1d2a] hover:bg-[#6b1d2a]/5 dark:hover:bg-[#6b1d2a]/10 active:scale-[0.98] transition-all text-left"
                 >
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ff5722]/15 text-[#ff5722] shrink-0">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6b1d2a]/15 text-[#6b1d2a] shrink-0">
                     <ShoppingBag size={28} />
                   </span>
                   <span className="min-w-0">

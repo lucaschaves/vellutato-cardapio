@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Loader2, Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { LogoMarca } from "../components/LogoMarca";
 import { supabase } from "../lib/supabase";
 
 // Componentes do Shadcn/ui (Sem o use-toast antigo)
@@ -75,8 +76,8 @@ export function Login() {
       >
         <Card className="border-gray-200 dark:border-gray-800 shadow-xl bg-surface-light dark:bg-surface-dark">
           <CardHeader className="text-center space-y-2 pt-8">
-            <div className="w-16 h-16 bg-cookie-primary text-white rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-md">
-              <Lock size={32} />
+            <div className="flex justify-center mb-3">
+              <LogoMarca size={56} />
             </div>
             <CardTitle className="text-2xl font-bold tracking-tight">
               Acesso Restrito

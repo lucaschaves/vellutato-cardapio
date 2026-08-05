@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { lerSegredos } from "../_shared/segredos.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,16 +42,22 @@ Deno.serve(async (req) => {
 
   try {
     const bodyIn = await req.json();
-    const asaasKey = Deno.env.get("ASAAS_API_KEY");
-    const asaasEnv = (Deno.env.get("ASAAS_ENV") || "sandbox").toLowerCase();
+    const segredos = await lerSegredos([
+      "ASAAS_API_KEY",
+      "ASAAS_ENV",
+      "ASAAS_API_URL",
+      "SITE_URL",
+    ]);
+    const asaasKey = segredos.ASAAS_API_KEY;
+    const asaasEnv = (segredos.ASAAS_ENV || "sandbox").toLowerCase();
     const asaasBase =
-      Deno.env.get("ASAAS_API_URL") ||
+      segredos.ASAAS_API_URL ||
       (asaasEnv === "production"
         ? "https://api.asaas.com/v3"
         : "https://api-sandbox.asaas.com/v3");
     const siteUrlRaw =
       (typeof bodyIn?.site_url === "string" && bodyIn.site_url) ||
-      Deno.env.get("SITE_URL") ||
+      segredos.SITE_URL ||
       "http://localhost:5173";
     const siteUrl = String(siteUrlRaw).replace(/\/$/, "");
     const isSandbox = asaasBase.includes("sandbox");
@@ -100,8 +107,10 @@ Deno.serve(async (req) => {
     }
 
     const hostCheckout = isSandbox ? "https://sandbox.asaas.com" : "https://asaas.com";
+    const forcarNovo = Boolean(bodyIn?.forcar_novo);
 
-    if (pedido.asaas_checkout_id) {
+    // Reusa o checkout existente só se ainda for válido e não pediram um novo.
+    if (pedido.asaas_checkout_id && !forcarNovo) {
       const link =
         `${hostCheckout}/checkoutSession/show/${pedido.asaas_checkout_id}`;
       return json({
@@ -184,6 +193,13 @@ Deno.serve(async (req) => {
 
     const nomeItem = `Pedido #${pedido.sequencia_pedido}`.slice(0, 30);
 
+    // Retry pelo detalhe do pedido: cancel/expired voltam para /pedido
+    const voltarPedido = forcarNovo || bodyIn?.callback_pedido === true;
+    const cancelPath = voltarPedido
+      ? `/pedido/${pedido.id}?cancelado=1`
+      : `/checkout?cancelado=1&pedido=${pedido.id}`;
+    const expiredPath = `/pedido/${pedido.id}?expirado=1`;
+
     // Alinhado ao CheckoutSessionSaveRequestDTO / CustomerDataDTO do MCP Asaas
     const payload = {
       billingTypes: ["PIX", "CREDIT_CARD"],
@@ -191,13 +207,9 @@ Deno.serve(async (req) => {
       minutesToExpire: 30,
       externalReference: String(pedido.id).slice(0, 200),
       callback: {
-        successUrl: callbackUrl(`/delivery/pedido/${pedido.id}?pago=1`),
-        cancelUrl: callbackUrl(
-          `/delivery/checkout?cancelado=1&pedido=${pedido.id}`,
-        ),
-        expiredUrl: callbackUrl(
-          `/delivery/pedido/${pedido.id}?expirado=1`,
-        ),
+        successUrl: callbackUrl(`/pedido/${pedido.id}?pago=1`),
+        cancelUrl: callbackUrl(cancelPath),
+        expiredUrl: callbackUrl(expiredPath),
       },
       items: [
         {

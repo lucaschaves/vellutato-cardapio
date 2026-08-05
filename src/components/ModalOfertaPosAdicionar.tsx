@@ -40,7 +40,7 @@ export function ModalOfertaPosAdicionar({
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-[#2a2c30]">
               <div className="flex items-center gap-2">
-                <Sparkles size={20} className="text-[#ff5722]" />
+                <Sparkles size={20} className="text-[#6b1d2a]" />
                 <h2 className="font-bold text-gray-900 dark:text-white">
                   Aproveite também
                 </h2>
@@ -70,7 +70,7 @@ export function ModalOfertaPosAdicionar({
                 return (
                   <div
                     key={oferta.id}
-                    className="flex gap-3 p-3 rounded-xl bg-[#ff5722]/5 border border-[#ff5722]/20"
+                    className="flex gap-3 p-3 rounded-xl bg-[#6b1d2a]/5 border border-[#6b1d2a]/20"
                   >
                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-100 shrink-0">
                       <img
@@ -93,14 +93,14 @@ export function ModalOfertaPosAdicionar({
                             <Gift size={12} /> Brinde
                           </span>
                         ) : (
-                          <span className="text-sm font-black text-[#ff5722]">
+                          <span className="text-sm font-black text-[#6b1d2a]">
                             R$ {precoOferta.toFixed(2)}
                           </span>
                         )}
                         <button
                           type="button"
                           onClick={() => aoAdicionar(oferta)}
-                          className="ml-auto text-xs font-bold bg-[#ff5722] text-white px-3 py-1.5 rounded-lg active:scale-95"
+                          className="ml-auto text-xs font-bold bg-[#6b1d2a] text-white px-3 py-1.5 rounded-lg active:scale-95"
                         >
                           Adicionar
                         </button>

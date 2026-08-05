@@ -27,8 +27,8 @@ export function TagMedidaProduto({
 
   const base =
     variante === "overlay"
-      ? "bg-[#ff5722] text-white shadow-md ring-1 ring-white/30"
-      : "bg-[#ff5722]/15 text-[#e64a19] dark:text-[#ff8a65] border border-[#ff5722]/45 dark:border-[#ff5722]/50 shadow-sm";
+      ? "bg-[#6b1d2a] text-white shadow-md ring-1 ring-white/30"
+      : "bg-[#6b1d2a]/15 text-[#541622] dark:text-[#ff8a65] border border-[#6b1d2a]/45 dark:border-[#6b1d2a]/50 shadow-sm";
 
   return (
     <span

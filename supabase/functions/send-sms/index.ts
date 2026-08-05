@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { Webhook } from "https://esm.sh/standardwebhooks@1.0.0";
+import { lerSegredos } from "../_shared/segredos.ts";
 
 const KINGSMS_URL = "http://painel.kingsms.com.br/kingsms/api.php";
 
@@ -50,9 +51,14 @@ Deno.serve(async (req) => {
     return jsonError(405, "Method not allowed", 405);
   }
 
-  const hookSecret = Deno.env.get("SEND_SMS_HOOK_SECRET");
-  const login = Deno.env.get("KINGSMS_LOGIN");
-  const token = Deno.env.get("KINGSMS_TOKEN");
+  const segredos = await lerSegredos([
+    "SEND_SMS_HOOK_SECRET",
+    "KINGSMS_LOGIN",
+    "KINGSMS_TOKEN",
+  ]);
+  const hookSecret = segredos.SEND_SMS_HOOK_SECRET;
+  const login = segredos.KINGSMS_LOGIN;
+  const token = segredos.KINGSMS_TOKEN;
 
   if (!hookSecret) {
     console.error("[send-sms] SEND_SMS_HOOK_SECRET ausente");

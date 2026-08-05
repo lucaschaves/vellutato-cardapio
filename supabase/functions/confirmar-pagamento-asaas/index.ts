@@ -5,6 +5,7 @@
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { lerSegredos } from "../_shared/segredos.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,10 +36,15 @@ Deno.serve(async (req) => {
     const pedidoId = String(bodyIn?.pedido_id || "");
     if (!pedidoId) return json({ erro: "pedido_id obrigatório" }, 400);
 
-    const asaasKey = Deno.env.get("ASAAS_API_KEY");
-    const asaasEnv = (Deno.env.get("ASAAS_ENV") || "sandbox").toLowerCase();
+    const segredos = await lerSegredos([
+      "ASAAS_API_KEY",
+      "ASAAS_ENV",
+      "ASAAS_API_URL",
+    ]);
+    const asaasKey = segredos.ASAAS_API_KEY;
+    const asaasEnv = (segredos.ASAAS_ENV || "sandbox").toLowerCase();
     const asaasBase =
-      Deno.env.get("ASAAS_API_URL") ||
+      segredos.ASAAS_API_URL ||
       (asaasEnv === "production"
         ? "https://api.asaas.com/v3"
         : "https://api-sandbox.asaas.com/v3");

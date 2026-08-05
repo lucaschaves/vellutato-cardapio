@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   emModoToten,
   limparIdentificacaoCliente,
+  urlBoasVindasCardapio,
 } from "../lib/modoCardapio";
 import { limparTipoConsumo } from "../lib/disponibilidadeProduto";
 import { useCartStore } from "../store/useCartStore";
@@ -54,7 +55,7 @@ export function InatividadeToten() {
     limparCarrinho();
     limparIdentificacaoCliente();
     limparTipoConsumo();
-    navigate("/", { replace: true });
+    navigate(urlBoasVindasCardapio(), { replace: true });
   }, [limparCarrinho, navigate]);
 
   // Reinicia a contagem de inatividade a cada interação (fora do aviso)
@@ -114,8 +115,8 @@ export function InatividadeToten() {
             transition={{ type: "spring", damping: 22, stiffness: 260 }}
             className="w-full max-w-md bg-white dark:bg-[#181a1b] rounded-[2rem] p-8 shadow-2xl border border-gray-200 dark:border-[#2a2c30] text-center"
           >
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#ff5722]/10">
-              <Hand size={32} className="text-[#ff5722]" />
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#6b1d2a]/10">
+              <Hand size={32} className="text-[#6b1d2a]" />
             </div>
 
             <h2 className="text-2xl font-black text-gray-950 dark:text-white mb-2">
@@ -124,7 +125,7 @@ export function InatividadeToten() {
 
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
               Sem resposta, o pedido será limpo e a tela voltará ao início em{" "}
-              <span className="font-black text-[#ff5722] text-base">
+              <span className="font-black text-[#6b1d2a] text-base">
                 {Math.max(segundosRestantes, 0)}s
               </span>
               .
@@ -133,7 +134,7 @@ export function InatividadeToten() {
             <button
               type="button"
               onClick={continuarSessao}
-              className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-6 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/25"
+              className="w-full bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold py-4 px-6 rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/25"
             >
               Sim, continuar pedido
             </button>

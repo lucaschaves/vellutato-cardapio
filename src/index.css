@@ -2,13 +2,20 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource/cormorant-garamond/600.css";
+@import "@fontsource/cormorant-garamond/700.css";
+@import "@fontsource/great-vibes/400.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* Cores de Identidade Visual */
-  --color-cookie-primary: #5c3a21; /* Marrom Chocolate Profundo */
-  --color-cookie-accent: #e5a93b; /* Dourado Fornada / Caramelo */
+  /* Cores de Identidade Visual — Vellutato (bordo + branco) */
+  --color-cookie-primary: #6b1d2a; /* Bordo */
+  --color-cookie-primary-hover: #541622; /* Bordo escuro */
+  /* Destaque (valores, preços): contraste AA em fundo claro */
+  --color-cookie-accent: #9e2a3c;
+  --font-marca: "Cormorant Garamond", "Times New Roman", Times, serif;
+  --font-marca-cursiva: "Great Vibes", "Segoe Script", cursive;
 
   /* Sistema de Cores Adaptável (Light/Dark) */
   --color-background-light: #fdfbf7;
@@ -126,6 +133,7 @@
 }
 
 .dark {
+  --color-cookie-accent: #e9a8b2; /* Rosa claro — legível em fundo escuro */
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);

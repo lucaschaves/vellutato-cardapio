@@ -1,24 +1,38 @@
-import { ArrowLeft, Bike, ClipboardList, MessageCircle, ShoppingBag, User } from "lucide-react";
+import { ArrowLeft, ClipboardList, MessageCircle, ShoppingBag, User } from "lucide-react";
+import { useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { LogoMarca } from "../../components/LogoMarca";
+import { usePedidosDeliveryAtivosCount } from "../../hooks/usePedidosDeliveryAtivosCount";
+import { urlDelivery } from "../../lib/urlDelivery";
 import { useCartStore } from "../../store/useCartStore";
 
 export function DeliveryLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const qtd = useCartStore((s) => s.obterQuantidadeTotal());
-  const naHome =
-    location.pathname === "/delivery" || location.pathname === "/delivery/";
+  const pedidosAtivos = usePedidosDeliveryAtivosCount();
+  const naHome = location.pathname === "/";
   const esconderSacola =
     location.pathname.includes("/checkout") ||
     location.pathname.includes("/auth") ||
     location.pathname.includes("/item/") ||
     location.pathname.includes("/endereco");
 
+  // QR antigo de mesa apontava para /?mesa=N — redireciona ao cardápio loja
+  useEffect(() => {
+    if (location.pathname !== "/") return;
+    const params = new URLSearchParams(location.search);
+    const mesa = params.get("mesa")?.trim();
+    if (mesa) {
+      navigate(`/inicio?mesa=${encodeURIComponent(mesa)}`, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
+
   const voltar = () => {
     if (window.history.length > 1) {
       navigate(-1);
     } else {
-      navigate("/delivery");
+      navigate(urlDelivery());
     }
   };
 
@@ -39,32 +53,39 @@ export function DeliveryLayout() {
             )}
             <button
               type="button"
-              onClick={() => navigate("/delivery")}
-              className="flex items-center gap-2 font-black tracking-tight text-lg min-w-0"
+              onClick={() => navigate(urlDelivery())}
+              className="flex items-center min-w-0"
+              aria-label="Vellutato — início"
             >
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white">
-                <Bike size={18} />
-              </span>
-              <span className="truncate">Vellutato</span>
+              <LogoMarca size={40} />
             </button>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
             <Link
-              to="/delivery/chat"
+              to={urlDelivery("/chat")}
               className="p-2 rounded-full hover:bg-zinc-100"
               aria-label="Chat"
             >
               <MessageCircle size={20} />
             </Link>
             <Link
-              to="/delivery/pedidos"
-              className="p-2 rounded-full hover:bg-zinc-100"
-              aria-label="Pedidos"
+              to={urlDelivery("/pedidos")}
+              className="relative p-2 rounded-full hover:bg-zinc-100"
+              aria-label={
+                pedidosAtivos > 0
+                  ? `Pedidos (${pedidosAtivos} em andamento)`
+                  : "Pedidos"
+              }
             >
               <ClipboardList size={20} />
+              {pedidosAtivos > 0 && (
+                <span className="absolute top-0.5 right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-cookie-primary text-white text-[10px] font-bold leading-[1.1rem] text-center">
+                  {pedidosAtivos > 9 ? "9+" : pedidosAtivos}
+                </span>
+              )}
             </Link>
             <Link
-              to="/delivery/conta"
+              to={urlDelivery("/conta")}
               className="p-2 rounded-full hover:bg-zinc-100"
               aria-label="Conta"
             >
@@ -87,8 +108,8 @@ export function DeliveryLayout() {
           <div className="max-w-3xl mx-auto pointer-events-auto">
             <button
               type="button"
-              onClick={() => navigate("/delivery/checkout")}
-              className="w-full h-14 rounded-2xl bg-red-600 text-white font-bold flex items-center justify-between px-5 shadow-lg shadow-red-600/25"
+              onClick={() => navigate(urlDelivery("/checkout"))}
+              className="w-full h-14 rounded-2xl bg-cookie-primary text-white font-bold flex items-center justify-between px-5 shadow-lg shadow-cookie-primary/25"
             >
               <span className="flex items-center gap-2">
                 <ShoppingBag size={18} />

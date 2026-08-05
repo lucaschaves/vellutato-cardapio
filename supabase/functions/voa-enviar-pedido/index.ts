@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { lerSegredos } from "../_shared/segredos.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,9 +14,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const voaKey = Deno.env.get("VOA_KEY");
-    const voaToken = Deno.env.get("VOA_TOKEN");
-    const voaBase = Deno.env.get("VOA_API_URL") || "https://api.voa.delivery";
+    const segredos = await lerSegredos(["VOA_KEY", "VOA_TOKEN", "VOA_API_URL"]);
+    const voaKey = segredos.VOA_KEY;
+    const voaToken = segredos.VOA_TOKEN;
+    const voaBase = segredos.VOA_API_URL || "https://api.voa.delivery";
 
     if (!voaKey || !voaToken) {
       return json({ erro: "VOA_KEY/VOA_TOKEN não configurados" }, 500);

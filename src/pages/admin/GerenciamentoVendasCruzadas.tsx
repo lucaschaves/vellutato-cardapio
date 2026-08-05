@@ -1,6 +1,7 @@
 import { GitBranch, Loader2, Pencil, PlusCircle, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -217,17 +218,16 @@ export function GerenciamentoVendasCruzadas() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
           <GitBranch size={28} className="text-cookie-primary" />
           Vendas Cruzadas
         </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Ofereça um produto quando o cliente visualizar outro.
-        </p>
-      </div>
-
+      }
+      description="Ofereça um produto quando o cliente visualizar outro."
+      contentClassName="space-y-6"
+    >
       <form
         onSubmit={cadastrarRegra}
         className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl p-5 space-y-4"
@@ -393,6 +393,6 @@ export function GerenciamentoVendasCruzadas() {
           </Table>
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

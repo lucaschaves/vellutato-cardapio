@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       provider: "google",
       options: {
         redirectTo:
-          redirectTo || `${window.location.origin}/delivery/auth/callback`,
+          redirectTo || `${window.location.origin}/auth/callback`,
       },
     });
     if (error) throw new Error(error.message);

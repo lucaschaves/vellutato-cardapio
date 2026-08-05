@@ -1,23 +1,30 @@
 import { Minus, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { IconeGoogle } from "../../components/IconeGoogle";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
 import { validarCupom } from "../../lib/cupons";
 import {
   buscarCep,
+  buscarClienteDeliveryPorCelular,
   formatarCpf,
   garantirClienteCheckout,
   geocodificarEndereco,
   listarEnderecos,
   salvarEndereco,
+  type ClienteDelivery,
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
-import { avaliarEntrega, type DeliveryConfig } from "../../lib/deliveryFrete";
+import {
+  avaliarEntrega,
+  formatarDistanciaEntrega,
+  taxaMinimaConfig,
+  type DeliveryConfig,
+} from "../../lib/deliveryFrete";
 import {
   lerEnderecoDeliveryLocal,
   lerGuestDeliveryLocal,
@@ -33,9 +40,15 @@ import {
 } from "../../lib/deliveryPedido";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { ErroNegocioCheckout } from "../../lib/pedidos";
+import {
+  lembrarClienteAnalytics,
+  track,
+} from "../../lib/analytics";
 import { supabase } from "../../lib/supabase";
 import {
   formatarTelefoneBr,
+  mensagemTelefoneInvalido,
+  telefoneCelularValido,
   telefoneDigitosCompleto,
 } from "../../lib/telefone";
 import {
@@ -69,17 +82,7 @@ function custoItem(item: {
 export function DeliveryCheckout() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const {
-    logado,
-    cliente,
-    usuario,
-    entrarComGoogle,
-    enviarOtpSms,
-    verificarOtpSms,
-    recarregar,
-    cadastroCompleto,
-    carregando: authLoading,
-  } = useDeliveryCliente();
+  const { cliente, usuario, carregando: authLoading } = useDeliveryCliente();
   const itens = useCartStore((s) => s.itens);
   const cupomAplicado = useCartStore((s) => s.cupomAplicado);
   const aplicarCupom = useCartStore((s) => s.aplicarCupom);
@@ -91,6 +94,13 @@ export function DeliveryCheckout() {
   const consolidarItensIguais = useCartStore((s) => s.consolidarItensIguais);
   const obterSubtotal = useCartStore((s) => s.obterSubtotal);
   const obterDescontoCupom = useCartStore((s) => s.obterDescontoCupom);
+  const [carrinhoHidratado, setCarrinhoHidratado] = useState(() =>
+    useCartStore.persist.hasHydrated(),
+  );
+
+  useEffect(() => {
+    track("begin_checkout", { canal: "delivery" });
+  }, []);
 
   const [passo, setPasso] = useState<PassoCheckout>(1);
   const [config, setConfig] = useState<DeliveryConfig | null>(null);
@@ -140,12 +150,14 @@ export function DeliveryCheckout() {
   const [guestEmail, setGuestEmail] = useState(
     () => lerGuestDeliveryLocal()?.email ?? "",
   );
-  const [otpEnviado, setOtpEnviado] = useState(false);
-  const [otpCodigo, setOtpCodigo] = useState("");
-  const [enviandoOtp, setEnviandoOtp] = useState(false);
-  const [verificandoOtp, setVerificandoOtp] = useState(false);
-  const [telefoneVerificado, setTelefoneVerificado] = useState(false);
-  const [, setGuestClienteId] = useState<string | null>(null);
+  const [guestClienteId, setGuestClienteId] = useState<string | null>(
+    () => lerGuestDeliveryLocal()?.clienteId ?? null,
+  );
+  const [clientePorTelefone, setClientePorTelefone] =
+    useState<ClienteDelivery | null>(null);
+  const [buscandoCliente, setBuscandoCliente] = useState(false);
+  const [telefoneConsultado, setTelefoneConsultado] = useState(false);
+  const buscaTelRef = useRef(0);
   const [codigoCupom, setCodigoCupom] = useState("");
   const [pagarNaLoja, setPagarNaLoja] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -153,8 +165,11 @@ export function DeliveryCheckout() {
   const [redirecionandoPagamento, setRedirecionandoPagamento] = useState(false);
   const [freteMsg, setFreteMsg] = useState<string | null>(null);
   const [taxaFrete, setTaxaFrete] = useState(0);
+  const [acrescimoClima, setAcrescimoClima] = useState(0);
   const [distanciaKm, setDistanciaKm] = useState<number | null>(null);
   const [sugestoes, setSugestoes] = useState<SugestaoCheckout[]>([]);
+  const [confirmarLimparSacola, setConfirmarLimparSacola] = useState(false);
+  const freteTrackRef = useRef<string>("");
 
   const subtotal = obterSubtotal();
   const desconto = obterDescontoCupom();
@@ -166,6 +181,15 @@ export function DeliveryCheckout() {
   useEffect(() => {
     consolidarItensIguais();
   }, [consolidarItensIguais]);
+
+  useEffect(() => {
+    const concluir = () => setCarrinhoHidratado(true);
+    if (useCartStore.persist.hasHydrated()) {
+      concluir();
+      return;
+    }
+    return useCartStore.persist.onFinishHydration(concluir);
+  }, []);
 
   useEffect(() => {
     void buscarDeliveryConfig().then(setConfig);
@@ -191,29 +215,108 @@ export function DeliveryCheckout() {
     if (cliente?.celular) setGuestTelefone(formatarTelefoneBr(cliente.celular));
     if (cliente?.email) setGuestEmail(cliente.email);
     else if (usuario?.email) setGuestEmail(usuario.email);
-    if (cliente?.id) setGuestClienteId(cliente.id);
+    if (cliente?.id) {
+      setGuestClienteId(cliente.id);
+      setClientePorTelefone(cliente);
+      setTelefoneConsultado(true);
+    }
   }, [cliente, usuario?.email]);
 
-  useEffect(() => {
-    if (!cliente?.id) return;
-    void listarEnderecos(cliente.id).then((lista) => {
+  const carregarEnderecosCliente = (clienteId: string) => {
+    void listarEnderecos(clienteId).then((lista) => {
       setEnderecos(lista);
       const padrao = lista.find((e) => e.padrao) || lista[0];
       if (padrao) {
         setEnderecoId(padrao.id);
         setUsarNovoEndereco(false);
-      } else {
+        salvarEnderecoDeliveryLocal({
+          cep: padrao.cep,
+          rua: padrao.rua,
+          numero: padrao.numero,
+          bairro: padrao.bairro,
+          cidade: padrao.cidade,
+          uf: padrao.uf,
+          complemento: padrao.complemento || "",
+          referencia: padrao.referencia || "",
+          latitude: padrao.latitude,
+          longitude: padrao.longitude,
+        });
+      } else if (!lerEnderecoDeliveryLocal()) {
         setUsarNovoEndereco(true);
       }
     });
+  };
+
+  useEffect(() => {
+    if (cliente?.id) carregarEnderecosCliente(cliente.id);
   }, [cliente?.id]);
 
-  // Conta já autenticada com cadastro completo = telefone ok
+  /** Identifica cliente só pelo telefone (sem SMS/Google). */
   useEffect(() => {
-    if (logado && cadastroCompleto && cliente?.celular) {
-      setTelefoneVerificado(true);
+    if (!telefoneDigitosCompleto(guestTelefone)) {
+      setClientePorTelefone(null);
+      setTelefoneConsultado(false);
+      setBuscandoCliente(false);
+      return;
     }
-  }, [logado, cadastroCompleto, cliente?.celular]);
+
+    const seq = ++buscaTelRef.current;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          setBuscandoCliente(true);
+          const encontrado =
+            await buscarClienteDeliveryPorCelular(guestTelefone);
+          if (seq !== buscaTelRef.current) return;
+
+          setClientePorTelefone(encontrado);
+          setTelefoneConsultado(true);
+
+          if (encontrado) {
+            setGuestNome(encontrado.nome || "");
+            setGuestEmail(encontrado.email || "");
+            setGuestClienteId(encontrado.id);
+            if (encontrado.cpf) setCpfNota(formatarCpf(encontrado.cpf));
+            salvarGuestDeliveryLocal({
+              nome: encontrado.nome || "",
+              telefone: guestTelefone,
+              email: encontrado.email,
+              clienteId: encontrado.id,
+            });
+            carregarEnderecosCliente(encontrado.id);
+            track("auth_ok", {
+              canal: "delivery",
+              clienteId: encontrado.id,
+              props: { metodo: "telefone", cadastro: "existente" },
+            });
+          } else {
+            setGuestClienteId(null);
+            // Novo: limpa nome/email só se não havia rascunho local do mesmo tel
+            const guest = lerGuestDeliveryLocal();
+            const mesmoTel =
+              guest?.telefone &&
+              telefoneDigitosCompleto(guest.telefone) &&
+              guest.telefone.replace(/\D/g, "") ===
+                guestTelefone.replace(/\D/g, "");
+            if (!mesmoTel) {
+              setGuestNome("");
+              setGuestEmail("");
+            }
+          }
+        } catch (e) {
+          console.error("[CHECKOUT] busca cliente", e);
+          if (seq === buscaTelRef.current) {
+            setClientePorTelefone(null);
+            setTelefoneConsultado(true);
+          }
+        } finally {
+          if (seq === buscaTelRef.current) setBuscandoCliente(false);
+        }
+      })();
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [guestTelefone]);
 
   // Sugestões: vendas cruzadas dos itens + promoções (até 4)
   useEffect(() => {
@@ -329,6 +432,7 @@ export function DeliveryCheckout() {
   useEffect(() => {
     if (!config || modalidade !== "entrega") {
       setTaxaFrete(0);
+      setAcrescimoClima(0);
       setFreteMsg(null);
       setDistanciaKm(null);
       return;
@@ -336,23 +440,61 @@ export function DeliveryCheckout() {
     if (enderecoAtivo.latitude == null || enderecoAtivo.longitude == null) {
       setFreteMsg("Informe o endereço completo para calcular o frete.");
       setTaxaFrete(0);
+      setAcrescimoClima(0);
       return;
     }
-    const r = avaliarEntrega(
-      config,
-      enderecoAtivo.latitude,
-      enderecoAtivo.longitude,
-      subtotal,
-    );
-    if (!r.ok) {
-      setFreteMsg(r.erro);
-      setTaxaFrete(0);
-      setDistanciaKm(r.distancia_km ?? null);
-      return;
-    }
-    setFreteMsg(null);
-    setTaxaFrete(r.taxa);
-    setDistanciaKm(r.distancia_km);
+    let ativo = true;
+    void (async () => {
+      const r = await avaliarEntrega(
+        config,
+        enderecoAtivo.latitude!,
+        enderecoAtivo.longitude!,
+        subtotal,
+      );
+      if (!ativo) return;
+      if (!r.ok) {
+        setFreteMsg(r.erro);
+        setTaxaFrete(0);
+        setAcrescimoClima(0);
+        setDistanciaKm(r.distancia_km ?? null);
+        const chave = `err:${enderecoAtivo.latitude},${enderecoAtivo.longitude}:${r.erro}`;
+        if (freteTrackRef.current !== chave) {
+          freteTrackRef.current = chave;
+          const foraRaio = /raio|área|area|não atendemos|nao atendemos/i.test(
+            r.erro || "",
+          );
+          track(foraRaio ? "cep_fora_raio" : "checkout_error", {
+            canal: "delivery",
+            props: {
+              motivo: foraRaio ? "fora_raio" : "frete",
+              erro: r.erro,
+              distancia_km: r.distancia_km,
+            },
+          });
+        }
+        return;
+      }
+      setFreteMsg(null);
+      setTaxaFrete(r.taxa);
+      setAcrescimoClima(r.acrescimo_clima);
+      setDistanciaKm(r.distancia_km);
+      const chaveOk = `ok:${enderecoAtivo.latitude},${enderecoAtivo.longitude}:${r.taxa}`;
+      if (freteTrackRef.current !== chaveOk) {
+        freteTrackRef.current = chaveOk;
+        track("cep_ok", {
+          canal: "delivery",
+          props: {
+            taxa: r.taxa,
+            distancia_km: r.distancia_km,
+            chuva: r.chuva,
+            acrescimo_clima: r.acrescimo_clima,
+          },
+        });
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
   }, [config, modalidade, enderecoAtivo, subtotal]);
 
   const freteConfirmado =
@@ -361,9 +503,7 @@ export function DeliveryCheckout() {
     enderecoAtivo.latitude != null &&
     enderecoAtivo.longitude != null;
 
-  const taxaMinimaEstimada = config?.faixas_frete?.length
-    ? Math.min(...config.faixas_frete.map((f) => f.taxa))
-    : 0;
+  const taxaMinimaEstimada = config ? taxaMinimaConfig(config) : 0;
 
   const taxaExibida =
     modalidade === "entrega"
@@ -460,53 +600,9 @@ export function DeliveryCheckout() {
     }
   };
 
-  const enviarCodigoCheckout = async () => {
-    if (!telefoneDigitosCompleto(guestTelefone)) {
-      toast.error("Informe um telefone válido com DDD.");
-      return;
-    }
-    try {
-      setEnviandoOtp(true);
-      await enviarOtpSms(guestTelefone);
-      setOtpEnviado(true);
-      setOtpCodigo("");
-      toast.success("Código enviado por SMS.");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Falha ao enviar SMS");
-    } finally {
-      setEnviandoOtp(false);
-    }
-  };
-
-  /** Confirma telefone via OTP; só então carrega dados do cliente. */
-  const confirmarCodigoCheckout = async () => {
-    if (!telefoneDigitosCompleto(guestTelefone)) {
-      toast.error("Informe um telefone válido com DDD.");
-      return;
-    }
-    try {
-      setVerificandoOtp(true);
-      await verificarOtpSms(guestTelefone, otpCodigo);
-      await recarregar();
-      setTelefoneVerificado(true);
-      setOtpEnviado(false);
-      setOtpCodigo("");
-      toast.success("Telefone confirmado!");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Código inválido");
-    } finally {
-      setVerificandoOtp(false);
-    }
-  };
-
   const aoAlterarTelefone = (valor: string) => {
-    const formatado = formatarTelefoneBr(valor);
-    setGuestTelefone(formatado);
-    if (telefoneVerificado || otpEnviado) {
-      setTelefoneVerificado(false);
-      setOtpEnviado(false);
-      setOtpCodigo("");
-    }
+    setGuestTelefone(formatarTelefoneBr(valor));
+    setTelefoneConsultado(false);
   };
 
   const persistirClienteEEnderecoLocal = async (
@@ -579,37 +675,26 @@ export function DeliveryCheckout() {
       enderecoAtivo.longitude != null &&
       !freteMsg);
 
-  const usaDadosConta = Boolean(
-    logado &&
-    cadastroCompleto &&
-    cliente?.nome?.trim() &&
-    cliente.celular &&
-    telefoneDigitosCompleto(cliente.celular),
-  );
-  const emailConta = cliente?.email?.trim() || usuario?.email?.trim() || "";
   const precisaEmailPagamento = !(modalidade === "retirada" && pagarNaLoja);
-  const dadosClienteOk = (() => {
-    if (usaDadosConta) {
-      if (!precisaEmailPagamento) return true;
-      return Boolean(
-        emailConta.includes("@") ||
-        (guestEmail.trim().includes("@") && guestEmail.trim().includes(".")),
-      );
-    }
-    return Boolean(
-      telefoneVerificado &&
-      guestNome.trim() &&
+  const emailValido =
+    guestEmail.trim().includes("@") && guestEmail.trim().includes(".");
+  const dadosClienteOk = Boolean(
+    telefoneConsultado &&
+      !buscandoCliente &&
       telefoneDigitosCompleto(guestTelefone) &&
-      (!precisaEmailPagamento ||
-        (guestEmail.trim().includes("@") && guestEmail.trim().includes("."))),
-    );
-  })();
+      guestNome.trim() &&
+      (!precisaEmailPagamento || emailValido),
+  );
 
   const podePagar = !enviando && enderecoEntregaOk && dadosClienteOk;
 
   const aplicarCupomHandler = async () => {
     try {
-      const r = await validarCupom(codigoCupom, subtotal, cliente?.id);
+      const r = await validarCupom(
+        codigoCupom,
+        subtotal,
+        guestClienteId || cliente?.id,
+      );
       if (!r.ok) {
         toast.error(r.erro);
         return;
@@ -678,55 +763,37 @@ export function DeliveryCheckout() {
     const statusPagamento =
       modalidade === "retirada" && pagarNaLoja ? "na_loja" : "aguardando";
 
-    if (!usaDadosConta && !telefoneVerificado) {
-      toast.error("Confirme seu telefone com o código SMS.");
+    if (!telefoneDigitosCompleto(guestTelefone)) {
+      toast.error("Informe um telefone válido com DDD.");
+      return;
+    }
+    if (!guestNome.trim()) {
+      toast.error("Informe seu nome.");
+      return;
+    }
+    if (
+      statusPagamento === "aguardando" &&
+      !(guestEmail.trim().includes("@") && guestEmail.trim().includes("."))
+    ) {
+      toast.error("Informe um e-mail para o pagamento online.");
       return;
     }
 
     try {
       setEnviando(true);
 
-      let clienteId: string | null = null;
-      let clienteNome = "";
-      let clienteCelular: string | null = null;
-      let emailPagamento: string | null = null;
-      let cpfCliente: string | null = null;
-
-      if (usaDadosConta && cliente) {
-        clienteId = cliente.id;
-        clienteNome = cliente.nome;
-        clienteCelular = cliente.celular;
-        emailPagamento = emailConta || guestEmail.trim() || null;
-        cpfCliente = cliente.cpf;
-      } else {
-        if (!guestNome.trim()) {
-          toast.error("Informe seu nome.");
-          return;
-        }
-        if (!telefoneDigitosCompleto(guestTelefone)) {
-          toast.error("Informe um telefone válido com DDD.");
-          return;
-        }
-        if (
-          statusPagamento === "aguardando" &&
-          !(guestEmail.trim().includes("@") && guestEmail.trim().includes("."))
-        ) {
-          toast.error("Informe um e-mail para o pagamento online.");
-          return;
-        }
-
-        const clienteCheckout = await garantirClienteCheckout({
-          nome: guestNome,
-          celular: guestTelefone,
-          email: guestEmail.trim() || null,
-        });
-        clienteId = clienteCheckout.id;
-        clienteNome = clienteCheckout.nome;
-        clienteCelular = clienteCheckout.celular;
-        emailPagamento =
-          clienteCheckout.email?.trim() || guestEmail.trim() || null;
-        cpfCliente = clienteCheckout.cpf;
-      }
+      const clienteCheckout = await garantirClienteCheckout({
+        nome: guestNome,
+        celular: guestTelefone,
+        email: guestEmail.trim() || null,
+      });
+      const clienteId = clienteCheckout.id;
+      const clienteNome = clienteCheckout.nome;
+      const clienteCelular = clienteCheckout.celular;
+      const emailPagamento =
+        guestEmail.trim() || clienteCheckout.email?.trim() || null;
+      const cpfCliente = clienteCheckout.cpf || null;
+      setGuestClienteId(clienteId);
 
       if (statusPagamento === "aguardando" && !emailPagamento) {
         toast.error("Informe um e-mail para o pagamento online.");
@@ -783,6 +850,25 @@ export function DeliveryCheckout() {
         distancia_km: distanciaKm,
       });
 
+      lembrarClienteAnalytics(clienteId);
+      track("order_created", {
+        canal: "delivery",
+        pedidoId: resultado.pedido_id,
+        clienteId,
+        props: {
+          modalidade,
+          status_pagamento: statusPagamento,
+          total,
+        },
+      });
+      if (statusPagamento === "na_loja") {
+        track("payment_ok", {
+          canal: "delivery",
+          pedidoId: resultado.pedido_id,
+          props: { metodo: "na_loja" },
+        });
+      }
+
       // A + B: localStorage + cliente_enderecos (mesmo sem login)
       if (clienteId) {
         await persistirClienteEEnderecoLocal(
@@ -797,7 +883,7 @@ export function DeliveryCheckout() {
       if (statusPagamento === "na_loja") {
         limparCarrinho();
         toast.success("Pedido enviado à cozinha!");
-        navigate(`/delivery/pedido/${resultado.pedido_id}`);
+        navigate(`/pedido/${resultado.pedido_id}`);
         return;
       }
 
@@ -811,6 +897,10 @@ export function DeliveryCheckout() {
       window.location.assign(checkout.checkout_url);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
+      track("checkout_error", {
+        canal: "delivery",
+        props: { motivo: "criar_pedido", erro: msg },
+      });
       if (e instanceof ErroNegocioCheckout) toast.error(msg);
       else toast.error(msg || "Falha ao criar pedido");
       setRedirecionandoPagamento(false);
@@ -819,10 +909,10 @@ export function DeliveryCheckout() {
     }
   };
 
-  if (authLoading || redirecionandoPagamento) {
+  if (authLoading || redirecionandoPagamento || !carrinhoHidratado) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
         <p className="text-sm font-semibold text-zinc-600">
           {redirecionandoPagamento
             ? "Redirecionando para o pagamento…"
@@ -836,7 +926,7 @@ export function DeliveryCheckout() {
     return (
       <div className="text-center py-16 space-y-3">
         <p className="font-bold">Sacola vazia</p>
-        <Button onClick={() => navigate("/delivery")}>Ver cardápio</Button>
+        <Button onClick={() => navigate("/")}>Ver cardápio</Button>
       </div>
     );
   }
@@ -845,7 +935,7 @@ export function DeliveryCheckout() {
     <div className="relative space-y-4 pb-8">
       {enviando && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-white/80 backdrop-blur-sm">
-          <div className="animate-spin h-10 w-10 border-4 border-red-600 border-t-transparent rounded-full" />
+          <div className="animate-spin h-10 w-10 border-4 border-cookie-primary border-t-transparent rounded-full" />
           <p className="text-sm font-bold text-zinc-700">
             Preparando pagamento…
           </p>
@@ -858,17 +948,29 @@ export function DeliveryCheckout() {
         <h1 className="text-2xl font-black">
           {passo === 1 ? "Sua sacola" : "Entrega e pagamento"}
         </h1>
-        <span className="text-xs font-semibold text-zinc-400">
-          Passo {passo} de 2
-        </span>
+        <div className="flex items-center gap-3 shrink-0">
+          {passo === 1 && (
+            <button
+              type="button"
+              onClick={() => setConfirmarLimparSacola(true)}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-zinc-500 hover:text-cookie-primary transition-colors"
+            >
+              <Trash2 size={15} />
+              Limpar
+            </button>
+          )}
+          <span className="text-xs font-semibold text-zinc-400">
+            Passo {passo} de 2
+          </span>
+        </div>
       </div>
 
       <div className="flex gap-2">
         <div
-          className={`h-1 flex-1 rounded-full ${passo >= 1 ? "bg-red-600" : "bg-zinc-200"}`}
+          className={`h-1 flex-1 rounded-full ${passo >= 1 ? "bg-cookie-primary" : "bg-zinc-200"}`}
         />
         <div
-          className={`h-1 flex-1 rounded-full ${passo >= 2 ? "bg-red-600" : "bg-zinc-200"}`}
+          className={`h-1 flex-1 rounded-full ${passo >= 2 ? "bg-cookie-primary" : "bg-zinc-200"}`}
         />
       </div>
 
@@ -882,7 +984,7 @@ export function DeliveryCheckout() {
                 onClick={() => setModalidade(m)}
                 className={`rounded-2xl border p-3 font-bold capitalize ${
                   modalidade === m
-                    ? "border-red-600 bg-red-50 text-red-700"
+                    ? "border-cookie-primary bg-cookie-primary/10 text-cookie-primary"
                     : "border-zinc-200 bg-white"
                 }`}
               >
@@ -910,7 +1012,7 @@ export function DeliveryCheckout() {
                       {i.adicionais.map((a) => a.nome).join(", ")}
                     </p>
                   )}
-                  <p className="text-sm font-bold text-red-600 mt-1">
+                  <p className="text-sm font-bold text-cookie-primary mt-1">
                     R$ {custoItem(i).toFixed(2).replace(".", ",")}
                   </p>
                   <div className="flex items-center gap-2 mt-2">
@@ -973,7 +1075,7 @@ export function DeliveryCheckout() {
                       {s.nome}
                     </p>
                     <div className="flex items-baseline gap-1.5 mt-1">
-                      <span className="text-sm font-black text-red-600">
+                      <span className="text-sm font-black text-cookie-primary">
                         {s.ehBrinde
                           ? "Grátis"
                           : `R$ ${s.preco.toFixed(2).replace(".", ",")}`}
@@ -986,7 +1088,7 @@ export function DeliveryCheckout() {
                     </div>
                     <Button
                       size="sm"
-                      className="w-full mt-2 bg-red-600 hover:bg-red-700 h-8 text-xs"
+                      className="w-full mt-2 bg-cookie-primary hover:bg-cookie-primary-hover h-8 text-xs"
                       onClick={() => adicionarSugestao(s)}
                     >
                       Adicionar
@@ -1006,7 +1108,7 @@ export function DeliveryCheckout() {
                 </span>
                 <button
                   type="button"
-                  className="text-red-600 font-semibold"
+                  className="text-cookie-primary font-semibold"
                   onClick={() => removerCupom()}
                 >
                   Remover
@@ -1068,7 +1170,7 @@ export function DeliveryCheckout() {
           </section>
 
           <Button
-            className="w-full h-12 bg-red-600 hover:bg-red-700 text-base font-bold"
+            className="w-full h-12 bg-cookie-primary hover:bg-cookie-primary-hover text-base font-bold"
             onClick={irParaEntrega}
           >
             Continuar
@@ -1082,157 +1184,66 @@ export function DeliveryCheckout() {
             <div>
               <h2 className="font-bold">Seus dados</h2>
               <p className="text-xs text-zinc-500 mt-0.5">
-                {usaDadosConta
-                  ? "Usando os dados da sua conta."
-                  : "Confirme o telefone com o código SMS para continuar."}
+                Informe o WhatsApp. Se já tiver cadastro, carregamos seus dados.
               </p>
             </div>
 
-            {usaDadosConta && cliente ? (
-              <div className="space-y-3">
-                <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-3 py-3 space-y-1 text-sm">
-                  <p className="font-semibold">{cliente.nome}</p>
-                  {cliente.celular && (
-                    <p className="text-zinc-600">
-                      {formatarTelefoneBr(cliente.celular)}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="checkout-tel"
+                  className="text-sm font-semibold text-zinc-800"
+                >
+                  Telefone / WhatsApp <span className="text-cookie-primary">*</span>
+                </label>
+                <Input
+                  id="checkout-tel"
+                  placeholder="(00) 00000-0000"
+                  value={guestTelefone}
+                  inputMode="tel"
+                  autoComplete="tel"
+                  maxLength={15}
+                  onChange={(e) => aoAlterarTelefone(e.target.value)}
+                />
+                <p className="text-[11px] text-zinc-400">
+                  11 dígitos: DDD + 9 + número (ex.: 11 98765-4321)
+                </p>
+                {guestTelefone.replace(/\D/g, "").length > 0 &&
+                  !telefoneCelularValido(guestTelefone) && (
+                    <p className="text-xs font-semibold text-cookie-primary">
+                      {mensagemTelefoneInvalido(guestTelefone)}
                     </p>
                   )}
-                  {emailConta && (
-                    <p className="text-zinc-500 text-xs">{emailConta}</p>
-                  )}
-                </div>
-                {precisaEmailPagamento && !emailConta.includes("@") && (
-                  <div className="space-y-1.5">
-                    <label
-                      htmlFor="checkout-email-conta"
-                      className="text-sm font-semibold text-zinc-800"
-                    >
-                      E-mail <span className="text-red-600">*</span>
-                    </label>
-                    <Input
-                      id="checkout-email-conta"
-                      placeholder="seu@email.com"
-                      type="email"
-                      value={guestEmail}
-                      autoComplete="email"
-                      onChange={(e) => setGuestEmail(e.target.value)}
-                    />
-                    <p className="text-[11px] text-zinc-400">
-                      Necessário para o pagamento online (Pix/cartão).
-                    </p>
-                  </div>
+                {buscandoCliente && (
+                  <p className="text-xs text-zinc-400">Buscando cadastro…</p>
                 )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="checkout-tel"
-                    className="text-sm font-semibold text-zinc-800"
-                  >
-                    Telefone / WhatsApp <span className="text-red-600">*</span>
-                  </label>
-                  <Input
-                    id="checkout-tel"
-                    placeholder="(00) 00000-0000"
-                    value={guestTelefone}
-                    inputMode="tel"
-                    autoComplete="tel"
-                    disabled={telefoneVerificado}
-                    onChange={(e) => aoAlterarTelefone(e.target.value)}
-                  />
-                  {telefoneVerificado ? (
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-emerald-600">
-                        Telefone confirmado
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTelefoneVerificado(false);
-                          setOtpEnviado(false);
-                          setOtpCodigo("");
-                        }}
-                        className="text-xs font-semibold text-zinc-500"
-                      >
-                        Alterar
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 pt-1">
-                      {otpEnviado && (
-                        <Input
-                          id="checkout-otp"
-                          placeholder="Código SMS (6 dígitos)"
-                          value={otpCodigo}
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          onChange={(e) =>
-                            setOtpCodigo(
-                              e.target.value.replace(/\D/g, "").slice(0, 6),
-                            )
-                          }
-                        />
-                      )}
-                      {!otpEnviado ? (
-                        <Button
-                          type="button"
-                          className="w-full bg-red-600 hover:bg-red-700"
-                          disabled={enviandoOtp}
-                          onClick={() => void enviarCodigoCheckout()}
-                        >
-                          {enviandoOtp
-                            ? "Enviando…"
-                            : "Enviar código por SMS para confirmar"}
-                        </Button>
-                      ) : (
-                        <div className="space-y-2">
-                          <Button
-                            type="button"
-                            className="w-full bg-red-600 hover:bg-red-700"
-                            disabled={verificandoOtp || otpCodigo.length < 6}
-                            onClick={() => void confirmarCodigoCheckout()}
-                          >
-                            {verificandoOtp
-                              ? "Verificando…"
-                              : "Confirmar código"}
-                          </Button>
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="flex-1"
-                              disabled={enviandoOtp}
-                              onClick={() => void enviarCodigoCheckout()}
-                            >
-                              Reenviar
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => {
-                                setOtpEnviado(false);
-                                setOtpCodigo("");
-                              }}
-                            >
-                              Alterar telefone
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                {telefoneConsultado &&
+                  !buscandoCliente &&
+                  clientePorTelefone && (
+                    <p className="text-xs font-semibold text-emerald-600">
+                      Cadastro encontrado — confira ou edite os dados abaixo.
+                    </p>
                   )}
-                </div>
-                {telefoneVerificado && (
+                {telefoneConsultado &&
+                  !buscandoCliente &&
+                  !clientePorTelefone &&
+                  telefoneCelularValido(guestTelefone) && (
+                    <p className="text-xs text-zinc-500">
+                      Novo cliente — preencha nome e e-mail para continuar.
+                    </p>
+                  )}
+              </div>
+
+              {telefoneConsultado &&
+                !buscandoCliente &&
+                telefoneDigitosCompleto(guestTelefone) && (
                   <>
                     <div className="space-y-1.5">
                       <label
                         htmlFor="checkout-nome"
                         className="text-sm font-semibold text-zinc-800"
                       >
-                        Nome completo <span className="text-red-600">*</span>
+                        Nome completo <span className="text-cookie-primary">*</span>
                       </label>
                       <Input
                         id="checkout-nome"
@@ -1249,7 +1260,7 @@ export function DeliveryCheckout() {
                       >
                         E-mail{" "}
                         {precisaEmailPagamento ? (
-                          <span className="text-red-600">*</span>
+                          <span className="text-cookie-primary">*</span>
                         ) : (
                           <span className="text-zinc-400 font-normal">
                             (opcional)
@@ -1266,33 +1277,14 @@ export function DeliveryCheckout() {
                       />
                       {precisaEmailPagamento && (
                         <p className="text-[11px] text-zinc-400">
-                          Necessário para o pagamento online (Pix/cartão).
+                          Necessário para o pagamento online (Pix/cartão). Você
+                          pode editar a qualquer momento.
                         </p>
                       )}
                     </div>
                   </>
                 )}
-                {!logado && !telefoneVerificado && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() =>
-                      void entrarComGoogle(
-                        `${window.location.origin}/delivery/auth/callback`,
-                      ).catch((e) =>
-                        toast.error(
-                          e instanceof Error ? e.message : "Erro no login",
-                        ),
-                      )
-                    }
-                  >
-                    <IconeGoogle className="h-5 w-5 mr-2" />
-                    Entrar com Google
-                  </Button>
-                )}
-              </div>
-            )}
+            </div>
           </section>
 
           {modalidade === "entrega" && (
@@ -1325,7 +1317,7 @@ export function DeliveryCheckout() {
                   ))}
                   <button
                     type="button"
-                    className="text-sm text-red-600 font-semibold"
+                    className="text-sm text-cookie-primary font-semibold"
                     onClick={() => setUsarNovoEndereco(true)}
                   >
                     + Novo endereço
@@ -1335,7 +1327,7 @@ export function DeliveryCheckout() {
               {(usarNovoEndereco || enderecos.length === 0) && (
                 <div className="space-y-4">
                   <p className="text-xs text-zinc-500">
-                    Campos com <span className="text-red-600 font-bold">*</span>{" "}
+                    Campos com <span className="text-cookie-primary font-bold">*</span>{" "}
                     são obrigatórios.
                   </p>
 
@@ -1345,7 +1337,7 @@ export function DeliveryCheckout() {
                       htmlFor="entrega-cep"
                       className="text-sm font-semibold text-zinc-800"
                     >
-                      CEP <span className="text-red-600">*</span>
+                      CEP <span className="text-cookie-primary">*</span>
                     </label>
                     <div className="flex gap-2">
                       <Input
@@ -1398,7 +1390,7 @@ export function DeliveryCheckout() {
                             htmlFor="entrega-numero"
                             className="text-sm font-semibold text-zinc-800"
                           >
-                            Número <span className="text-red-600">*</span>
+                            Número <span className="text-cookie-primary">*</span>
                           </label>
                           <Input
                             id="entrega-numero"
@@ -1423,7 +1415,7 @@ export function DeliveryCheckout() {
                             htmlFor="entrega-rua"
                             className="text-sm font-semibold text-zinc-800"
                           >
-                            Rua <span className="text-red-600">*</span>
+                            Rua <span className="text-cookie-primary">*</span>
                           </label>
                           <Input
                             id="entrega-rua"
@@ -1445,7 +1437,7 @@ export function DeliveryCheckout() {
                           htmlFor="entrega-bairro"
                           className="text-sm font-semibold text-zinc-800"
                         >
-                          Bairro <span className="text-red-600">*</span>
+                          Bairro <span className="text-cookie-primary">*</span>
                         </label>
                         <Input
                           id="entrega-bairro"
@@ -1519,7 +1511,12 @@ export function DeliveryCheckout() {
               {!freteMsg && (
                 <p className="text-sm text-zinc-600">
                   Frete: R$ {taxaFrete.toFixed(2).replace(".", ",")}
-                  {distanciaKm != null ? ` · ${distanciaKm} km` : ""}
+                  {acrescimoClima > 0
+                    ? ` (inclui +R$ ${acrescimoClima.toFixed(2).replace(".", ",")} chuva)`
+                    : ""}
+                  {distanciaKm != null
+                    ? ` · ${formatarDistanciaEntrega(distanciaKm)}`
+                    : ""}
                   {config?.tempo_estimado_min
                     ? ` · ~${config.tempo_estimado_min} min`
                     : ""}
@@ -1588,7 +1585,7 @@ export function DeliveryCheckout() {
               Voltar
             </Button>
             <Button
-              className="h-12 bg-red-600 hover:bg-red-700 text-base font-bold"
+              className="h-12 bg-cookie-primary hover:bg-cookie-primary-hover text-base font-bold"
               disabled={!podePagar}
               onClick={() => void finalizar()}
             >
@@ -1601,6 +1598,20 @@ export function DeliveryCheckout() {
           </div>
         </>
       )}
+
+      <ModalConfirmacao
+        aberto={confirmarLimparSacola}
+        titulo="Limpar sacola?"
+        mensagem="Todos os itens serão removidos. Essa ação não pode ser desfeita."
+        textoConfirmar="Sim, limpar"
+        textoCancelar="Manter itens"
+        aoCancelar={() => setConfirmarLimparSacola(false)}
+        aoConfirmar={() => {
+          limparCarrinho();
+          setConfirmarLimparSacola(false);
+          toast.message("Sacola limpa");
+        }}
+      />
     </div>
   );
 }

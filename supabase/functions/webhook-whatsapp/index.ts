@@ -1,10 +1,6 @@
-/**
- * Webhook oficial WhatsApp Cloud API (Meta).
- * - GET: verificação do challenge
- * - POST: mensagem inbound do cliente → abre/renova janela 24h
- */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { lerSegredo, lerSegredos } from "../_shared/segredos.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -32,11 +28,9 @@ function extrairPedidoDaMensagem(texto: string): {
 async function enviarTexto(
   para: string,
   corpo: string,
+  token: string,
+  phoneId: string,
 ): Promise<void> {
-  const token = Deno.env.get("WHATSAPP_TOKEN");
-  const phoneId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-  if (!token || !phoneId) return;
-
   await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
     method: "POST",
     headers: {
@@ -60,7 +54,7 @@ Deno.serve(async (req) => {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
-    const esperado = Deno.env.get("WHATSAPP_VERIFY_TOKEN");
+    const esperado = await lerSegredo("WHATSAPP_VERIFY_TOKEN");
 
     if (mode === "subscribe" && token && esperado && token === esperado) {
       return new Response(challenge || "", {
@@ -76,6 +70,10 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const wa = await lerSegredos(["WHATSAPP_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"]);
+    const waToken = wa.WHATSAPP_TOKEN;
+    const waPhoneId = wa.WHATSAPP_PHONE_NUMBER_ID;
+
     const payload = await req.json();
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -155,7 +153,9 @@ Deno.serve(async (req) => {
               ? `Pronto! Vamos te avisar por aqui a cada atualização do seu pedido. 🍪\nJanela ativa por 24h — se precisar, envie outra mensagem depois.`
               : `Recebemos sua mensagem! Envie o número do pedido (ex: #42) para vincularmos as atualizações.`;
 
-          await enviarTexto(from, conf);
+          if (waToken && waPhoneId) {
+            await enviarTexto(from, conf, waToken, waPhoneId);
+          }
         }
       }
     }

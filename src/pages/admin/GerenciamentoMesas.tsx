@@ -12,6 +12,7 @@ import {
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -35,8 +36,8 @@ interface Mesa {
 
 function urlCardapioMesa(numero: string): string {
   const base = window.location.origin;
-  // Abre a home para passar pelo vídeo + identificação; mesa só identifica na cozinha
-  return `${base}/?mesa=${encodeURIComponent(numero)}`;
+  // Abre a home do cardápio (vídeo + identificação); mesa só identifica na cozinha
+  return `${base}/inicio?mesa=${encodeURIComponent(numero)}`;
 }
 
 export function GerenciamentoMesas() {
@@ -268,19 +269,22 @@ export function GerenciamentoMesas() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+    <AdminPageShell
+      title={
+        <h1 className="flex items-center gap-2">
           <QrCode size={28} className="text-cookie-primary" />
           Mesas
         </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Link/QR com <code className="text-xs">/?mesa=NUMERO</code> — passa pelo
-          vídeo e identificação; a mesa só identifica o pedido na cozinha.
+      }
+      description={
+        <>
+          Link/QR com <code className="text-xs">/inicio?mesa=NUMERO</code> — passa
+          pelo vídeo e identificação; a mesa só identifica o pedido na cozinha.
           Comer ou levar o cliente escolhe no carrinho.
-        </p>
-      </div>
-
+        </>
+      }
+      contentClassName="space-y-6"
+    >
       <form
         onSubmit={salvarMesa}
         className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl p-5 grid grid-cols-1 md:grid-cols-3 gap-4"
@@ -484,6 +488,6 @@ export function GerenciamentoMesas() {
           </div>
         </div>
       )}
-    </div>
+    </AdminPageShell>
   );
 }

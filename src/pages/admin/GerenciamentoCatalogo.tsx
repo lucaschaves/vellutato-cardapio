@@ -10,6 +10,8 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
+import { Button } from "../../components/ui/button";
 import { supabase } from "../../lib/supabase";
 import {
   isUnidadeMedida,
@@ -322,37 +324,48 @@ export function GerenciamentoCatalogo() {
 
   if (carregandoProduto) {
     return (
-      <div className="p-6 max-w-4xl mx-auto min-h-screen flex items-center justify-center">
+      <div className="min-h-full flex items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto h-full">
-      <header className="mb-8 border-b pb-4 border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {modoEdicao ? "Editar Produto" : "Adicionar Produto"}
-          </h1>
-          <p className="text-gray-500">
-            {modoEdicao
-              ? "Altere os dados do item no cardápio digital."
-              : "Cadastre um novo item no cardápio digital."}
-          </p>
-        </div>
-        {modoEdicao && (
-          <button
-            type="button"
-            onClick={cancelarEdicao}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+    <AdminPageShell
+      title={modoEdicao ? "Editar Produto" : "Adicionar Produto"}
+      description={
+        modoEdicao
+          ? "Altere os dados do item no cardápio digital."
+          : "Cadastre um novo item no cardápio digital."
+      }
+      footer={
+        <>
+          {modoEdicao && (
+            <Button type="button" variant="outline" onClick={cancelarEdicao}>
+              <X size={16} className="mr-2" /> Cancelar edição
+            </Button>
+          )}
+          <Button
+            type="submit"
+            form="form-catalogo-produto"
+            disabled={salvando}
+            className="bg-cookie-primary text-white font-bold"
           >
-            <X size={16} /> Cancelar edição
-          </button>
-        )}
-      </header>
-
+            {salvando ? (
+              <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+            ) : (
+              <>
+                <Save size={18} className="mr-2" />{" "}
+                {modoEdicao ? "Salvar Alterações" : "Salvar Produto"}
+              </>
+            )}
+          </Button>
+        </>
+      }
+      contentClassName="pb-2"
+    >
       <form
+        id="form-catalogo-produto"
         onSubmit={salvarProduto}
         className="grid grid-cols-1 md:grid-cols-2 gap-8"
       >
@@ -676,23 +689,8 @@ export function GerenciamentoCatalogo() {
                 : "Ao salvar, os arquivos serão enviados para os servidores em nuvem. Não feche a página durante o processo."}
             </p>
           </div>
-
-          <button
-            type="submit"
-            disabled={salvando}
-            className="w-full bg-cookie-primary text-white py-4 rounded-xl font-bold flex justify-center items-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-50"
-          >
-            {salvando ? (
-              <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
-            ) : (
-              <>
-                <Save size={20} />{" "}
-                {modoEdicao ? "Salvar Alterações" : "Salvar Produto"}
-              </>
-            )}
-          </button>
         </div>
       </form>
-    </div>
+    </AdminPageShell>
   );
 }

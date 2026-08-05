@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { supabase } from "../../lib/supabase";
+import { track } from "../../lib/analytics";
 import { adicionalCompativelComModo } from "../../lib/disponibilidadeProduto";
 import {
   buscarOfertasVendaCruzada,
@@ -104,10 +105,15 @@ export function DeliveryItem() {
           prod.disponibilidade !== "ambos"
         ) {
           toast.error("Este produto não está disponível no delivery.");
-          navigate("/delivery");
+          navigate("/");
           return;
         }
         setProduto(prod);
+        track("product_view", {
+          canal: "delivery",
+          produtoId: prod.id,
+          props: { nome: prod.nome },
+        });
 
         const listaAdc = (adcRes.data || [])
           .flatMap((v) => {
@@ -134,7 +140,7 @@ export function DeliveryItem() {
       } catch (e) {
         console.error(e);
         toast.error("Produto não encontrado");
-        navigate("/delivery");
+        navigate("/");
       } finally {
         if (!cancelado) setCarregando(false);
       }
@@ -153,7 +159,7 @@ export function DeliveryItem() {
   if (carregando || !produto) {
     return (
       <div className="flex justify-center py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -200,7 +206,7 @@ export function DeliveryItem() {
     );
   };
 
-  const voltar = () => navigate("/delivery");
+  const voltar = () => navigate("/");
 
   const adicionar = () => {
     if (
@@ -290,7 +296,7 @@ export function DeliveryItem() {
         {produto.descricao && (
           <p className="text-sm text-zinc-500">{produto.descricao}</p>
         )}
-        <p className="text-xl font-black text-red-600 pt-1">
+        <p className="text-xl font-black text-cookie-primary pt-1">
           R$ {precoBase.toFixed(2).replace(".", ",")}
         </p>
       </div>
@@ -321,18 +327,18 @@ export function DeliveryItem() {
                   onClick={() => alternarAdicional(adc)}
                   className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl border-2 transition active:scale-[0.99] ${
                     ativo
-                      ? "border-red-600 bg-red-50"
+                      ? "border-cookie-primary bg-cookie-primary/10"
                       : "border-zinc-200 bg-white"
                   }`}
                 >
                   <span className="flex items-center gap-2 font-semibold text-sm">
                     {ativo && (
-                      <Check size={16} className="text-red-600 shrink-0" />
+                      <Check size={16} className="text-cookie-primary shrink-0" />
                     )}
                     {adc.nome}
                   </span>
                   <span
-                    className={`text-sm font-bold shrink-0 ${ativo ? "text-red-600" : "text-zinc-500"}`}
+                    className={`text-sm font-bold shrink-0 ${ativo ? "text-cookie-primary" : "text-zinc-500"}`}
                   >
                     + R$ {Number(adc.preco).toFixed(2).replace(".", ",")}
                   </span>
@@ -366,7 +372,7 @@ export function DeliveryItem() {
                   onClick={() => alternarOferta(oferta.id)}
                   className={`w-full flex gap-3 p-3 rounded-2xl border-2 text-left transition active:scale-[0.99] ${
                     ativo
-                      ? "border-red-600 bg-red-50"
+                      ? "border-cookie-primary bg-cookie-primary/10"
                       : "border-zinc-200 bg-white"
                   }`}
                 >
@@ -385,7 +391,7 @@ export function DeliveryItem() {
                         {alvo.nome}
                       </p>
                       {ativo && (
-                        <Check size={16} className="text-red-600 shrink-0 mt-0.5" />
+                        <Check size={16} className="text-cookie-primary shrink-0 mt-0.5" />
                       )}
                     </div>
                     {oferta.mensagem_oferta && (
@@ -400,7 +406,7 @@ export function DeliveryItem() {
                         </span>
                       ) : (
                         <>
-                          <span className="text-sm font-black text-red-600">
+                          <span className="text-sm font-black text-cookie-primary">
                             R$ {precoOferta.toFixed(2).replace(".", ",")}
                           </span>
                           {temDesconto && (
@@ -443,7 +449,7 @@ export function DeliveryItem() {
           <button
             type="button"
             onClick={adicionar}
-            className="flex-1 h-14 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-[0.98] transition text-white font-bold text-base flex items-center justify-between px-5 shadow-lg shadow-red-600/25"
+            className="flex-1 h-14 rounded-2xl bg-cookie-primary hover:bg-cookie-primary-hover active:scale-[0.98] transition text-white font-bold text-base flex items-center justify-between px-5 shadow-lg shadow-cookie-primary/25"
           >
             <span>Adicionar</span>
             <span>R$ {total.toFixed(2).replace(".", ",")}</span>

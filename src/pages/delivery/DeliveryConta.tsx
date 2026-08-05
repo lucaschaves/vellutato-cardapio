@@ -3,17 +3,18 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
-import { IconeGoogle } from "../../components/IconeGoogle";
 import { Input } from "../../components/ui/input";
 import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
 import {
   buscarCep,
+  buscarClienteDeliveryPorCelular,
   excluirEndereco,
   formatarCpf,
+  garantirClienteCheckout,
   geocodificarEndereco,
   listarEnderecos,
   salvarEndereco,
-  upsertClienteAuth,
+  type ClienteDelivery,
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
@@ -25,24 +26,26 @@ import {
 import { buscarCuponsDoCliente } from "../../lib/clientes";
 import {
   lerGuestDeliveryLocal,
+  salvarEnderecoDeliveryLocal,
   salvarGuestDeliveryLocal,
 } from "../../lib/deliveryGuestStorage";
-import { formatarTelefoneBr, telefoneDigitosCompleto } from "../../lib/telefone";
+import { salvarRascunhoEndereco } from "./DeliveryEndereco";
+import {
+  formatarTelefoneBr,
+  mensagemTelefoneInvalido,
+  telefoneCelularValido,
+} from "../../lib/telefone";
 
 export function DeliveryConta() {
   const navigate = useNavigate();
-  const {
-    logado,
-    cliente,
-    usuario,
-    carregando,
-    entrarComGoogle,
-    enviarOtpSms,
-    verificarOtpSms,
-    sair,
-    recarregar,
-    cadastroCompleto,
-  } = useDeliveryCliente();
+  const { cliente: clienteAuth, carregando: authLoading, sair } =
+    useDeliveryCliente();
+
+  const [clienteLocal, setClienteLocal] = useState<ClienteDelivery | null>(
+    null,
+  );
+  const cliente = clienteAuth || clienteLocal;
+
   const [aba, setAba] = useState<"dados" | "enderecos" | "pontos">("dados");
   const [enderecos, setEnderecos] = useState<EnderecoCliente[]>([]);
   const [saldo, setSaldo] = useState(0);
@@ -74,29 +77,45 @@ export function DeliveryConta() {
   });
   const [nome, setNome] = useState("");
   const [celular, setCelular] = useState("");
+  const [email, setEmail] = useState("");
   const [cpf, setCpf] = useState("");
 
   const [loginTel, setLoginTel] = useState(
     () => lerGuestDeliveryLocal()?.telefone ?? "",
   );
-  const [loginCodigo, setLoginCodigo] = useState("");
-  const [otpEnviado, setOtpEnviado] = useState(false);
-  const [enviandoOtp, setEnviandoOtp] = useState(false);
-  const [verificandoOtp, setVerificandoOtp] = useState(false);
+  const [loginNome, setLoginNome] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [precisaCadastro, setPrecisaCadastro] = useState(false);
+  const [buscando, setBuscando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (clienteAuth) {
+      setClienteLocal(null);
+      return;
+    }
+    const g = lerGuestDeliveryLocal();
+    if (!g?.clienteId || !g.telefone) return;
+    void buscarClienteDeliveryPorCelular(g.telefone)
+      .then((c) => {
+        if (c) setClienteLocal(c);
+      })
+      .catch(() => undefined);
+  }, [clienteAuth]);
 
   useEffect(() => {
     if (!cliente) {
       const g = lerGuestDeliveryLocal();
       if (g?.nome) setNome(g.nome);
       if (g?.telefone) setCelular(g.telefone);
+      if (g?.email) setEmail(g.email);
       return;
     }
-    setNome(cliente.nome || lerGuestDeliveryLocal()?.nome || "");
+    setNome(cliente.nome || "");
     setCelular(
-      cliente.celular
-        ? formatarTelefoneBr(cliente.celular)
-        : lerGuestDeliveryLocal()?.telefone || "",
+      cliente.celular ? formatarTelefoneBr(cliente.celular) : "",
     );
+    setEmail(cliente.email || "");
     setCpf(cliente.cpf ? formatarCpf(cliente.cpf) : "");
   }, [cliente]);
 
@@ -123,58 +142,133 @@ export function DeliveryConta() {
     })();
   }, [cliente?.id]);
 
-  const enviarCodigo = async () => {
-    if (!telefoneDigitosCompleto(loginTel)) {
-      toast.warning("Informe um celular com DDD (11 dígitos).");
+  const entrarComTelefone = async () => {
+    const erroTel = mensagemTelefoneInvalido(loginTel);
+    if (erroTel) {
+      toast.warning(erroTel);
       return;
     }
     try {
-      setEnviandoOtp(true);
-      await enviarOtpSms(loginTel);
-      setOtpEnviado(true);
-      setLoginCodigo("");
-      salvarGuestDeliveryLocal({
-        nome: lerGuestDeliveryLocal()?.nome || "",
-        telefone: loginTel,
-        email: lerGuestDeliveryLocal()?.email || null,
-        clienteId: lerGuestDeliveryLocal()?.clienteId,
-      });
-      toast.success("Código enviado por SMS.");
+      setBuscando(true);
+      const existente = await buscarClienteDeliveryPorCelular(loginTel);
+      if (existente) {
+        setClienteLocal(existente);
+        setPrecisaCadastro(false);
+        salvarGuestDeliveryLocal({
+          nome: existente.nome,
+          telefone: loginTel,
+          email: existente.email,
+          clienteId: existente.id,
+        });
+        try {
+          const lista = await listarEnderecos(existente.id);
+          const padrao = lista.find((e) => e.padrao) || lista[0];
+          if (padrao) {
+            salvarEnderecoDeliveryLocal({
+              cep: padrao.cep,
+              rua: padrao.rua,
+              numero: padrao.numero,
+              bairro: padrao.bairro,
+              cidade: padrao.cidade,
+              uf: padrao.uf,
+              complemento: padrao.complemento || "",
+              referencia: padrao.referencia || "",
+              latitude: padrao.latitude,
+              longitude: padrao.longitude,
+            });
+            salvarRascunhoEndereco({
+              cep: padrao.cep,
+              rua: padrao.rua,
+              numero: padrao.numero,
+              bairro: padrao.bairro,
+              cidade: padrao.cidade,
+              uf: padrao.uf,
+              complemento: padrao.complemento || undefined,
+              referencia: padrao.referencia || undefined,
+              latitude: padrao.latitude,
+              longitude: padrao.longitude,
+            });
+          }
+        } catch {
+          /* opcional */
+        }
+        toast.success(`Olá, ${existente.nome}!`);
+        return;
+      }
+      setPrecisaCadastro(true);
+      toast.message("Não encontramos cadastro. Informe nome e e-mail.");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Falha ao enviar SMS");
+      toast.error(e instanceof Error ? e.message : "Falha ao buscar");
     } finally {
-      setEnviandoOtp(false);
+      setBuscando(false);
     }
   };
 
-  const confirmarCodigo = async () => {
+  const criarCadastroConta = async () => {
+    if (!loginNome.trim()) {
+      toast.error("Informe seu nome.");
+      return;
+    }
+    if (
+      !(loginEmail.trim().includes("@") && loginEmail.trim().includes("."))
+    ) {
+      toast.error("Informe um e-mail válido.");
+      return;
+    }
     try {
-      setVerificandoOtp(true);
-      await verificarOtpSms(loginTel, loginCodigo);
-      await recarregar();
-      toast.success("Login confirmado!");
+      setSalvando(true);
+      const criado = await garantirClienteCheckout({
+        nome: loginNome,
+        celular: loginTel,
+        email: loginEmail.trim(),
+      });
+      setClienteLocal(criado);
+      setPrecisaCadastro(false);
+      salvarGuestDeliveryLocal({
+        nome: criado.nome,
+        telefone: loginTel,
+        email: criado.email,
+        clienteId: criado.id,
+      });
+      toast.success("Cadastro pronto!");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Código inválido");
+      toast.error(e instanceof Error ? e.message : "Erro ao cadastrar");
     } finally {
-      setVerificandoOtp(false);
+      setSalvando(false);
     }
   };
 
-  if (carregando) {
+  const sairConta = async () => {
+    setClienteLocal(null);
+    setPrecisaCadastro(false);
+    salvarGuestDeliveryLocal({
+      nome: "",
+      telefone: "",
+      email: null,
+      clienteId: null,
+    });
+    try {
+      await sair();
+    } catch {
+      /* ignore se não havia sessão Auth */
+    }
+  };
+
+  if (authLoading) {
     return (
       <div className="flex justify-center py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
       </div>
     );
   }
 
-  if (!logado) {
+  if (!cliente) {
     return (
       <div className="max-w-md mx-auto space-y-4 py-8">
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-black">Minha conta</h1>
           <p className="text-sm text-zinc-500">
-            Entre com seu telefone para ver endereços, pontos e pedidos.
+            Informe seu telefone para ver endereços, pontos e pedidos.
           </p>
         </div>
 
@@ -192,103 +286,77 @@ export function DeliveryConta() {
               value={loginTel}
               inputMode="tel"
               autoComplete="tel"
-              disabled={otpEnviado}
-              onChange={(e) => setLoginTel(formatarTelefoneBr(e.target.value))}
+              maxLength={15}
+              onChange={(e) => {
+                setLoginTel(formatarTelefoneBr(e.target.value));
+                setPrecisaCadastro(false);
+              }}
             />
+            <p className="text-[11px] text-zinc-400">
+              11 dígitos: DDD + 9 + número
+            </p>
+            {loginTel.replace(/\D/g, "").length > 0 &&
+              !telefoneCelularValido(loginTel) && (
+                <p className="text-xs font-semibold text-cookie-primary">
+                  {mensagemTelefoneInvalido(loginTel)}
+                </p>
+              )}
           </div>
 
-          {otpEnviado && (
-            <div className="space-y-1.5">
-              <label
-                htmlFor="conta-otp"
-                className="text-sm font-semibold text-zinc-800"
-              >
-                Código SMS
-              </label>
-              <Input
-                id="conta-otp"
-                placeholder="000000"
-                value={loginCodigo}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                onChange={(e) =>
-                  setLoginCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-              />
-            </div>
+          {precisaCadastro && (
+            <>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="conta-nome-novo"
+                  className="text-sm font-semibold text-zinc-800"
+                >
+                  Nome completo
+                </label>
+                <Input
+                  id="conta-nome-novo"
+                  placeholder="Como devemos te chamar"
+                  value={loginNome}
+                  autoComplete="name"
+                  onChange={(e) => setLoginNome(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="conta-email-novo"
+                  className="text-sm font-semibold text-zinc-800"
+                >
+                  E-mail
+                </label>
+                <Input
+                  id="conta-email-novo"
+                  placeholder="seu@email.com"
+                  type="email"
+                  value={loginEmail}
+                  autoComplete="email"
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                />
+              </div>
+            </>
           )}
 
-          {!otpEnviado ? (
+          {!precisaCadastro ? (
             <Button
-              className="w-full bg-red-600 hover:bg-red-700"
-              disabled={enviandoOtp}
-              onClick={() => void enviarCodigo()}
+              className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
+              disabled={buscando}
+              onClick={() => void entrarComTelefone()}
             >
-              {enviandoOtp ? "Enviando…" : "Enviar código por SMS"}
+              {buscando ? "Buscando…" : "Continuar"}
             </Button>
           ) : (
-            <div className="space-y-2">
-              <Button
-                className="w-full bg-red-600 hover:bg-red-700"
-                disabled={verificandoOtp || loginCodigo.length < 6}
-                onClick={() => void confirmarCodigo()}
-              >
-                {verificandoOtp ? "Verificando…" : "Entrar"}
-              </Button>
-              <button
-                type="button"
-                className="w-full text-xs font-semibold text-zinc-500"
-                disabled={enviandoOtp}
-                onClick={() => {
-                  setOtpEnviado(false);
-                  setLoginCodigo("");
-                }}
-              >
-                Alterar telefone
-              </button>
-              <button
-                type="button"
-                className="w-full text-xs font-semibold text-red-600"
-                disabled={enviandoOtp}
-                onClick={() => void enviarCodigo()}
-              >
-                Reenviar código
-              </button>
-            </div>
+            <Button
+              className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
+              disabled={salvando}
+              onClick={() => void criarCadastroConta()}
+            >
+              {salvando ? "Salvando…" : "Criar cadastro"}
+            </Button>
           )}
         </div>
-
-        <div className="relative text-center">
-          <div className="absolute inset-x-0 top-1/2 border-t border-zinc-200" />
-          <span className="relative text-xs text-zinc-400 bg-white px-2">
-            ou
-          </span>
-        </div>
-
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={() =>
-            void entrarComGoogle(
-              `${window.location.origin}/delivery/auth/callback`,
-            )
-          }
-        >
-          <IconeGoogle className="h-5 w-5 mr-2" />
-          Entrar com Google
-        </Button>
-      </div>
-    );
-  }
-
-  if (!cadastroCompleto) {
-    return (
-      <div className="text-center py-16 space-y-3">
-        <p>Complete seu cadastro para continuar.</p>
-        <Button onClick={() => navigate("/delivery/cadastro")}>
-          Completar cadastro
-        </Button>
       </div>
     );
   }
@@ -297,15 +365,15 @@ export function DeliveryConta() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black">Olá, {cliente?.nome}</h1>
+          <h1 className="text-2xl font-black">Olá, {cliente.nome}</h1>
           <p className="text-sm text-zinc-500">
-            {cliente?.email ||
-              (cliente?.celular
+            {cliente.email ||
+              (cliente.celular
                 ? formatarTelefoneBr(cliente.celular)
                 : null)}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void sair()}>
+        <Button variant="outline" size="sm" onClick={() => void sairConta()}>
           Sair
         </Button>
       </div>
@@ -331,35 +399,55 @@ export function DeliveryConta() {
         ))}
       </div>
 
-      {aba === "dados" && usuario && (
+      {aba === "dados" && (
         <div className="bg-white border rounded-2xl p-4 space-y-3">
-          <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-          <Input
-            value={celular}
-            onChange={(e) => setCelular(formatarTelefoneBr(e.target.value))}
-          />
-          <Input
-            value={cpf}
-            onChange={(e) => setCpf(formatarCpf(e.target.value))}
-          />
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-zinc-800">Nome</label>
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-zinc-800">
+              Telefone
+            </label>
+            <Input
+              value={celular}
+              onChange={(e) => setCelular(formatarTelefoneBr(e.target.value))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-zinc-800">
+              E-mail
+            </label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-zinc-800">CPF</label>
+            <Input
+              value={cpf}
+              onChange={(e) => setCpf(formatarCpf(e.target.value))}
+            />
+          </div>
           <Button
-            className="w-full bg-red-600 hover:bg-red-700"
+            className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
             onClick={async () => {
               try {
-                await upsertClienteAuth({
-                  authUserId: usuario.id,
+                const atualizado = await garantirClienteCheckout({
                   nome,
-                  email: usuario.email,
                   celular,
-                  cpf,
+                  email: email.trim() || null,
                 });
+                setClienteLocal(atualizado);
                 salvarGuestDeliveryLocal({
                   nome,
                   telefone: celular,
-                  email: usuario.email,
-                  clienteId: cliente?.id,
+                  email: email.trim() || null,
+                  clienteId: atualizado.id,
                 });
-                await recarregar();
                 toast.success("Dados atualizados");
               } catch (e: unknown) {
                 toast.error(e instanceof Error ? e.message : "Erro");
@@ -371,7 +459,7 @@ export function DeliveryConta() {
         </div>
       )}
 
-      {aba === "enderecos" && cliente && (
+      {aba === "enderecos" && (
         <div className="space-y-3">
           {enderecos.map((e) => (
             <div
@@ -393,7 +481,7 @@ export function DeliveryConta() {
               </div>
               <button
                 type="button"
-                className="text-xs text-red-600"
+                className="text-xs text-cookie-primary"
                 onClick={() =>
                   void excluirEndereco(e.id).then(() =>
                     listarEnderecos(cliente.id).then(setEnderecos),
@@ -404,33 +492,41 @@ export function DeliveryConta() {
               </button>
             </div>
           ))}
+
           <div className="bg-white border rounded-2xl p-4 space-y-2">
-            <h3 className="font-bold text-sm">Novo endereço</h3>
+            <p className="font-bold text-sm">Novo endereço</p>
+            <Input
+              placeholder="CEP"
+              value={formEnd.cep}
+              onChange={(e) =>
+                setFormEnd((f) => ({ ...f, cep: e.target.value }))
+              }
+              onBlur={() =>
+                void buscarCep(formEnd.cep).then((r) => {
+                  if (!r) return;
+                  setFormEnd((f) => ({
+                    ...f,
+                    rua: r.rua,
+                    bairro: r.bairro,
+                    cidade: r.cidade,
+                    uf: r.uf,
+                  }));
+                })
+              }
+            />
+            <Input
+              placeholder="Rua"
+              value={formEnd.rua}
+              onChange={(e) =>
+                setFormEnd((f) => ({ ...f, rua: e.target.value }))
+              }
+            />
             <div className="grid grid-cols-2 gap-2">
-              <Input
-                placeholder="CEP"
-                value={formEnd.cep}
-                onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, cep: e.target.value }))
-                }
-                onBlur={async () => {
-                  const d = await buscarCep(formEnd.cep);
-                  if (d) setFormEnd((f) => ({ ...f, ...d }));
-                }}
-              />
               <Input
                 placeholder="Número"
                 value={formEnd.numero}
                 onChange={(e) =>
                   setFormEnd((f) => ({ ...f, numero: e.target.value }))
-                }
-              />
-              <Input
-                className="col-span-2"
-                placeholder="Rua"
-                value={formEnd.rua}
-                onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, rua: e.target.value }))
                 }
               />
               <Input
@@ -440,45 +536,33 @@ export function DeliveryConta() {
                   setFormEnd((f) => ({ ...f, bairro: e.target.value }))
                 }
               />
-              <Input
-                placeholder="Cidade"
-                value={formEnd.cidade}
-                onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, cidade: e.target.value }))
-                }
-              />
             </div>
             <Button
-              className="w-full bg-red-600 hover:bg-red-700"
+              className="w-full"
               onClick={async () => {
                 try {
                   let lat = formEnd.latitude;
                   let lng = formEnd.longitude;
                   if (lat == null || lng == null) {
-                    const c = await geocodificarEndereco(formEnd);
-                    if (!c) throw new Error("Não localizou o endereço");
-                    lat = c.latitude;
-                    lng = c.longitude;
+                    const coords = await geocodificarEndereco(formEnd);
+                    if (!coords) {
+                      toast.error("Não foi possível localizar o endereço.");
+                      return;
+                    }
+                    lat = coords.latitude;
+                    lng = coords.longitude;
                   }
                   await salvarEndereco({
                     cliente_id: cliente.id,
                     rotulo: "Casa",
-                    cep: formEnd.cep,
-                    rua: formEnd.rua,
-                    numero: formEnd.numero,
-                    bairro: formEnd.bairro,
-                    cidade: formEnd.cidade,
-                    uf: formEnd.uf,
-                    complemento: formEnd.complemento,
-                    referencia: formEnd.referencia,
+                    ...formEnd,
                     latitude: lat,
                     longitude: lng,
-                    padrao: formEnd.padrao,
                   });
                   setEnderecos(await listarEnderecos(cliente.id));
                   toast.success("Endereço salvo");
-                } catch (err: unknown) {
-                  toast.error(err instanceof Error ? err.message : "Erro");
+                } catch (e: unknown) {
+                  toast.error(e instanceof Error ? e.message : "Erro");
                 }
               }}
             >
@@ -488,74 +572,85 @@ export function DeliveryConta() {
         </div>
       )}
 
-      {aba === "pontos" && cliente && (
+      {aba === "pontos" && (
         <div className="space-y-3">
-          <div className="bg-gradient-to-br from-zinc-900 to-zinc-700 text-white rounded-3xl p-5">
-            <p className="text-xs uppercase tracking-widest text-white/60 flex items-center gap-1">
-              <Trophy size={12} /> Saldo
-            </p>
-            <p className="text-4xl font-black mt-1">{saldo}</p>
-            <p className="text-sm text-white/70 mt-1">
-              Resgate: {resgateCfg.pontos} pts = R${" "}
-              {resgateCfg.valor.toFixed(2).replace(".", ",")}
-            </p>
+          <div className="bg-white border rounded-2xl p-4 flex items-center gap-3">
+            <Trophy className="text-amber-500" />
+            <div>
+              <p className="text-2xl font-black">{saldo}</p>
+              <p className="text-xs text-zinc-500">pontos</p>
+            </div>
             <Button
-              className="mt-4 bg-white text-zinc-900 hover:bg-zinc-100"
+              className="ml-auto"
+              variant="outline"
               disabled={saldo < resgateCfg.pontos}
-              onClick={async () => {
-                try {
-                  const r = await resgatarPontos(cliente.id);
-                  toast.success(`Cupom ${r.codigo} gerado!`);
-                  setSaldo(await buscarSaldoPontos(cliente.id));
-                  setExtrato(await listarExtratoPontos(cliente.id));
-                } catch (e: unknown) {
-                  toast.error(e instanceof Error ? e.message : "Erro");
-                }
-              }}
+              onClick={() =>
+                void resgatarPontos(cliente.id)
+                  .then(async () => {
+                    setSaldo(await buscarSaldoPontos(cliente.id));
+                    setExtrato(
+                      (await listarExtratoPontos(cliente.id)) as typeof extrato,
+                    );
+                    toast.success(
+                      `Cupom de R$ ${resgateCfg.valor.toFixed(2)} gerado!`,
+                    );
+                  })
+                  .catch((e: unknown) =>
+                    toast.error(e instanceof Error ? e.message : "Erro"),
+                  )
+              }
             >
-              Resgatar cupom
+              Resgatar ({resgateCfg.pontos} pts)
             </Button>
           </div>
+
           {cupons.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="font-bold text-sm flex items-center gap-1">
+            <div className="bg-white border rounded-2xl p-4 space-y-2">
+              <p className="font-bold text-sm flex items-center gap-1">
                 <Ticket size={14} /> Seus cupons
-              </h3>
+              </p>
               {cupons.map((c) => (
-                <div
-                  key={c.codigo}
-                  className="bg-white border rounded-xl p-3 text-sm flex justify-between"
-                >
-                  <span className="font-mono font-bold">{c.codigo}</span>
-                  <span>
-                    {c.tipo === "percentual"
-                      ? `${c.valor}%`
-                      : `R$ ${Number(c.valor).toFixed(2)}`}
-                  </span>
-                </div>
+                <p key={c.codigo} className="text-sm">
+                  <span className="font-mono font-bold">{c.codigo}</span> —{" "}
+                  {c.tipo === "percentual"
+                    ? `${c.valor}%`
+                    : `R$ ${Number(c.valor).toFixed(2)}`}
+                </p>
               ))}
             </div>
           )}
-          <div className="space-y-1">
-            {extrato.map((x) => (
-              <div
-                key={x.id}
-                className="text-sm flex justify-between bg-white border rounded-xl px-3 py-2"
-              >
-                <span className="text-zinc-600">{x.descricao || x.tipo}</span>
-                <span
-                  className={
-                    x.pontos >= 0 ? "text-emerald-600 font-bold" : "text-red-600"
-                  }
+
+          <div className="bg-white border rounded-2xl p-4 space-y-2">
+            <p className="font-bold text-sm">Extrato</p>
+            {extrato.length === 0 ? (
+              <p className="text-sm text-zinc-500">Sem movimentos ainda.</p>
+            ) : (
+              extrato.slice(0, 20).map((x) => (
+                <div
+                  key={x.id}
+                  className="flex justify-between text-sm border-b border-zinc-50 py-1"
                 >
-                  {x.pontos >= 0 ? "+" : ""}
-                  {x.pontos}
-                </span>
-              </div>
-            ))}
+                  <span className="text-zinc-600">
+                    {x.descricao || x.tipo}
+                  </span>
+                  <span
+                    className={
+                      x.pontos >= 0 ? "text-emerald-600" : "text-cookie-primary"
+                    }
+                  >
+                    {x.pontos >= 0 ? "+" : ""}
+                    {x.pontos}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
+
+      <Button variant="outline" className="w-full" onClick={() => navigate("/pedidos")}>
+        Meus pedidos
+      </Button>
     </div>
   );
 }

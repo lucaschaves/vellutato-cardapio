@@ -13,6 +13,7 @@ import { urlCardapio } from "../../lib/urlCardapio";
 import {
   emModoToten,
   limparIdentificacaoCliente,
+  urlBoasVindasCardapio,
 } from "../../lib/modoCardapio";
 import { limparTipoConsumo } from "../../lib/disponibilidadeProduto";
 
@@ -55,7 +56,7 @@ export function ConfirmacaoPedido() {
     if (!sessaoPersistente) {
       limparIdentificacaoCliente();
       limparTipoConsumo();
-      navigate("/", { replace: true });
+      navigate(urlBoasVindasCardapio(), { replace: true });
       return;
     }
 
@@ -137,7 +138,7 @@ export function ConfirmacaoPedido() {
               strokeLinecap="round"
               strokeDasharray={`${2 * Math.PI * 44}`}
               strokeDashoffset={`${2 * Math.PI * 44 * (1 - progresso / 100)}`}
-              className="text-[#ff5722] transition-[stroke-dashoffset] duration-1000 linear"
+              className="text-[#6b1d2a] transition-[stroke-dashoffset] duration-1000 linear"
             />
           </svg>
 
@@ -161,13 +162,13 @@ export function ConfirmacaoPedido() {
         )}
 
         {nomeCliente && (
-          <p className="text-base font-semibold text-[#ff5722] mb-3">
+          <p className="text-base font-semibold text-[#6b1d2a] mb-3">
             Obrigado, {nomeCliente}!
           </p>
         )}
 
         <div className="flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 mb-4">
-          <ChefHat size={18} className="text-[#ff5722] shrink-0" />
+          <ChefHat size={18} className="text-[#6b1d2a] shrink-0" />
           <p className="text-sm md:text-base leading-relaxed">
             {sessaoPersistente
               ? "Já vamos preparar. Acompanhe o status em Meus pedidos."
@@ -188,7 +189,7 @@ export function ConfirmacaoPedido() {
             <button
               type="button"
               onClick={irParaPerfil}
-              className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/25"
+              className="w-full bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/25"
             >
               <ClipboardList size={20} />
               <span>Acompanhar pedido</span>
@@ -207,7 +208,7 @@ export function ConfirmacaoPedido() {
           <button
             type="button"
             onClick={irParaTelaInicial}
-            className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/25"
+            className="w-full bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/25"
           >
             <Home size={20} />
             <span>Voltar ao início</span>

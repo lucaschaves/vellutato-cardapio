@@ -1,34 +1,33 @@
 import { Bell, MessageCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
+import { TimelinePedido } from "../../components/TimelinePedido";
+import { track } from "../../lib/analytics";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
 import {
   buscarPedidoDelivery,
+  cancelarPedidoDeliveryAguardando,
   cancelarPedidosDeliveryExpirados,
   confirmarPagamentoAsaas,
+  iniciarCheckoutAsaas,
   type ItemPedidoDelivery,
 } from "../../lib/deliveryPedido";
+import { lerGuestDeliveryLocal } from "../../lib/deliveryGuestStorage";
 import {
   montarLinkWhatsappLoja,
-  textoInicioWhatsappAcompanhamento,
+  textoWhatsappAcompanhamentoPedido,
 } from "../../lib/notificacoesPedido";
-import { supabase } from "../../lib/supabase";
 import {
-  ativarPushPedido,
-  pushSuportado,
-} from "../../lib/webPush";
+  montarTimelinePedido,
+  rotuloStatusCliente,
+} from "../../lib/pedidoStatusCliente";
+import { formatarTelefoneDeSalvo } from "../../lib/telefone";
+import { supabase } from "../../lib/supabase";
+import { ativarPushPedido, pushSuportado } from "../../lib/webPush";
 import { useCartStore } from "../../store/useCartStore";
-
-const LABEL_STATUS: Record<string, string> = {
-  pendente: "Recebido",
-  em_producao: "Em preparo",
-  pronto: "Pronto",
-  entregue: "Entregue",
-  cancelado: "Cancelado",
-  pago: "Aguardando",
-  aguardando_pagamento: "Aguardando pagamento",
-};
+import { urlDelivery, urlDeliveryAbsoluta } from "../../lib/urlDelivery";
 
 function totalLinhaItem(item: ItemPedidoDelivery): number {
   const adicionais = (item.pedido_item_adicionais || []).reduce(
@@ -46,6 +45,7 @@ type PedidoDelivery = Awaited<ReturnType<typeof buscarPedidoDelivery>>;
 
 export function DeliveryPedido() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [params] = useSearchParams();
   const limparCarrinho = useCartStore((s) => s.limparCarrinho);
   const [pedido, setPedido] = useState<PedidoDelivery | null>(null);
@@ -54,6 +54,9 @@ export function DeliveryPedido() {
   const [whatsappNumero, setWhatsappNumero] = useState<string | null>(null);
   const [pushAtivo, setPushAtivo] = useState(false);
   const [ativandoPush, setAtivandoPush] = useState(false);
+  const [pagandoNovamente, setPagandoNovamente] = useState(false);
+  const [confirmarCancelar, setConfirmarCancelar] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const syncFeitoRef = useRef(false);
 
   useEffect(() => {
@@ -62,6 +65,15 @@ export function DeliveryPedido() {
       setWhatsappNumero(cfg.whatsapp_numero),
     );
   }, []);
+
+  useEffect(() => {
+    if (params.get("cancelado") === "1") {
+      toast.message("Pagamento cancelado. Você pode tentar novamente.");
+    }
+    if (params.get("expirado") === "1") {
+      toast.message("O link de pagamento expirou. Gere um novo para continuar.");
+    }
+  }, [params]);
 
   useEffect(() => {
     if (!id) return;
@@ -109,7 +121,6 @@ export function DeliveryPedido() {
     };
   }, [id, limparCarrinho]);
 
-  // Retorno do Asaas (?pago=1): sync imediato + polling até confirmar
   useEffect(() => {
     if (!id || params.get("pago") !== "1") return;
     if (pedido?.status_pagamento === "pago") return;
@@ -125,6 +136,11 @@ export function DeliveryPedido() {
         if (cancelado) return;
         if (res.status_pagamento === "pago") {
           syncFeitoRef.current = true;
+          track("payment_ok", {
+            canal: "delivery",
+            pedidoId: id,
+            props: { metodo: "asaas" },
+          });
           const p = await buscarPedidoDelivery(id);
           if (!cancelado) {
             setPedido(p);
@@ -199,10 +215,68 @@ export function DeliveryPedido() {
     }
   };
 
+  const pagarNovamente = async () => {
+    if (!pedido || pagandoNovamente) return;
+    setPagandoNovamente(true);
+    try {
+      const clientesRel = (
+        pedido as {
+          clientes?: { email?: string | null } | { email?: string | null }[];
+        }
+      ).clientes;
+      const emailCliente = Array.isArray(clientesRel)
+        ? clientesRel[0]?.email
+        : clientesRel?.email;
+      const email =
+        emailCliente?.trim() ||
+        lerGuestDeliveryLocal()?.email?.trim() ||
+        null;
+
+      if (!email || !email.includes("@")) {
+        toast.error(
+          "Informe um e-mail válido na conta ou no checkout para pagar.",
+        );
+        return;
+      }
+
+      toast.message("Abrindo pagamento seguro…");
+      const checkout = await iniciarCheckoutAsaas(pedido.id, {
+        email,
+        forcarNovo: true,
+      });
+      window.location.assign(checkout.checkout_url);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg || "Não foi possível gerar o pagamento");
+      setPagandoNovamente(false);
+    }
+  };
+
+  const cancelarPedido = async () => {
+    if (!pedido || cancelando) return;
+    setCancelando(true);
+    try {
+      const ok = await cancelarPedidoDeliveryAguardando(pedido.id);
+      if (!ok) {
+        toast.error("Não foi possível cancelar este pedido.");
+        setConfirmarCancelar(false);
+        return;
+      }
+      toast.success("Pedido cancelado.");
+      setConfirmarCancelar(false);
+      navigate(urlDelivery("/pedidos"), { replace: true });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg || "Falha ao cancelar");
+    } finally {
+      setCancelando(false);
+    }
+  };
+
   if (carregando) {
     return (
       <div className="flex justify-center py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -221,21 +295,92 @@ export function DeliveryPedido() {
   const taxa = Number(pedido.taxa_entrega || 0);
   const desconto = Number(pedido.desconto_aplicado || 0);
 
-  const linkWhatsapp = montarLinkWhatsappLoja(
-    whatsappNumero,
-    textoInicioWhatsappAcompanhamento(pedido.sequencia_pedido, pedido.id),
-  );
-
   const statusExibido = aguardandoConfirmacao
     ? "Confirmando pagamento…"
-    : LABEL_STATUS[pedido.status] || pedido.status;
+    : rotuloStatusCliente(pedido);
+
+  const timeline = montarTimelinePedido(pedido);
+  const precisaPagar =
+    !aguardandoConfirmacao &&
+    (pedido.status_pagamento === "aguardando" ||
+      pedido.status === "aguardando_pagamento");
+
+  const endereco = pedido.endereco_json as
+    | {
+        rua?: string | null;
+        numero?: string | null;
+        bairro?: string | null;
+        cidade?: string | null;
+        uf?: string | null;
+        complemento?: string | null;
+      }
+    | null
+    | undefined;
+  const enderecoLinha = endereco?.rua
+    ? [
+        [endereco.rua, endereco.numero].filter(Boolean).join(", "),
+        endereco.complemento,
+        [endereco.bairro, endereco.cidade, endereco.uf]
+          .filter(Boolean)
+          .join(" - "),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
+  const itensResumo = itens.map((item) => {
+    const extras = [
+      ...(item.pedido_item_adicionais || []).map(
+        (a) => a.adicionais?.nome || "Adicional",
+      ),
+      ...(item.pedido_item_combo_escolhas || []).map(
+        (e) => `${e.nome_grupo}: ${e.nome_produto}`,
+      ),
+    ];
+    const base = `${item.quantidade}x ${item.produtos?.nome || "Item"}`;
+    return extras.length > 0 ? `${base} (${extras.join(", ")})` : base;
+  });
+
+  const linkWhatsapp = montarLinkWhatsappLoja(
+    whatsappNumero,
+    textoWhatsappAcompanhamentoPedido({
+      sequencia: pedido.sequencia_pedido,
+      pedidoId: pedido.id,
+      clienteNome: pedido.cliente_nome,
+      clienteCelular: formatarTelefoneDeSalvo(pedido.cliente_celular),
+      modalidade: pedido.modalidade,
+      statusRotulo: statusExibido,
+      total: Number(pedido.valor_total || pedido.total || 0),
+      enderecoLinha,
+      itensResumo,
+      passosTimeline: timeline.map((p) => ({
+        titulo: p.titulo,
+        estado: p.estado,
+      })),
+      urlAcompanhar: urlDeliveryAbsoluta(`/pedido/${pedido.id}`),
+    }),
+  );
 
   return (
     <div className="space-y-4">
       <div className="bg-white border rounded-3xl p-5 space-y-2">
-        <p className="text-xs uppercase tracking-widest text-zinc-500">
-          Pedido #{pedido.sequencia_pedido}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs uppercase tracking-widest text-zinc-500">
+            Pedido #{pedido.sequencia_pedido}
+          </p>
+          {linkWhatsapp ? (
+            <a
+              href={linkWhatsapp}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-[#25D366] px-3 py-1.5 text-xs font-bold text-white"
+              title="Acompanhar no WhatsApp"
+            >
+              <MessageCircle size={14} />
+              WhatsApp
+            </a>
+          ) : null}
+        </div>
         <h1 className="text-2xl font-black">{statusExibido}</h1>
         <p className="text-sm text-zinc-500 capitalize">
           {pedido.modalidade} · pagamento:{" "}
@@ -246,16 +391,47 @@ export function DeliveryPedido() {
             Pagamento recebido pelo Asaas — confirmando no sistema…
           </p>
         )}
-        {pagamentoConfirmado && (
+        {precisaPagar && (
+          <div className="space-y-3 pt-1">
+            <p className="text-sm text-amber-800 bg-amber-50 rounded-xl p-3">
+              Seu pedido está reservado. Escolha Pix ou cartão para concluir o
+              pagamento, ou cancele se quiser corrigir algo.
+            </p>
+            <button
+              type="button"
+              disabled={pagandoNovamente || cancelando}
+              onClick={() => void pagarNovamente()}
+              className="w-full h-12 rounded-2xl bg-cookie-primary text-white font-bold disabled:opacity-60"
+            >
+              {pagandoNovamente ? "Abrindo pagamento…" : "Pagar agora"}
+            </button>
+            <button
+              type="button"
+              disabled={pagandoNovamente || cancelando}
+              onClick={() => setConfirmarCancelar(true)}
+              className="w-full h-11 rounded-2xl border border-zinc-200 text-zinc-600 font-semibold text-sm disabled:opacity-60"
+            >
+              Cancelar pedido
+            </button>
+          </div>
+        )}
+        {pagamentoConfirmado && pedido.status !== "cancelado" && (
           <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">
             Pagamento confirmado! A cozinha já recebeu seu pedido.
           </p>
         )}
       </div>
 
+      <section className="bg-white border rounded-3xl p-5 space-y-4">
+        <h2 className="font-bold text-sm text-zinc-500 uppercase tracking-wider">
+          Acompanhe seu pedido
+        </h2>
+        <TimelinePedido passos={timeline} />
+      </section>
+
       <section className="bg-white border rounded-3xl p-5 space-y-3">
         <h2 className="font-bold text-sm text-zinc-500 uppercase tracking-wider">
-          Acompanhar pedido
+          Notificações
         </h2>
         <p className="text-sm text-zinc-600">
           Ative as notificações e/ou abra o WhatsApp para falar conosco sobre
@@ -356,7 +532,7 @@ export function DeliveryPedido() {
                       </ul>
                     )}
                     {item.observacoes && (
-                      <p className="text-xs text-red-600 mt-1">
+                      <p className="text-xs text-cookie-primary mt-1">
                         Obs: {item.observacoes}
                       </p>
                     )}
@@ -397,18 +573,29 @@ export function DeliveryPedido() {
 
       <div className="flex gap-2">
         <Link
-          to={`/delivery/chat?pedido=${pedido.id}`}
+          to={`/chat?pedido=${pedido.id}`}
           className="flex-1 text-center border border-zinc-200 rounded-2xl py-3 text-sm font-semibold"
         >
           Falar conosco
         </Link>
         <Link
-          to="/delivery"
-          className="flex-1 text-center bg-red-600 text-white rounded-2xl py-3 text-sm font-bold"
+          to="/"
+          className="flex-1 text-center bg-cookie-primary text-white rounded-2xl py-3 text-sm font-bold"
         >
           Novo pedido
         </Link>
       </div>
+
+      <ModalConfirmacao
+        aberto={confirmarCancelar}
+        titulo="Cancelar pedido?"
+        mensagem="O pedido será cancelado e o estoque liberado. Você poderá montar um novo pedido depois."
+        textoConfirmar="Sim, cancelar"
+        textoCancelar="Manter pedido"
+        carregando={cancelando}
+        aoCancelar={() => setConfirmarCancelar(false)}
+        aoConfirmar={() => void cancelarPedido()}
+      />
     </div>
   );
 }

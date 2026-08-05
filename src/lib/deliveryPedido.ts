@@ -101,7 +101,7 @@ export async function cancelarPedidosDeliveryExpirados(
 
 export async function iniciarCheckoutAsaas(
   pedidoId: string,
-  opts?: { email?: string | null },
+  opts?: { email?: string | null; forcarNovo?: boolean },
 ): Promise<{
   checkout_id: string;
   checkout_url: string;
@@ -113,6 +113,8 @@ export async function iniciarCheckoutAsaas(
         pedido_id: pedidoId,
         site_url: window.location.origin,
         email: opts?.email || undefined,
+        forcar_novo: Boolean(opts?.forcarNovo),
+        callback_pedido: Boolean(opts?.forcarNovo),
       },
     },
   );
@@ -168,9 +170,10 @@ export async function buscarPedidoDelivery(pedidoId: string) {
     .select(
       `
       id, sequencia_pedido, status, origem, modalidade, status_pagamento,
-      identificador, cliente_nome, total, valor_total, taxa_entrega,
+      identificador, cliente_nome, cliente_celular, total, valor_total, taxa_entrega,
       subtotal_itens, tracking_url, voa_order_id, criado_em, endereco_json,
       asaas_checkout_id, cpf_nota, cliente_id, desconto_aplicado,
+      clientes ( email ),
       pedido_itens (
         id, quantidade, preco_unitario, observacoes,
         produtos ( nome ),

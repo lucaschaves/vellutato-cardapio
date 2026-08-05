@@ -64,7 +64,7 @@ function BarraOk({ aoFechar }: { aoFechar: () => void }) {
       <button
         type="button"
         onClick={aoFechar}
-        className="min-w-20 px-5 py-2.5 rounded-xl bg-[#ff5722] text-white text-sm font-black shadow-md active:scale-95 transition-transform"
+        className="min-w-20 px-5 py-2.5 rounded-xl bg-[#6b1d2a] text-white text-sm font-black shadow-md active:scale-95 transition-transform"
       >
         OK
       </button>
@@ -149,7 +149,7 @@ export function TecladoVirtualHost() {
           </Tecla>
           <Tecla
             onClick={fechar}
-            className="w-24 shrink-0 text-sm font-black text-[#ff5722]"
+            className="w-24 shrink-0 text-sm font-black text-[#6b1d2a]"
           >
             OK
           </Tecla>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import {
   enviarMensagem,
@@ -76,13 +77,12 @@ export function GerenciamentoChatDelivery() {
   }, [mensagens]);
 
   return (
-    <div className="h-[calc(100dvh-6rem)] flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-black">Chat delivery</h1>
-        <p className="text-sm text-muted-foreground">
-          Conversas dos clientes do canal /delivery
-        </p>
-      </div>
+    <AdminPageShell
+      title="Chat delivery"
+      description="Conversas dos clientes do canal delivery"
+      scroll={false}
+      contentClassName="min-h-0"
+    >
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 min-h-0">
         <div className="border rounded-xl overflow-y-auto bg-white dark:bg-surface-dark">
           {conversas.length === 0 && (
@@ -182,6 +182,6 @@ export function GerenciamentoChatDelivery() {
           )}
         </div>
       </div>
-    </div>
+    </AdminPageShell>
   );
 }

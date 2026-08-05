@@ -69,7 +69,7 @@ export function ModalConfirmacao({
                 type="button"
                 onClick={aoConfirmar}
                 disabled={carregando}
-                className="flex-1 py-3.5 px-4 rounded-2xl font-bold text-white bg-[#ff5722] hover:bg-[#e64a19] active:scale-[0.98] transition-all shadow-lg shadow-[#ff5722]/20 disabled:opacity-50"
+                className="flex-1 py-3.5 px-4 rounded-2xl font-bold text-white bg-[#6b1d2a] hover:bg-[#541622] active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20 disabled:opacity-50"
               >
                 {textoConfirmar}
               </button>

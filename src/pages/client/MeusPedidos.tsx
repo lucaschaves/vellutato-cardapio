@@ -122,7 +122,7 @@ export function MeusPedidos() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-extrabold text-gray-950 dark:text-white flex items-center gap-2">
-            <ClipboardList size={20} className="text-[#ff5722]" />
+            <ClipboardList size={20} className="text-[#6b1d2a]" />
             Meus pedidos
           </h1>
           <p className="text-xs text-gray-600 dark:text-gray-400">
@@ -146,7 +146,7 @@ export function MeusPedidos() {
         {!celularValido && (
           <div className="bg-white dark:bg-[#181a1b] rounded-2xl p-5 border border-gray-200 dark:border-[#2a2c30] space-y-4">
             <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-              <Phone size={18} className="text-[#ff5722]" />
+              <Phone size={18} className="text-[#6b1d2a]" />
               <p className="text-sm font-medium">
                 Digite o celular usado no pedido para ver o histórico.
               </p>
@@ -161,7 +161,7 @@ export function MeusPedidos() {
             <button
               type="button"
               onClick={handleBuscar}
-              className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-bold py-3 rounded-xl active:scale-[0.98] transition-all"
+              className="w-full bg-[#6b1d2a] hover:bg-[#541622] text-white font-bold py-3 rounded-xl active:scale-[0.98] transition-all"
             >
               Buscar pedidos
             </button>
@@ -170,7 +170,7 @@ export function MeusPedidos() {
 
         {carregando && (
           <div className="flex justify-center py-16">
-            <Loader2 className="animate-spin text-[#ff5722]" size={36} />
+            <Loader2 className="animate-spin text-[#6b1d2a]" size={36} />
           </div>
         )}
 
@@ -204,7 +204,7 @@ export function MeusPedidos() {
                   <p className="text-xs text-gray-500">
                     {formatarDataHora(pedido.criado_em)} · {pedido.identificador}
                   </p>
-                  <p className="text-lg font-black text-[#ff5722] mt-2">
+                  <p className="text-lg font-black text-[#6b1d2a] mt-2">
                     {formatarMoeda(Number(pedido.total || 0))}
                   </p>
                   {Number(pedido.desconto_aplicado || 0) > 0 && (

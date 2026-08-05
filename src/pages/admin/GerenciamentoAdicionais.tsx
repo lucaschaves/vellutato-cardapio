@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -286,44 +287,61 @@ export function GerenciamentoAdicionais() {
   });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto h-full space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-            <IceCream size={28} className="text-cookie-primary" />
-            Extras e Adicionais
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {tipoPreco === "pagos"
-              ? aba === "ativos"
-                ? "Extras pagos visíveis no cardápio (aumentam o valor do item)."
-                : "Extras pagos ocultos. Quem já teve venda não pode ser excluído."
-              : aba === "ativos"
-                ? "Opções grátis (R$ 0) visíveis no cardápio — escolha sem custo."
-                : "Opções grátis ocultas do cardápio."}
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-surface-dark p-6 rounded-xl border dark:border-gray-800 shadow-sm">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold dark:text-white">
-            {editandoId ? "Editar Adicional" : "Cadastrar Novo Adicional"}
-          </h2>
+    <AdminPageShell
+      title={
+        <span className="flex items-center gap-2">
+          <IceCream size={28} className="text-cookie-primary" />
+          Extras e Adicionais
+        </span>
+      }
+      description={
+        tipoPreco === "pagos"
+          ? aba === "ativos"
+            ? "Extras pagos visíveis no cardápio (aumentam o valor do item)."
+            : "Extras pagos ocultos. Quem já teve venda não pode ser excluído."
+          : aba === "ativos"
+            ? "Opções grátis (R$ 0) visíveis no cardápio — escolha sem custo."
+            : "Opções grátis ocultas do cardápio."
+      }
+      footer={
+        <>
           {editandoId && (
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
+              variant="outline"
               onClick={limparFormulario}
-              className="text-gray-500"
             >
               <X size={16} className="mr-1" />
               Cancelar edição
             </Button>
           )}
-        </div>
-        <form onSubmit={salvarAdicional} className="flex flex-col gap-4">
+          <Button
+            type="submit"
+            form="form-adicional"
+            disabled={salvando}
+            className="bg-cookie-primary text-white"
+          >
+            {salvando ? (
+              <Loader2 className="animate-spin" size={18} />
+            ) : editandoId ? (
+              <>
+                <Pencil size={18} className="mr-2" /> Salvar
+              </>
+            ) : (
+              <>
+                <PlusCircle size={18} className="mr-2" /> Adicionar
+              </>
+            )}
+          </Button>
+        </>
+      }
+      contentClassName="space-y-8"
+    >
+      <div className="bg-white dark:bg-surface-dark p-6 rounded-xl border dark:border-gray-800 shadow-sm">
+        <h2 className="text-lg font-semibold dark:text-white mb-4">
+          {editandoId ? "Editar Adicional" : "Cadastrar Novo Adicional"}
+        </h2>
+        <form id="form-adicional" onSubmit={salvarAdicional} className="flex flex-col gap-4">
           <div className="flex flex-col md:flex-row gap-4 items-start">
             <div className="flex-1 w-full space-y-2">
               <Label htmlFor="adicional-nome">Nome</Label>
@@ -372,23 +390,6 @@ export function GerenciamentoAdicionais() {
                 Filtrado pelo modo que o cliente escolheu.
               </p>
             </div>
-            <Button
-              type="submit"
-              disabled={salvando}
-              className="w-full md:w-auto bg-cookie-primary text-white h-10"
-            >
-              {salvando ? (
-                <Loader2 className="animate-spin" size={18} />
-              ) : editandoId ? (
-                <>
-                  <Pencil size={18} className="mr-2" /> Salvar
-                </>
-              ) : (
-                <>
-                  <PlusCircle size={18} className="mr-2" /> Adicionar
-                </>
-              )}
-            </Button>
           </div>
         </form>
       </div>
@@ -578,6 +579,6 @@ export function GerenciamentoAdicionais() {
           </Table>
         )}
       </div>
-    </div>
+    </AdminPageShell>
   );
 }

@@ -78,17 +78,36 @@ export function rotuloModoConsumo(modo: ModoConsumoItem): string {
   return modo === "levar" ? "Para levar" : "Comer na loja";
 }
 
-/** Monta origem/identificador do pedido a partir da mesa e do modo da sessão. */
+/** Monta origem/identificador do pedido a partir da mesa, totem e modo. */
 export function montarOrigemIdentificadorPedido(opts: {
   mesa: string | null;
   modo: ModoConsumoItem;
-}): { origem: "mesa" | "balcao"; identificador: string } {
+  /** Se omitido, detecta via rota/localStorage (`emModoToten`). */
+  totem?: boolean;
+}): { origem: "mesa" | "balcao" | "totem"; identificador: string } {
   const mesa = opts.mesa?.trim() || null;
+  const totem =
+    opts.totem ??
+    (typeof window !== "undefined" &&
+      (window.location.pathname.startsWith("/totem") ||
+        window.location.pathname.startsWith("/cardapio-toten") ||
+        localStorage.getItem("modo_toten") === "1"));
+
   const base = mesa
     ? mesa.toLowerCase().startsWith("mesa")
       ? mesa
       : `Mesa ${mesa}`
-    : "Balcão";
+    : totem
+      ? "Totem"
+      : "Balcão";
+
+  if (totem) {
+    return {
+      origem: "totem",
+      identificador:
+        opts.modo === "levar" ? `${base} (PARA VIAGEM)` : base,
+    };
+  }
 
   if (opts.modo === "levar") {
     return {
@@ -98,7 +117,7 @@ export function montarOrigemIdentificadorPedido(opts: {
   }
 
   return {
-    origem: mesa ? "mesa" : "mesa",
+    origem: mesa ? "mesa" : "balcao",
     identificador: base,
   };
 }
