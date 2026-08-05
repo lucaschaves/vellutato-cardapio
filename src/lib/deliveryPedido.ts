@@ -101,7 +101,7 @@ export async function cancelarPedidosDeliveryExpirados(
 
 export async function iniciarCheckoutAsaas(
   pedidoId: string,
-  opts?: { email?: string | null; forcarNovo?: boolean },
+  opts?: { email?: string | null; cpf?: string | null; forcarNovo?: boolean },
 ): Promise<{
   checkout_id: string;
   checkout_url: string;
@@ -113,14 +113,33 @@ export async function iniciarCheckoutAsaas(
         pedido_id: pedidoId,
         site_url: window.location.origin,
         email: opts?.email || undefined,
+        cpf: opts?.cpf?.replace(/\D/g, "") || undefined,
         forcar_novo: Boolean(opts?.forcarNovo),
         callback_pedido: Boolean(opts?.forcarNovo),
       },
     },
   );
 
-  if (error) throw new Error(error.message);
   if (data?.erro) throw new Error(String(data.erro));
+  if (error) {
+    // FunctionsHttpError guarda o JSON retornado pela Edge Function em context.
+    // Sem isso o usuário só vê "Edge Function returned a non-2xx status code".
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      let mensagemContexto: string | null = null;
+      try {
+        const body = (await context.clone().json()) as {
+          erro?: unknown;
+          detalhes?: unknown;
+        };
+        if (body?.erro) mensagemContexto = String(body.erro);
+      } catch {
+        // Resposta sem JSON: usa a mensagem padrão do SDK abaixo.
+      }
+      if (mensagemContexto) throw new Error(mensagemContexto);
+    }
+    throw new Error(error.message || "Falha na comunicação com o Asaas.");
+  }
   if (!data?.checkout_url) {
     throw new Error("Link de pagamento não retornado pelo Asaas");
   }

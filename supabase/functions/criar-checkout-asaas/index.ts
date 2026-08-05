@@ -22,6 +22,70 @@ type EnderecoSnap = {
   complemento?: string | null;
 };
 
+function somenteDigitos(valor: unknown): string {
+  return typeof valor === "string" ? valor.replace(/\D/g, "") : "";
+}
+
+function cpfValido(cpf: string): boolean {
+  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+  let soma = 0;
+  for (let i = 0; i < 9; i++) soma += Number(cpf[i]) * (10 - i);
+  let resto = (soma * 10) % 11;
+  if (resto === 10) resto = 0;
+  if (resto !== Number(cpf[9])) return false;
+  soma = 0;
+  for (let i = 0; i < 10; i++) soma += Number(cpf[i]) * (11 - i);
+  resto = (soma * 10) % 11;
+  if (resto === 10) resto = 0;
+  return resto === Number(cpf[10]);
+}
+
+function mensagensErroAsaas(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const obj = body as Record<string, unknown>;
+  const erros = Array.isArray(obj.errors) ? obj.errors : [];
+  const mensagens = erros
+    .map((erro) => {
+      if (!erro || typeof erro !== "object") return "";
+      const e = erro as Record<string, unknown>;
+      return String(e.description || e.message || e.code || "").trim();
+    })
+    .filter(Boolean);
+  if (mensagens.length > 0) return mensagens;
+
+  const unica = String(obj.message || obj.error || "").trim();
+  return unica ? [unica] : [];
+}
+
+function mensagemAmigavelAsaas(mensagens: string[], status?: number): string {
+  if (status === 401 || status === 403) {
+    return "O pagamento está temporariamente indisponível. Entre em contato com a loja.";
+  }
+  if (status === 429) {
+    return "Muitas tentativas de pagamento. Aguarde um instante e tente novamente.";
+  }
+  if (status != null && status >= 500) {
+    return "O Asaas está temporariamente indisponível. Tente novamente em alguns instantes.";
+  }
+  const texto = mensagens.join(" ").toLowerCase();
+  if (/cpfcnpj|cpf|cnpj/.test(texto)) {
+    return "Informe um CPF válido para continuar com o pagamento.";
+  }
+  if (/postalcode|cep/.test(texto)) {
+    return "O CEP informado não foi aceito pelo Asaas. Verifique o endereço.";
+  }
+  if (/phone|telefone/.test(texto)) {
+    return "O telefone informado não foi aceito. Verifique o número com DDD.";
+  }
+  if (/email/.test(texto)) {
+    return "O e-mail informado não foi aceito. Verifique e tente novamente.";
+  }
+  if (/customerdata|cliente/.test(texto)) {
+    return "Os dados do cliente estão incompletos ou inválidos.";
+  }
+  return mensagens[0] || "O Asaas recusou os dados do pagamento.";
+}
+
 async function codigoIbgePorCep(cep: string): Promise<number | null> {
   try {
     const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
@@ -144,6 +208,32 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Usa o CPF salvo no pedido; o body é fallback para ambientes cuja RPC
+    // ainda não persistiu p_cpf_nota. Nunca depende apenas do cliente.
+    const cpfPedido = somenteDigitos(pedido.cpf_nota);
+    const cpfBody = somenteDigitos(bodyIn?.cpf);
+    const cpfCnpj = cpfPedido || cpfBody;
+    if (!cpfValido(cpfCnpj)) {
+      return json(
+        {
+          erro: "Informe um CPF válido para continuar com o pagamento.",
+          codigo: "CPF_OBRIGATORIO",
+          campo: "cpf",
+        },
+        400,
+      );
+    }
+
+    if (!cpfPedido && cpfBody) {
+      const { error: erroCpf } = await supabase
+        .from("pedidos")
+        .update({ cpf_nota: cpfBody })
+        .eq("id", pedido.id);
+      if (erroCpf) {
+        console.warn("[ASAAS] Não foi possível persistir CPF no pedido:", erroCpf.message);
+      }
+    }
+
     let endereco = (pedido.endereco_json || null) as EnderecoSnap | null;
 
     if ((!endereco?.rua || !endereco?.cep) && pedido.cliente_id) {
@@ -223,7 +313,7 @@ Deno.serve(async (req) => {
       customerData: {
         name: String(pedido.cliente_nome || "").slice(0, 100),
         email,
-        cpfCnpj: (pedido.cpf_nota || "").replace(/\D/g, "") || undefined,
+        cpfCnpj,
         phone: telefone,
         postalCode: cepLimpo,
         address: String(endereco.rua).trim(),
@@ -236,26 +326,62 @@ Deno.serve(async (req) => {
       },
     };
 
-    const res = await fetch(`${asaasBase}/checkouts`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        accept: "application/json",
-        access_token: asaasKey,
-      },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${asaasBase}/checkouts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+          access_token: asaasKey,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (erroRede) {
+      console.error("[ASAAS] Falha de rede:", erroRede);
+      return json(
+        {
+          erro:
+            "Não foi possível conectar ao Asaas. Aguarde alguns instantes e tente novamente.",
+          codigo: "ASAAS_INDISPONIVEL",
+        },
+        503,
+      );
+    }
 
-    const body = await res.json();
+    const respostaTexto = await res.text();
+    let body: Record<string, unknown> = {};
+    try {
+      body = respostaTexto
+        ? (JSON.parse(respostaTexto) as Record<string, unknown>)
+        : {};
+    } catch {
+      console.error("[ASAAS] Resposta não JSON:", respostaTexto);
+    }
     if (!res.ok) {
       console.error("[ASAAS] checkout", body);
+      const detalhes = mensagensErroAsaas(body);
       return json(
-        { erro: body?.errors?.[0]?.description || "Falha ao criar checkout" },
-        502,
+        {
+          erro: mensagemAmigavelAsaas(detalhes, res.status),
+          codigo: "ASAAS_VALIDACAO",
+          detalhes,
+        },
+        res.status >= 400 && res.status < 500 ? 400 : 502,
       );
     }
 
     const checkoutId = body.id as string;
+    if (!checkoutId) {
+      console.error("[ASAAS] Checkout criado sem ID:", body);
+      return json(
+        {
+          erro: "O Asaas não retornou a identificação do pagamento.",
+          codigo: "ASAAS_RESPOSTA_INVALIDA",
+        },
+        502,
+      );
+    }
     const checkoutUrl =
       (body.link as string) ||
       `${hostCheckout}/checkoutSession/show/${checkoutId}`;

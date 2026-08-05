@@ -10,6 +10,7 @@ import { validarCupom } from "../../lib/cupons";
 import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
+  cpfValido,
   formatarCpf,
   garantirClienteCheckout,
   geocodificarEndereco,
@@ -676,14 +677,17 @@ export function DeliveryCheckout() {
       !freteMsg);
 
   const precisaEmailPagamento = !(modalidade === "retirada" && pagarNaLoja);
+  const precisaCpfPagamento = precisaEmailPagamento; // Asaas exige CPF no checkout online
   const emailValido =
     guestEmail.trim().includes("@") && guestEmail.trim().includes(".");
+  const cpfOk = cpfValido(cpfNota);
   const dadosClienteOk = Boolean(
     telefoneConsultado &&
       !buscandoCliente &&
       telefoneDigitosCompleto(guestTelefone) &&
       guestNome.trim() &&
-      (!precisaEmailPagamento || emailValido),
+      (!precisaEmailPagamento || emailValido) &&
+      (!precisaCpfPagamento || cpfOk),
   );
 
   const podePagar = !enviando && enderecoEntregaOk && dadosClienteOk;
@@ -776,6 +780,10 @@ export function DeliveryCheckout() {
       !(guestEmail.trim().includes("@") && guestEmail.trim().includes("."))
     ) {
       toast.error("Informe um e-mail para o pagamento online.");
+      return;
+    }
+    if (statusPagamento === "aguardando" && !cpfValido(cpfNota)) {
+      toast.error("Informe um CPF válido para o pagamento (obrigatório).");
       return;
     }
 
@@ -890,6 +898,7 @@ export function DeliveryCheckout() {
       toast.message("Abrindo pagamento seguro…");
       const checkout = await iniciarCheckoutAsaas(resultado.pedido_id, {
         email: emailPagamento,
+        cpf: cpfNota,
       });
 
       // Sacola só limpa após pagamento confirmado (página do pedido / webhook).
@@ -1545,12 +1554,38 @@ export function DeliveryCheckout() {
           )}
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
-            <h2 className="font-bold">CPF na nota</h2>
+            <div className="space-y-1">
+              <h2 className="font-bold">
+                CPF na nota
+                {precisaCpfPagamento && (
+                  <span className="text-red-600 font-bold"> *</span>
+                )}
+              </h2>
+              {precisaCpfPagamento && (
+                <p className="text-xs text-zinc-500">
+                  Obrigatório para pagamento online (PIX / cartão).
+                </p>
+              )}
+            </div>
             <Input
               value={cpfNota}
               onChange={(e) => setCpfNota(formatarCpf(e.target.value))}
               inputMode="numeric"
+              placeholder="000.000.000-00"
+              autoComplete="off"
+              aria-required={precisaCpfPagamento}
+              aria-invalid={
+                precisaCpfPagamento && cpfNota.length > 0 && !cpfOk
+              }
+              className={
+                precisaCpfPagamento && cpfNota.length > 0 && !cpfOk
+                  ? "border-red-400 focus-visible:ring-red-400"
+                  : undefined
+              }
             />
+            {precisaCpfPagamento && cpfNota.replace(/\D/g, "").length > 0 && !cpfOk && (
+              <p className="text-xs text-red-600">CPF inválido ou incompleto.</p>
+            )}
           </section>
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-1 text-sm">
