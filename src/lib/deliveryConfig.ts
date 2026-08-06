@@ -4,6 +4,7 @@ import {
   normalizarClimaFrete,
   normalizarEnderecosReferencia,
   normalizarFaixas,
+  normalizarModoFrete,
   normalizarRegrasFrete,
   type DeliveryConfig,
 } from "./deliveryFrete";
@@ -38,6 +39,7 @@ function mapearConfig(
       data.loja_longitude != null ? Number(data.loja_longitude) : null,
     raio_km: Number(data.raio_km ?? 5),
     tempo_estimado_min: Number(data.tempo_estimado_min ?? 45),
+    modo_frete: normalizarModoFrete(data.modo_frete),
     faixas_frete: faixas,
     regras_frete: regras,
     clima_frete: climaGlobal,
@@ -51,17 +53,24 @@ function mapearConfig(
   };
 }
 
+const SELECT_COLS =
+  "ativo, pedido_minimo, loja_latitude, loja_longitude, raio_km, tempo_estimado_min, modo_frete, faixas_frete, regras_frete, clima_frete, enderecos_referencia, pontos_por_real, resgate_pontos, resgate_valor_reais, whatsapp_numero";
+
+const SELECT_COLS_SEM_MODO =
+  "ativo, pedido_minimo, loja_latitude, loja_longitude, raio_km, tempo_estimado_min, faixas_frete, regras_frete, clima_frete, enderecos_referencia, pontos_por_real, resgate_pontos, resgate_valor_reais, whatsapp_numero";
+
 export async function buscarDeliveryConfig(): Promise<DeliveryConfig> {
   const { data, error } = await supabase
     .from("delivery_config")
-    .select(
-      "ativo, pedido_minimo, loja_latitude, loja_longitude, raio_km, tempo_estimado_min, faixas_frete, regras_frete, clima_frete, enderecos_referencia, pontos_por_real, resgate_pontos, resgate_valor_reais, whatsapp_numero",
-    )
+    .select(SELECT_COLS)
     .eq("id", 1)
     .maybeSingle();
 
   if (error) {
     console.error("[DELIVERY] Falha ao ler config:", error.message);
+    if (error.message.includes("modo_frete")) {
+      return buscarDeliveryConfigSemModo();
+    }
     if (error.message.includes("enderecos_referencia")) {
       return buscarDeliveryConfigSemEnderecos();
     }
@@ -85,11 +94,32 @@ export async function buscarDeliveryConfig(): Promise<DeliveryConfig> {
   );
 }
 
+async function buscarDeliveryConfigSemModo(): Promise<DeliveryConfig> {
+  const { data, error } = await supabase
+    .from("delivery_config")
+    .select(SELECT_COLS_SEM_MODO)
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (error || !data) {
+    return {
+      ...DELIVERY_CONFIG_PADRAO,
+      clima_frete: { ...DELIVERY_CONFIG_PADRAO.clima_frete },
+      enderecos_referencia: [],
+    };
+  }
+
+  return mapearConfig(
+    { ...(data as Record<string, unknown>), modo_frete: "distancia" },
+    (data as { enderecos_referencia?: unknown }).enderecos_referencia,
+  );
+}
+
 async function buscarDeliveryConfigSemEnderecos(): Promise<DeliveryConfig> {
   const { data, error } = await supabase
     .from("delivery_config")
     .select(
-      "ativo, pedido_minimo, loja_latitude, loja_longitude, raio_km, tempo_estimado_min, faixas_frete, regras_frete, clima_frete, pontos_por_real, resgate_pontos, resgate_valor_reais, whatsapp_numero",
+      "ativo, pedido_minimo, loja_latitude, loja_longitude, raio_km, tempo_estimado_min, modo_frete, faixas_frete, regras_frete, clima_frete, pontos_por_real, resgate_pontos, resgate_valor_reais, whatsapp_numero",
     )
     .eq("id", 1)
     .maybeSingle();
@@ -115,6 +145,7 @@ export async function salvarDeliveryConfig(
   const whatsapp = config.whatsapp_numero
     ? config.whatsapp_numero.replace(/\D/g, "")
     : null;
+  const modo = normalizarModoFrete(config.modo_frete);
   const { error } = await supabase
     .from("delivery_config")
     .update({
@@ -124,6 +155,7 @@ export async function salvarDeliveryConfig(
       loja_longitude: config.loja_longitude,
       raio_km: config.raio_km,
       tempo_estimado_min: config.tempo_estimado_min,
+      modo_frete: modo,
       faixas_frete: faixas,
       regras_frete: regras,
       clima_frete: clima,

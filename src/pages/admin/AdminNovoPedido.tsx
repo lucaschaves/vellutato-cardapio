@@ -31,12 +31,12 @@ import {
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
+import { avaliarEntregaDelivery } from "../../lib/deliveryBairros";
 import {
   criarPedidoDelivery,
   type EnderecoSnapshot,
 } from "../../lib/deliveryPedido";
 import {
-  avaliarEntrega,
   formatarDistanciaEntrega,
   type DeliveryConfig,
 } from "../../lib/deliveryFrete";
@@ -150,7 +150,9 @@ export function AdminNovoPedido() {
   const [freteMsg, setFreteMsg] = useState<string | null>(null);
   const [taxaFrete, setTaxaFrete] = useState(0);
   const [acrescimoClima, setAcrescimoClima] = useState(0);
+  const [descontoCarrinhoFrete, setDescontoCarrinhoFrete] = useState(0);
   const [distanciaKm, setDistanciaKm] = useState<number | null>(null);
+  const [bairroFreteNome, setBairroFreteNome] = useState<string | null>(null);
   const [geoBusy, setGeoBusy] = useState(false);
 
   const [produtos, setProdutos] = useState<ProdutoCat[]>([]);
@@ -201,6 +203,7 @@ export function AdminNovoPedido() {
     setFreteMsg(null);
     setTaxaFrete(0);
     setDistanciaKm(null);
+    setBairroFreteNome(null);
   }, [canal]);
 
   const produtosFiltrados = useMemo(() => {
@@ -259,14 +262,16 @@ export function AdminNovoPedido() {
       if (canal !== "entrega") {
         setTaxaFrete(0);
         setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
         setFreteMsg(null);
         setDistanciaKm(null);
+        setBairroFreteNome(null);
       }
       return;
     }
     let ativo = true;
     void (async () => {
-      const r = await avaliarEntrega(
+      const r = await avaliarEntregaDelivery(
         config,
         enderecoAtivo.latitude,
         enderecoAtivo.longitude,
@@ -277,13 +282,17 @@ export function AdminNovoPedido() {
         setFreteMsg(r.erro);
         setTaxaFrete(0);
         setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
         setDistanciaKm(r.distancia_km ?? null);
+        setBairroFreteNome(r.bairro_nome ?? null);
         return;
       }
       setFreteMsg(null);
       setTaxaFrete(r.taxa);
       setAcrescimoClima(r.acrescimo_clima);
+      setDescontoCarrinhoFrete(r.desconto_carrinho);
       setDistanciaKm(r.distancia_km);
+      setBairroFreteNome(r.bairro_nome);
     })();
     return () => {
       ativo = false;
@@ -551,7 +560,7 @@ export function AdminNovoPedido() {
         return;
       }
       // Revalida na hora: o estado pode estar desatualizado ou ainda calculando.
-      const avaliacao = await avaliarEntrega(
+      const avaliacao = await avaliarEntregaDelivery(
         config,
         enderecoAtivo.latitude,
         enderecoAtivo.longitude,
@@ -561,7 +570,9 @@ export function AdminNovoPedido() {
         setFreteMsg(avaliacao.erro);
         setTaxaFrete(0);
         setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
         setDistanciaKm(avaliacao.distancia_km ?? null);
+        setBairroFreteNome(avaliacao.bairro_nome ?? null);
         toast.error(avaliacao.erro);
         return;
       }
@@ -570,7 +581,9 @@ export function AdminNovoPedido() {
       setFreteMsg(null);
       setTaxaFrete(avaliacao.taxa);
       setAcrescimoClima(avaliacao.acrescimo_clima);
+      setDescontoCarrinhoFrete(avaliacao.desconto_carrinho);
       setDistanciaKm(avaliacao.distancia_km);
+      setBairroFreteNome(avaliacao.bairro_nome);
     }
 
     const totalFinal = Math.max(0, subtotal) + taxaEntregaFinal;
@@ -880,9 +893,13 @@ export function AdminNovoPedido() {
           )}
           {!freteMsg && enderecoAtivo && (
             <p className="text-sm text-zinc-600">
+              {bairroFreteNome ? `Entrega para ${bairroFreteNome} · ` : ""}
               Frete: R$ {taxaFrete.toFixed(2).replace(".", ",")}
               {acrescimoClima > 0
                 ? ` (inclui +R$ ${acrescimoClima.toFixed(2).replace(".", ",")} chuva)`
+                : ""}
+              {descontoCarrinhoFrete > 0
+                ? ` (−R$ ${descontoCarrinhoFrete.toFixed(2).replace(".", ",")} no frete)`
                 : ""}
               {distanciaKm != null
                 ? ` · ${formatarDistanciaEntrega(distanciaKm)}`

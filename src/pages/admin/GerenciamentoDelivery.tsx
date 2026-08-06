@@ -11,7 +11,7 @@ import {
   Trash2,
   Truck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
@@ -38,6 +38,12 @@ import {
   type FaixaFrete,
   type RegraFrete,
 } from "../../lib/deliveryFrete";
+
+const MapaFreteBairros = lazy(() =>
+  import("../../components/admin/MapaFreteBairros").then((m) => ({
+    default: m.MapaFreteBairros,
+  })),
+);
 
 const TODOS_DIAS: DiaSemana[] = [0, 1, 2, 3, 4, 5, 6];
 
@@ -160,35 +166,47 @@ export function GerenciamentoDelivery() {
 
   const salvar = async () => {
     if (!config) return;
-    if (config.pedido_minimo < 0 || config.raio_km <= 0) {
-      toast.warning("Informe pedido mínimo e raio válidos.");
+    if (config.pedido_minimo < 0) {
+      toast.warning("Informe pedido mínimo válido.");
       setAba("operacao");
       return;
     }
-    for (const r of config.regras_frete) {
-      if (r.dias.length === 0) {
-        toast.warning("Cada regra precisa de ao menos um dia da semana.");
-        setAba("frete");
-        return;
-      }
-      if (!r.faixas.length) {
-        toast.warning("Cada regra precisa de ao menos uma faixa de km.");
-        setAba("frete");
-        return;
+    if (config.modo_frete === "distancia" && config.raio_km <= 0) {
+      toast.warning("Informe um raio válido para o frete por km.");
+      setAba("operacao");
+      return;
+    }
+    if (config.modo_frete === "distancia") {
+      for (const r of config.regras_frete) {
+        if (r.dias.length === 0) {
+          toast.warning("Cada regra precisa de ao menos um dia da semana.");
+          setAba("frete");
+          return;
+        }
+        if (!r.faixas.length) {
+          toast.warning("Cada regra precisa de ao menos uma faixa de km.");
+          setAba("frete");
+          return;
+        }
       }
     }
     try {
       setSalvando(true);
       await salvarDeliveryConfig(config);
-      toast.success("Configuração de delivery salva!");
+      toast.success(
+        config.modo_frete === "bairro"
+          ? "Modo por bairro salvo! As taxas dos bairros já são gravadas ao editar no mapa."
+          : "Configuração de delivery salva!",
+      );
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[DELIVERY ADMIN] salvar", mensagem);
       toast.error(
-        mensagem.includes("regras_frete") ||
-        mensagem.includes("clima_frete") ||
-        mensagem.includes("enderecos_referencia")
-          ? "Rode a migration de frete/endereços no banco."
+        mensagem.includes("modo_frete") ||
+          mensagem.includes("regras_frete") ||
+          mensagem.includes("clima_frete") ||
+          mensagem.includes("enderecos_referencia")
+          ? "Rode a migration de frete/bairros no banco."
           : "Erro ao salvar. Verifique a migration no banco.",
       );
     } finally {
@@ -389,12 +407,98 @@ export function GerenciamentoDelivery() {
                   }
                   className="mt-1"
                 />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Usado só no modo de frete por km. No modo por bairro, a
+                  cobertura vem dos polígonos com preço.
+                </p>
               </div>
             </div>
           </section>
         </TabsContent>
 
         <TabsContent value="frete" className="mt-0 flex flex-col gap-4">
+          <section className={painelClass}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-bold text-gray-950 dark:text-white">
+                  Modo de cálculo do frete
+                </h2>
+                <p className="text-xs text-gray-500 mt-1 max-w-xl">
+                  Em Florianópolis, bairros à mesma distância podem ter preços
+                  bem diferentes. Use <strong>por bairro</strong> para precificar
+                  no mapa, ou mantenha <strong>por km</strong> com as faixas
+                  atuais.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <span
+                  className={`text-sm font-semibold ${
+                    config.modo_frete === "distancia"
+                      ? "text-cookie-primary"
+                      : "text-gray-400"
+                  }`}
+                >
+                  Por km
+                </span>
+                <Switch
+                  checked={config.modo_frete === "bairro"}
+                  onCheckedChange={(on) =>
+                    setConfig({
+                      ...config,
+                      modo_frete: on ? "bairro" : "distancia",
+                    })
+                  }
+                />
+                <span
+                  className={`text-sm font-semibold ${
+                    config.modo_frete === "bairro"
+                      ? "text-cookie-primary"
+                      : "text-gray-400"
+                  }`}
+                >
+                  Por bairro
+                </span>
+              </div>
+            </div>
+            {config.modo_frete === "bairro" ? (
+              <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-200 rounded-lg px-3 py-2">
+                No modo bairro, só entregamos onde houver preço definido no mapa.
+                Clique em “Salvar” acima para gravar o modo ativo. As taxas de
+                cada bairro são salvas imediatamente ao editar.
+              </p>
+            ) : null}
+          </section>
+
+          {config.modo_frete === "bairro" ? (
+            <section className={painelClass}>
+              <div>
+                <h2 className="font-bold text-gray-950 dark:text-white">
+                  Frete por bairro (Florianópolis)
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Listas separadas (com / sem entrega). Ao selecionar: raio,
+                  faixas de km e descontos por carrinho. Cálculo: faixa → chuva
+                  → desconto.
+                </p>
+              </div>
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center gap-2 py-12 text-gray-400">
+                    <Loader2 className="animate-spin" size={18} />
+                    Carregando mapa…
+                  </div>
+                }
+              >
+                <MapaFreteBairros
+                  lojaLatitude={config.loja_latitude}
+                  lojaLongitude={config.loja_longitude}
+                />
+              </Suspense>
+            </section>
+          ) : null}
+
+          {config.modo_frete === "distancia" ? (
+          <>
           <section className={painelClass}>
             <div className="flex items-center justify-between gap-2">
               <div>
@@ -749,6 +853,8 @@ export function GerenciamentoDelivery() {
               ))}
             </div>
           </section>
+          </>
+          ) : null}
 
           <section className={painelClass}>
             <div className="flex items-center justify-between gap-3">
@@ -756,11 +862,14 @@ export function GerenciamentoDelivery() {
                 <CloudRain className="text-sky-600" size={20} />
                 <div>
                   <h2 className="font-bold text-gray-950 dark:text-white">
-                    Chuva no fallback
+                    {config.modo_frete === "bairro"
+                      ? "Acréscimo de chuva"
+                      : "Chuva no fallback"}
                   </h2>
                   <p className="text-xs text-gray-500">
-                    Só aplica quando nenhuma regra de dia/horário bate. Prefira
-                    configurar chuva dentro de cada regra acima.
+                    {config.modo_frete === "bairro"
+                      ? "Soma sobre a taxa do bairro quando houver chuva na loja (Open-Meteo)."
+                      : "Só aplica quando nenhuma regra de dia/horário bate. Prefira configurar chuva dentro de cada regra acima."}
                   </p>
                 </div>
               </div>

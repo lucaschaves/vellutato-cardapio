@@ -1,14 +1,16 @@
 {
   "name": "cardapio-digital",
   "private": true,
-  "version": "1.0.21",
+  "version": "1.0.22",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "gen-types": "npx supabase gen types typescript --schema public > src/types/supabase.ts --project-id "
+    "gen-types": "npx supabase gen types typescript --schema public > src/types/supabase.ts --project-id ",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
@@ -18,6 +20,7 @@
     "@tailwindcss/vite": "^4.3.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.21.0",
     "motion": "^12.41.0",
     "next-themes": "^0.4.6",
@@ -25,6 +28,7 @@
     "radix-ui": "^1.6.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-leaflet": "^5.0.0",
     "react-router-dom": "^7.18.0",
     "shadcn": "^4.11.0",
     "sonner": "^2.0.7",
@@ -35,6 +39,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@turf/helpers": "^7.4.0",
+    "@turf/simplify": "^7.4.0",
+    "@types/geojson": "^7946.0.16",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^24.13.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
@@ -47,6 +55,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.10"
   }
 }

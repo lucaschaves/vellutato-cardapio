@@ -43,6 +43,49 @@ export interface EnderecoReferenciaFrete {
   observacao?: string;
 }
 
+/** Como o frete é calculado na loja. */
+export type ModoFrete = "distancia" | "bairro";
+
+/** Linha de desconto progressivo no frete do bairro. */
+export interface DescontoFreteBairro {
+  id: string;
+  /** Subtotal mínimo dos itens para a linha valer. */
+  pedido_minimo: number;
+  /**
+   * Se definido, a linha só vale quando distância ≤ ate_km.
+   * Null = vale em qualquer distância dentro do raio do bairro.
+   */
+  ate_km: number | null;
+  tipo: "fixo" | "percentual" | "gratis";
+  /** Usado em fixo (R$) e percentual (%). Ignorado em gratis. */
+  valor: number;
+}
+
+/** Configuração híbrida de frete de um bairro oficial. */
+export interface ConfigFreteBairro {
+  /** Raio máximo neste bairro (km). Null = usa a maior faixa. */
+  raio_km: number | null;
+  faixas: FaixaFrete[];
+  descontos: DescontoFreteBairro[];
+}
+
+/** Bairro oficial resolvido por coordenadas (nunca pelo texto do CEP). */
+export interface BairroFreteResolvido {
+  id: string;
+  slug: string;
+  nome: string;
+  regiao: string;
+  distrito: string;
+  /**
+   * Compat: menor taxa das faixas, ou taxa única legada.
+   * Null / faixas vazias = bairro sem entrega.
+   */
+  taxa: number | null;
+  raio_km: number | null;
+  faixas: FaixaFrete[];
+  descontos: DescontoFreteBairro[];
+}
+
 export interface DeliveryConfig {
   ativo: boolean;
   pedido_minimo: number;
@@ -50,13 +93,19 @@ export interface DeliveryConfig {
   loja_longitude: number | null;
   raio_km: number;
   tempo_estimado_min: number;
+  /**
+   * `distancia` = faixas por km (legado);
+   * `bairro` = polígono + faixas de km do bairro + descontos por carrinho.
+   * No modo bairro: taxa_faixa → +chuva → −desconto → max(0,…).
+   */
+  modo_frete: ModoFrete;
   /** Faixas padrão (fallback quando nenhuma regra de horário bate). */
   faixas_frete: FaixaFrete[];
   /** Regras por dia da semana + horário (cada uma com seu clima). */
   regras_frete: RegraFrete[];
   /**
    * Clima só para as faixas padrão (fallback), quando nenhuma regra de horário bate.
-   * Preferir configurar chuva em cada regra.
+   * No modo bairro: chuva soma na taxa da faixa ANTES do desconto do carrinho.
    */
   clima_frete: ClimaFreteConfig;
   /**
@@ -96,6 +145,7 @@ export const DELIVERY_CONFIG_PADRAO: DeliveryConfig = {
   loja_longitude: null,
   raio_km: 5,
   tempo_estimado_min: 45,
+  modo_frete: "distancia",
   faixas_frete: [
     { ate_km: 2, taxa: 5 },
     { ate_km: 5, taxa: 10 },
@@ -108,6 +158,10 @@ export const DELIVERY_CONFIG_PADRAO: DeliveryConfig = {
   resgate_valor_reais: 5,
   whatsapp_numero: null,
 };
+
+export function normalizarModoFrete(raw: unknown): ModoFrete {
+  return raw === "bairro" ? "bairro" : "distancia";
+}
 
 /** Distância em km entre dois pontos (Haversine). */
 export function distanciaKm(
@@ -139,6 +193,24 @@ export function normalizarFaixas(faixas: unknown): FaixaFrete[] {
   return normalizadas.length > 0
     ? normalizadas
     : DELIVERY_CONFIG_PADRAO.faixas_frete;
+}
+
+/** Como `normalizarFaixas`, mas permite lista vazia (bairro sem entrega). */
+export function normalizarFaixasOpcionais(faixas: unknown): FaixaFrete[] {
+  if (!Array.isArray(faixas)) return [];
+  return faixas
+    .map((f) => ({
+      ate_km: Number((f as FaixaFrete).ate_km),
+      taxa: Number((f as FaixaFrete).taxa),
+    }))
+    .filter(
+      (f) =>
+        Number.isFinite(f.ate_km) &&
+        f.ate_km > 0 &&
+        Number.isFinite(f.taxa) &&
+        f.taxa >= 0,
+    )
+    .sort((a, b) => a.ate_km - b.ate_km);
 }
 
 function parseHhMm(valor: string): number | null {
@@ -330,6 +402,185 @@ export function calcularTaxaFrete(
   return null;
 }
 
+export function normalizarDescontosBairro(raw: unknown): DescontoFreteBairro[] {
+  if (!Array.isArray(raw)) return [];
+  const lista: DescontoFreteBairro[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const pedido = Number(o.pedido_minimo);
+    const tipoRaw = String(o.tipo || "fixo");
+    const tipo: DescontoFreteBairro["tipo"] =
+      tipoRaw === "gratis" || tipoRaw === "percentual" ? tipoRaw : "fixo";
+    const valor = Number(o.valor);
+    const ateRaw = o.ate_km;
+    const ate =
+      ateRaw == null || ateRaw === ""
+        ? null
+        : Number.isFinite(Number(ateRaw)) && Number(ateRaw) > 0
+          ? Number(ateRaw)
+          : null;
+    lista.push({
+      id: String(o.id || cryptoRandomId()),
+      pedido_minimo: Number.isFinite(pedido) && pedido >= 0 ? pedido : 0,
+      ate_km: ate,
+      tipo,
+      valor:
+        tipo === "gratis"
+          ? 0
+          : Number.isFinite(valor) && valor >= 0
+            ? valor
+            : 0,
+    });
+  }
+  return lista.sort((a, b) => {
+    if (a.pedido_minimo !== b.pedido_minimo) {
+      return b.pedido_minimo - a.pedido_minimo;
+    }
+    const aAte = a.ate_km ?? Infinity;
+    const bAte = b.ate_km ?? Infinity;
+    return aAte - bAte;
+  });
+}
+
+export function novoDescontoFreteBairro(
+  parcial?: Partial<DescontoFreteBairro>,
+): DescontoFreteBairro {
+  return {
+    id: cryptoRandomId(),
+    pedido_minimo: parcial?.pedido_minimo ?? 30,
+    ate_km: parcial?.ate_km === undefined ? 2 : parcial.ate_km,
+    tipo: parcial?.tipo ?? "gratis",
+    valor: parcial?.valor ?? 0,
+  };
+}
+
+export function raioEfetivoBairro(config: {
+  raio_km: number | null;
+  faixas: FaixaFrete[];
+}): number | null {
+  if (config.raio_km != null && config.raio_km > 0) return config.raio_km;
+  let max = 0;
+  for (const f of config.faixas) {
+    if (f.ate_km > max) max = f.ate_km;
+  }
+  return max > 0 ? max : null;
+}
+
+export function bairroTemEntrega(bairro: {
+  faixas?: FaixaFrete[];
+  taxa?: number | null;
+}): boolean {
+  if (bairro.faixas && bairro.faixas.length > 0) return true;
+  return bairro.taxa != null && Number.isFinite(Number(bairro.taxa));
+}
+
+/** Compat: bairro só com taxa única vira uma faixa. */
+export function faixasDoBairro(bairro: BairroFreteResolvido): FaixaFrete[] {
+  if (bairro.faixas?.length) return normalizarFaixasOpcionais(bairro.faixas);
+  if (bairro.taxa != null && Number.isFinite(Number(bairro.taxa))) {
+    const raio = raioEfetivoBairro(bairro) ?? 50;
+    return [{ ate_km: raio, taxa: Number(bairro.taxa) }];
+  }
+  return [];
+}
+
+export function valorDescontoFreteLinha(
+  taxaComClima: number,
+  linha: DescontoFreteBairro,
+): number {
+  if (taxaComClima <= 0) return 0;
+  if (linha.tipo === "gratis") return Number(taxaComClima.toFixed(2));
+  if (linha.tipo === "percentual") {
+    return Number(((taxaComClima * Math.max(0, linha.valor)) / 100).toFixed(2));
+  }
+  return Number(Math.min(taxaComClima, Math.max(0, linha.valor)).toFixed(2));
+}
+
+/**
+ * Entre as linhas que qualificam (pedido mínimo + ate_km), escolhe a de maior desconto em R$.
+ */
+export function selecionarDescontoBairro(
+  descontos: DescontoFreteBairro[],
+  subtotal: number,
+  distanciaKm: number,
+  taxaComClima: number,
+): { linha: DescontoFreteBairro; desconto: number } | null {
+  let melhor: { linha: DescontoFreteBairro; desconto: number } | null = null;
+  for (const linha of descontos) {
+    if (subtotal < linha.pedido_minimo) continue;
+    if (linha.ate_km != null && distanciaKm > linha.ate_km) continue;
+    const desconto = valorDescontoFreteLinha(taxaComClima, linha);
+    if (!melhor || desconto > melhor.desconto) {
+      melhor = { linha, desconto };
+    }
+  }
+  return melhor;
+}
+
+export type ResultadoCalculoBairro =
+  | {
+      ok: true;
+      taxa_faixa: number;
+      taxa_com_clima: number;
+      acrescimo_clima: number;
+      desconto_carrinho: number;
+      taxa: number;
+      desconto_linha: DescontoFreteBairro | null;
+      raio_km: number;
+    }
+  | { ok: false; erro: string };
+
+/**
+ * Motor híbrido do bairro (sincronous, chuva já resolvida).
+ * Ordem: faixa → +chuva → −desconto → max(0,…).
+ */
+export function calcularFreteBairroHibrido(
+  bairro: BairroFreteResolvido,
+  distanciaKm: number,
+  subtotalItens: number,
+  acrescimoClima: number,
+): ResultadoCalculoBairro {
+  const faixas = faixasDoBairro(bairro);
+  if (!faixas.length) {
+    return { ok: false, erro: `Não entregamos no bairro ${bairro.nome}.` };
+  }
+  const raio = raioEfetivoBairro({ raio_km: bairro.raio_km, faixas });
+  if (raio == null || distanciaKm > raio) {
+    return {
+      ok: false,
+      erro: `Fora do raio de entrega do bairro ${bairro.nome} (máx. ${raio ?? "?"} km).`,
+    };
+  }
+  const taxaFaixa = calcularTaxaFrete(distanciaKm, faixas);
+  if (taxaFaixa == null) {
+    return {
+      ok: false,
+      erro: `Não há faixa de frete para esta distância no bairro ${bairro.nome}.`,
+    };
+  }
+  const acrescimo = Math.max(0, Number(acrescimoClima) || 0);
+  const taxaComClima = Number((taxaFaixa + acrescimo).toFixed(2));
+  const escolhido = selecionarDescontoBairro(
+    normalizarDescontosBairro(bairro.descontos),
+    subtotalItens,
+    distanciaKm,
+    taxaComClima,
+  );
+  const desconto = escolhido?.desconto ?? 0;
+  const taxa = Number(Math.max(0, taxaComClima - desconto).toFixed(2));
+  return {
+    ok: true,
+    taxa_faixa: taxaFaixa,
+    taxa_com_clima: taxaComClima,
+    acrescimo_clima: acrescimo,
+    desconto_carrinho: desconto,
+    taxa,
+    desconto_linha: escolhido?.linha ?? null,
+    raio_km: raio,
+  };
+}
+
 export function aplicarAcrescimoClima(
   taxaBase: number,
   clima: ClimaFreteConfig,
@@ -348,8 +599,40 @@ export function aplicarAcrescimoClima(
   };
 }
 
-/** Menor taxa possível (para estimativa antes do endereço). */
-export function taxaMinimaConfig(config: DeliveryConfig): number {
+/** Menor taxa entre bairros com preço configurado (menor faixa). */
+export function taxaMinimaBairros(
+  bairros: Array<{
+    taxa?: number | null | undefined;
+    faixas?: FaixaFrete[];
+  }>,
+): number {
+  let min = Infinity;
+  for (const b of bairros) {
+    if (b.faixas?.length) {
+      for (const f of b.faixas) {
+        const t = Number(f.taxa);
+        if (Number.isFinite(t) && t >= 0 && t < min) min = t;
+      }
+      continue;
+    }
+    if (b.taxa == null) continue;
+    const t = Number(b.taxa);
+    if (Number.isFinite(t) && t >= 0 && t < min) min = t;
+  }
+  return Number.isFinite(min) ? min : 0;
+}
+
+/**
+ * Menor taxa possível (estimativa antes do endereço).
+ * No modo bairro, passe as taxas dos bairros; senão usa faixas por km.
+ */
+export function taxaMinimaConfig(
+  config: DeliveryConfig,
+  taxasBairro?: Array<{ taxa: number | null | undefined }>,
+): number {
+  if (config.modo_frete === "bairro") {
+    return taxaMinimaBairros(taxasBairro ?? []);
+  }
   const listas = [
     config.faixas_frete,
     ...config.regras_frete.map((r) => r.faixas),
@@ -377,24 +660,76 @@ export function formatarDistanciaEntrega(km: number): string {
 export type ResultadoFrete =
   | {
       ok: true;
-      distancia_km: number;
+      distancia_km: number | null;
       taxa: number;
       taxa_base: number;
       acrescimo_clima: number;
+      /** Desconto do carrinho aplicado após a chuva (modo bairro). */
+      desconto_carrinho: number;
       chuva: boolean;
       regra_id: string | null;
+      bairro_nome: string | null;
+      bairro_id: string | null;
+      modo: ModoFrete;
     }
   | {
       ok: false;
       erro: string;
-      distancia_km?: number;
+      distancia_km?: number | null;
+      bairro_nome?: string | null;
+      modo?: ModoFrete;
     };
 
 export type OpcoesAvaliacaoFrete = {
   agora?: Date;
   /** Se omitido e a regra/fallback tiver clima.ativo, consulta Open-Meteo. */
   chuva?: boolean;
+  /**
+   * No modo `bairro`, resultado de `localizarBairroFrete` (coordenadas).
+   * `null` / omitido = ponto fora dos polígonos oficiais.
+   */
+  bairro?: BairroFreteResolvido | null;
 };
+
+function distanciaOpcional(
+  config: DeliveryConfig,
+  destLat: number,
+  destLng: number,
+): number | null {
+  if (config.loja_latitude == null || config.loja_longitude == null) {
+    return null;
+  }
+  return Number(
+    distanciaKm(
+      config.loja_latitude,
+      config.loja_longitude,
+      destLat,
+      destLng,
+    ).toFixed(3),
+  );
+}
+
+async function aplicarClimaNaTaxa(
+  taxaBase: number,
+  clima: ClimaFreteConfig,
+  config: DeliveryConfig,
+  opts?: OpcoesAvaliacaoFrete,
+): Promise<{ taxa: number; acrescimo: number; chuva: boolean }> {
+  let chuva = Boolean(opts?.chuva);
+  if (
+    opts?.chuva === undefined &&
+    clima.ativo &&
+    config.loja_latitude != null &&
+    config.loja_longitude != null
+  ) {
+    chuva = await consultarChuvaNaLoja(
+      config.loja_latitude,
+      config.loja_longitude,
+    );
+  }
+  const { taxa, acrescimo } = aplicarAcrescimoClima(taxaBase, clima, chuva);
+  return { taxa, acrescimo, chuva };
+}
 
 export async function avaliarEntrega(
   config: DeliveryConfig,
@@ -406,13 +741,134 @@ export async function avaliarEntrega(
   if (!config.ativo) {
     return { ok: false, erro: "Delivery temporariamente indisponível." };
   }
-  if (config.loja_latitude == null || config.loja_longitude == null) {
-    return { ok: false, erro: "Loja sem coordenadas configuradas." };
-  }
   if (subtotalItens < config.pedido_minimo) {
     return {
       ok: false,
       erro: `Pedido mínimo de R$ ${config.pedido_minimo.toFixed(2)} (itens).`,
+    };
+  }
+
+  const modo = normalizarModoFrete(config.modo_frete);
+
+  if (modo === "bairro") {
+    const bairro = opts?.bairro;
+    if (!bairro) {
+      return {
+        ok: false,
+        erro: "Endereço fora dos bairros de entrega de Florianópolis.",
+        distancia_km: distanciaOpcional(config, destLat, destLng),
+        modo,
+      };
+    }
+
+    if (config.loja_latitude == null || config.loja_longitude == null) {
+      return {
+        ok: false,
+        erro: "Loja sem coordenadas configuradas.",
+        bairro_nome: bairro.nome,
+        modo,
+      };
+    }
+
+    const distancia = Number(
+      distanciaKm(
+        config.loja_latitude,
+        config.loja_longitude,
+        destLat,
+        destLng,
+      ).toFixed(3),
+    );
+
+    if (!bairroTemEntrega(bairro)) {
+      return {
+        ok: false,
+        erro: `Não entregamos no bairro ${bairro.nome}.`,
+        distancia_km: distancia,
+        bairro_nome: bairro.nome,
+        modo,
+      };
+    }
+
+    const climaAplicavel = config.clima_frete;
+    let chuva = Boolean(opts?.chuva);
+    if (
+      opts?.chuva === undefined &&
+      climaAplicavel.ativo &&
+      config.loja_latitude != null &&
+      config.loja_longitude != null
+    ) {
+      chuva = await consultarChuvaNaLoja(
+        config.loja_latitude,
+        config.loja_longitude,
+      );
+    }
+
+    // Precisa da taxa da faixa para calcular o acréscimo de chuva (fixo ou %).
+    const faixas = faixasDoBairro(bairro);
+    const raio = raioEfetivoBairro({ raio_km: bairro.raio_km, faixas });
+    if (raio == null || distancia > raio) {
+      return {
+        ok: false,
+        erro: `Fora do raio de entrega do bairro ${bairro.nome} (máx. ${raio ?? "?"} km).`,
+        distancia_km: distancia,
+        bairro_nome: bairro.nome,
+        modo,
+      };
+    }
+    const taxaFaixaPreview = calcularTaxaFrete(distancia, faixas);
+    if (taxaFaixaPreview == null) {
+      return {
+        ok: false,
+        erro: `Não há faixa de frete para esta distância no bairro ${bairro.nome}.`,
+        distancia_km: distancia,
+        bairro_nome: bairro.nome,
+        modo,
+      };
+    }
+
+    const { acrescimo } = aplicarAcrescimoClima(
+      taxaFaixaPreview,
+      climaAplicavel,
+      chuva,
+    );
+
+    const calc = calcularFreteBairroHibrido(
+      bairro,
+      distancia,
+      subtotalItens,
+      acrescimo,
+    );
+    if (!calc.ok) {
+      return {
+        ok: false,
+        erro: calc.erro,
+        distancia_km: distancia,
+        bairro_nome: bairro.nome,
+        modo,
+      };
+    }
+
+    return {
+      ok: true,
+      distancia_km: distancia,
+      taxa: calc.taxa,
+      taxa_base: calc.taxa_faixa,
+      acrescimo_clima: calc.acrescimo_clima,
+      desconto_carrinho: calc.desconto_carrinho,
+      chuva,
+      regra_id: null,
+      bairro_nome: bairro.nome,
+      bairro_id: bairro.id,
+      modo,
+    };
+  }
+
+  // --- Modo distância (legado) ---
+  if (config.loja_latitude == null || config.loja_longitude == null) {
+    return {
+      ok: false,
+      erro: "Loja sem coordenadas configuradas.",
+      modo,
     };
   }
 
@@ -428,6 +884,7 @@ export async function avaliarEntrega(
       ok: false,
       erro: `Fora da área de entrega (máx. ${config.raio_km} km).`,
       distancia_km: Number(distancia.toFixed(3)),
+      modo,
     };
   }
 
@@ -441,21 +898,15 @@ export async function avaliarEntrega(
       ok: false,
       erro: "Não há faixa de frete para esta distância no horário atual.",
       distancia_km: Number(distancia.toFixed(3)),
+      modo,
     };
   }
 
-  let chuva = Boolean(opts?.chuva);
-  if (opts?.chuva === undefined && climaAplicavel.ativo) {
-    chuva = await consultarChuvaNaLoja(
-      config.loja_latitude,
-      config.loja_longitude,
-    );
-  }
-
-  const { taxa, acrescimo } = aplicarAcrescimoClima(
+  const { taxa, acrescimo, chuva } = await aplicarClimaNaTaxa(
     taxaBase,
     climaAplicavel,
-    chuva,
+    config,
+    opts,
   );
 
   return {
@@ -464,7 +915,11 @@ export async function avaliarEntrega(
     taxa,
     taxa_base: taxaBase,
     acrescimo_clima: acrescimo,
+    desconto_carrinho: 0,
     chuva,
     regra_id: regra?.id ?? null,
+    bairro_nome: null,
+    bairro_id: null,
+    modo,
   };
 }

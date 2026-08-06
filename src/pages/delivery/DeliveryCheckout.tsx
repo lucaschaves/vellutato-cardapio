@@ -22,7 +22,11 @@ import {
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
 import {
-  avaliarEntrega,
+  avaliarEntregaDelivery,
+  listarBairrosFreteGeojson,
+  taxasDosBairrosGeojson,
+} from "../../lib/deliveryBairros";
+import {
   formatarDistanciaEntrega,
   taxaMinimaConfig,
   type DeliveryConfig,
@@ -168,7 +172,12 @@ export function DeliveryCheckout() {
   const [avaliandoFrete, setAvaliandoFrete] = useState(false);
   const [taxaFrete, setTaxaFrete] = useState(0);
   const [acrescimoClima, setAcrescimoClima] = useState(0);
+  const [descontoCarrinhoFrete, setDescontoCarrinhoFrete] = useState(0);
   const [distanciaKm, setDistanciaKm] = useState<number | null>(null);
+  const [bairroFreteNome, setBairroFreteNome] = useState<string | null>(null);
+  const [taxasBairroEstimativa, setTaxasBairroEstimativa] = useState<
+    Array<{ taxa: number | null }>
+  >([]);
   const [sugestoes, setSugestoes] = useState<SugestaoCheckout[]>([]);
   const [confirmarLimparSacola, setConfirmarLimparSacola] = useState(false);
   const freteTrackRef = useRef<string>("");
@@ -194,7 +203,18 @@ export function DeliveryCheckout() {
   }, []);
 
   useEffect(() => {
-    void buscarDeliveryConfig().then(setConfig);
+    void (async () => {
+      const cfg = await buscarDeliveryConfig();
+      setConfig(cfg);
+      if (cfg.modo_frete === "bairro") {
+        try {
+          const fc = await listarBairrosFreteGeojson();
+          setTaxasBairroEstimativa(taxasDosBairrosGeojson(fc));
+        } catch {
+          setTaxasBairroEstimativa([]);
+        }
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -435,8 +455,10 @@ export function DeliveryCheckout() {
     if (!config || modalidade !== "entrega") {
       setTaxaFrete(0);
       setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
       setFreteMsg(null);
       setDistanciaKm(null);
+      setBairroFreteNome(null);
       setAvaliandoFrete(false);
       return;
     }
@@ -444,13 +466,15 @@ export function DeliveryCheckout() {
       setFreteMsg("Informe o endereço completo para calcular o frete.");
       setTaxaFrete(0);
       setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
+      setBairroFreteNome(null);
       setAvaliandoFrete(false);
       return;
     }
     let ativo = true;
     setAvaliandoFrete(true);
     void (async () => {
-      const r = await avaliarEntrega(
+      const r = await avaliarEntregaDelivery(
         config,
         enderecoAtivo.latitude!,
         enderecoAtivo.longitude!,
@@ -462,19 +486,24 @@ export function DeliveryCheckout() {
         setFreteMsg(r.erro);
         setTaxaFrete(0);
         setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
         setDistanciaKm(r.distancia_km ?? null);
+        setBairroFreteNome(r.bairro_nome ?? null);
         const chave = `err:${enderecoAtivo.latitude},${enderecoAtivo.longitude}:${r.erro}`;
         if (freteTrackRef.current !== chave) {
           freteTrackRef.current = chave;
-          const foraRaio = /raio|área|area|não atendemos|nao atendemos/i.test(
-            r.erro || "",
-          );
-          track(foraRaio ? "cep_fora_raio" : "checkout_error", {
+          const foraArea =
+            /raio|área|area|não atendemos|nao atendemos|não entregamos|nao entregamos|fora dos bairros/i.test(
+              r.erro || "",
+            );
+          track(foraArea ? "cep_fora_raio" : "checkout_error", {
             canal: "delivery",
             props: {
-              motivo: foraRaio ? "fora_raio" : "frete",
+              motivo: foraArea ? "fora_area" : "frete",
               erro: r.erro,
               distancia_km: r.distancia_km,
+              bairro: r.bairro_nome,
+              modo: r.modo,
             },
           });
         }
@@ -483,7 +512,9 @@ export function DeliveryCheckout() {
       setFreteMsg(null);
       setTaxaFrete(r.taxa);
       setAcrescimoClima(r.acrescimo_clima);
+      setDescontoCarrinhoFrete(r.desconto_carrinho);
       setDistanciaKm(r.distancia_km);
+      setBairroFreteNome(r.bairro_nome);
       const chaveOk = `ok:${enderecoAtivo.latitude},${enderecoAtivo.longitude}:${r.taxa}`;
       if (freteTrackRef.current !== chaveOk) {
         freteTrackRef.current = chaveOk;
@@ -494,6 +525,8 @@ export function DeliveryCheckout() {
             distancia_km: r.distancia_km,
             chuva: r.chuva,
             acrescimo_clima: r.acrescimo_clima,
+            bairro: r.bairro_nome,
+            modo: r.modo,
           },
         });
       }
@@ -510,7 +543,9 @@ export function DeliveryCheckout() {
     enderecoAtivo.latitude != null &&
     enderecoAtivo.longitude != null;
 
-  const taxaMinimaEstimada = config ? taxaMinimaConfig(config) : 0;
+  const taxaMinimaEstimada = config
+    ? taxaMinimaConfig(config, taxasBairroEstimativa)
+    : 0;
 
   const taxaExibida =
     modalidade === "entrega"
@@ -772,7 +807,7 @@ export function DeliveryCheckout() {
         return;
       }
       // Revalida na hora: o estado pode estar desatualizado ou ainda calculando.
-      const avaliacao = await avaliarEntrega(
+      const avaliacao = await avaliarEntregaDelivery(
         config,
         enderecoAtivo.latitude,
         enderecoAtivo.longitude,
@@ -782,7 +817,9 @@ export function DeliveryCheckout() {
         setFreteMsg(avaliacao.erro);
         setTaxaFrete(0);
         setAcrescimoClima(0);
+        setDescontoCarrinhoFrete(0);
         setDistanciaKm(avaliacao.distancia_km ?? null);
+        setBairroFreteNome(avaliacao.bairro_nome ?? null);
         toast.error(avaliacao.erro);
         return;
       }
@@ -791,7 +828,9 @@ export function DeliveryCheckout() {
       setFreteMsg(null);
       setTaxaFrete(avaliacao.taxa);
       setAcrescimoClima(avaliacao.acrescimo_clima);
+      setDescontoCarrinhoFrete(avaliacao.desconto_carrinho);
       setDistanciaKm(avaliacao.distancia_km);
+      setBairroFreteNome(avaliacao.bairro_nome);
     }
 
     const statusPagamento =
@@ -1555,9 +1594,15 @@ export function DeliveryCheckout() {
               )}
               {!avaliandoFrete && !freteMsg && (
                 <p className="text-sm text-zinc-600">
+                  {bairroFreteNome
+                    ? `Entrega para ${bairroFreteNome} · `
+                    : ""}
                   Frete: R$ {taxaFrete.toFixed(2).replace(".", ",")}
                   {acrescimoClima > 0
                     ? ` (inclui +R$ ${acrescimoClima.toFixed(2).replace(".", ",")} chuva)`
+                    : ""}
+                  {descontoCarrinhoFrete > 0
+                    ? ` (−R$ ${descontoCarrinhoFrete.toFixed(2).replace(".", ",")} no frete)`
                     : ""}
                   {distanciaKm != null
                     ? ` · ${formatarDistanciaEntrega(distanciaKm)}`
