@@ -33,6 +33,9 @@ export async function enviarParaImpressoraLocal(
     console.info("[IMPRESSÃO] Enviando comanda:", {
       numero: comanda.numero,
       cliente: comanda.cliente_nome,
+      origem: comanda.origem_rotulo,
+      modalidade: comanda.modalidade_rotulo,
+      pagamento: comanda.pagamento_rotulo,
       local: comanda.local,
       resumo: comanda.resumo_consumo.rotulo,
       vias: comanda.vias.map((v) => v.tipo),

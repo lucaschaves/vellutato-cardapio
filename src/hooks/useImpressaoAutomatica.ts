@@ -12,7 +12,7 @@ import {
 import { supabase } from "../lib/supabase";
 
 const SELECT_PEDIDO_IMPRESSAO = `
-  id, sequencia_pedido, origem, identificador, cliente_nome, cliente_celular,
+  id, sequencia_pedido, origem, modalidade, identificador, cliente_nome, cliente_celular,
   status, criado_em, total, valor_total, desconto_aplicado, impresso,
   status_pagamento,
   pedido_itens (

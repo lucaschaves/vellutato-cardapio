@@ -33,7 +33,7 @@ export interface ViaComandaImpressao {
 
 export interface ComandaImpressao {
   /** Versão do payload para o servidor local */
-  versao: 3;
+  versao: 4;
   impressora: {
     modelo: "MP-4200 TH";
     colunas: number;
@@ -45,6 +45,12 @@ export interface ComandaImpressao {
   cliente_nome: string;
   cliente_telefone: string | null;
   origem: string;
+  origem_rotulo: string;
+  modalidade: string | null;
+  modalidade_rotulo: string | null;
+  status_pagamento: string | null;
+  pagamento_rotulo: string;
+  pagamento_destaque: string;
   local: string;
   identificador: string;
   resumo_consumo: {
@@ -76,6 +82,8 @@ type PedidoBrutoImpressao = {
   id: string;
   sequencia_pedido?: number | null;
   origem?: string | null;
+  modalidade?: string | null;
+  status_pagamento?: string | null;
   identificador?: string | null;
   cliente_nome?: string | null;
   cliente_celular?: string | null;
@@ -193,6 +201,84 @@ function rotuloLocal(
   return "Balcão";
 }
 
+export function rotuloOrigemComanda(
+  origem: string | null | undefined,
+): string {
+  switch (origem) {
+    case "mesa":
+      return "MESA";
+    case "balcao":
+      return "BALCAO";
+    case "totem":
+      return "TOTEM";
+    case "delivery":
+      return "DELIVERY";
+    default:
+      return (origem || "BALCAO").toUpperCase();
+  }
+}
+
+/** Entrega vs retirada (só faz sentido no delivery). */
+export function rotuloModalidadeComanda(
+  origem: string | null | undefined,
+  modalidade: string | null | undefined,
+): string | null {
+  if (origem !== "delivery") return null;
+  if (modalidade === "retirada") return "RETIRADA NA LOJA";
+  if (modalidade === "entrega") return "ENTREGA";
+  return "DELIVERY";
+}
+
+export function rotuloPagamentoComanda(
+  statusPagamento: string | null | undefined,
+): { rotulo: string; destaque: string; pago: boolean } {
+  switch (statusPagamento) {
+    case "pago":
+      return {
+        rotulo: "JA PAGO",
+        destaque: ">>> JA PAGO <<<",
+        pago: true,
+      };
+    case "na_loja":
+      return {
+        rotulo: "PAGAR NA LOJA",
+        destaque: ">>> PAGAR NA LOJA <<<",
+        pago: false,
+      };
+    case "aguardando":
+      return {
+        rotulo: "AGUARDANDO PAGAMENTO",
+        destaque: ">>> AGUARDANDO PAG. <<<",
+        pago: false,
+      };
+    case "expirado":
+      return {
+        rotulo: "PAGAMENTO EXPIRADO",
+        destaque: ">>> PAG. EXPIRADO <<<",
+        pago: false,
+      };
+    case "cancelado":
+      return {
+        rotulo: "PAGAMENTO CANCELADO",
+        destaque: ">>> PAG. CANCELADO <<<",
+        pago: false,
+      };
+    case "nao_aplicavel":
+    default:
+      return {
+        rotulo: "PAGAR NO CAIXA",
+        destaque: ">>> PAGAR NO CAIXA <<<",
+        pago: false,
+      };
+  }
+}
+
+/** Faixa visual com asteriscos — destaca no papel térmico. */
+function faixaDestaque(texto: string, largura = COLUNAS_COMANDA): string[] {
+  const t = texto.trim().toUpperCase().slice(0, Math.max(largura - 6, 8));
+  return [repetir("*", largura), centralizar(t, largura), repetir("*", largura)];
+}
+
 function precoLinhaItem(
   item: NonNullable<PedidoBrutoImpressao["pedido_itens"]>[number],
 ): number {
@@ -216,7 +302,9 @@ function cabecalhoComum(opts: {
   cliente: string;
   telefone: string | null;
   local: string;
-  origem: string | null | undefined;
+  origemRotulo: string;
+  modalidadeRotulo: string | null;
+  pagamentoDestaque: string;
   rotuloResumo: string;
   temLevar: boolean;
   qtdLevar: number;
@@ -231,23 +319,19 @@ function cabecalhoComum(opts: {
       formatarDataHora(opts.criadoEm),
     ),
   );
+  linhas.push(repetir("="));
+
+  // Origem + retirada/entrega — o que a cozinha precisa ver primeiro
+  linhas.push(...faixaDestaque(`ORIGEM: ${opts.origemRotulo}`));
+  if (opts.modalidadeRotulo) {
+    linhas.push(...faixaDestaque(opts.modalidadeRotulo));
+  }
+  linhas.push(...faixaDestaque(opts.pagamentoDestaque));
+
   linhas.push(repetir("-"));
   linhas.push(...envolver(`Cliente: ${opts.cliente}`));
   if (opts.telefone) linhas.push(...envolver(`Tel: ${opts.telefone}`));
   linhas.push(...envolver(`Local: ${opts.local}`));
-  if (opts.origem) {
-    linhas.push(
-      ...envolver(
-        `Origem: ${
-          opts.origem === "mesa"
-            ? "Mesa"
-            : opts.origem === "balcao"
-              ? "Balcão"
-              : opts.origem
-        }`,
-      ),
-    );
-  }
   linhas.push(repetir("="));
   linhas.push(centralizar(opts.rotuloResumo));
   if (opts.temLevar) {
@@ -399,6 +483,12 @@ export function montarComandaImpressao(
   const numero = pedido.sequencia_pedido ?? null;
   const cliente = (pedido.cliente_nome || "Cliente").trim();
   const telefone = pedido.cliente_celular?.trim() || null;
+  const origemRotulo = rotuloOrigemComanda(pedido.origem);
+  const modalidadeRotulo = rotuloModalidadeComanda(
+    pedido.origem,
+    pedido.modalidade,
+  );
+  const pagamento = rotuloPagamentoComanda(pedido.status_pagamento);
 
   const cabecaBase = {
     numero,
@@ -406,7 +496,9 @@ export function montarComandaImpressao(
     cliente,
     telefone,
     local,
-    origem: pedido.origem,
+    origemRotulo,
+    modalidadeRotulo,
+    pagamentoDestaque: pagamento.destaque,
     rotuloResumo,
     temLevar,
     qtdLevar,
@@ -426,6 +518,7 @@ export function montarComandaImpressao(
   linhasCozinha.push(repetir("="));
   linhasCozinha.push(linhaDoisLados("TOTAL", formatarMoeda(total)));
   linhasCozinha.push(repetir("="));
+  linhasCozinha.push(...faixaDestaque(pagamento.destaque));
   if (temLevar) {
     linhasCozinha.push(centralizar("ATENCAO: HA ITENS PARA LEVAR"));
     linhasCozinha.push(centralizar("IMPRIMIR VIA DO CLIENTE"));
@@ -464,7 +557,7 @@ export function montarComandaImpressao(
   linhasCliente.push(repetir("="));
   linhasCliente.push(linhaDoisLados("TOTAL", formatarMoeda(total)));
   linhasCliente.push(repetir("="));
-  linhasCliente.push(centralizar("Pagamento no balcao/caixa"));
+  linhasCliente.push(...faixaDestaque(pagamento.destaque));
   if (temLevar) {
     linhasCliente.push(centralizar("Confira os itens PARA LEVAR"));
   }
@@ -482,7 +575,7 @@ export function montarComandaImpressao(
   const vias = [viaCozinha, viaCliente];
 
   return {
-    versao: 3,
+    versao: 4,
     impressora: {
       modelo: "MP-4200 TH",
       colunas: COLUNAS_COMANDA,
@@ -494,6 +587,12 @@ export function montarComandaImpressao(
     cliente_nome: cliente,
     cliente_telefone: telefone,
     origem: pedido.origem || "balcao",
+    origem_rotulo: origemRotulo,
+    modalidade: pedido.modalidade ?? null,
+    modalidade_rotulo: modalidadeRotulo,
+    status_pagamento: pedido.status_pagamento ?? null,
+    pagamento_rotulo: pagamento.rotulo,
+    pagamento_destaque: pagamento.destaque,
     local,
     identificador: local,
     resumo_consumo: {
