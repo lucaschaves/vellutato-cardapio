@@ -6,16 +6,27 @@ type Props = {
   size?: number;
   /** Cor do nome ao lado. */
   tom?: "bordo" | "branco" | "escuro";
+  /** Exibe apenas o círculo, sem o nome ao lado. */
+  semTexto?: boolean;
 };
 
 /** Logomarca: círculo com zoom + “Vellutato” ao lado (como no mockup). */
-export function LogoMarca({ className, size = 40, tom = "escuro" }: Props) {
+export function LogoMarca({
+  className,
+  size = 40,
+  tom = "escuro",
+  semTexto = false,
+}: Props) {
   // Nome um pouco menor que o diâmetro, alinhado ao centro do círculo
   const nomeSize = Math.max(16, Math.round(size * 0.52));
 
   return (
     <span
-      className={cn("inline-flex items-center gap-3 select-none", className)}
+      className={cn(
+        "inline-flex items-center select-none",
+        !semTexto && "gap-3",
+        className,
+      )}
       aria-label="Vellutato — Cookies & Brownies"
     >
       <span
@@ -30,17 +41,19 @@ export function LogoMarca({ className, size = 40, tom = "escuro" }: Props) {
           draggable={false}
         />
       </span>
-      <span
-        className={cn(
-          "font-sans font-semibold tracking-tight leading-none",
-          tom === "branco" && "text-white",
-          tom === "bordo" && "text-cookie-primary",
-          tom === "escuro" && "text-stone-900 dark:text-white",
-        )}
-        style={{ fontSize: nomeSize }}
-      >
-        Vellutato
-      </span>
+      {!semTexto && (
+        <span
+          className={cn(
+            "font-sans font-semibold tracking-tight leading-none",
+            tom === "branco" && "text-white",
+            tom === "bordo" && "text-cookie-primary",
+            tom === "escuro" && "text-stone-900 dark:text-white",
+          )}
+          style={{ fontSize: nomeSize }}
+        >
+          Vellutato
+        </span>
+      )}
     </span>
   );
 }

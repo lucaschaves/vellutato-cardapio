@@ -7,6 +7,7 @@ interface ImpressaoAdminContextValue {
     pedidoId: string,
     opts?: { manual?: boolean },
   ) => Promise<boolean>;
+  verificarImpressora: () => Promise<boolean>;
 }
 
 const ImpressaoAdminContext = createContext<ImpressaoAdminContextValue | null>(

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { usePedidosRealtime } from "../context/PedidosRealtimeContext";
 import {
@@ -7,14 +7,24 @@ import {
 } from "../lib/alertaPedidoSom";
 import {
   enviarParaImpressoraLocal,
+  gerarComandaPdf,
+  impressoraEmModoPdf,
   obterUrlImpressoraLocal,
+  verificarImpressoraOnline,
 } from "../lib/impressoraLocal";
+import {
+  buscarConfigImpressao,
+  obterConfigImpressaoCache,
+} from "../lib/impressaoConfig";
 import { supabase } from "../lib/supabase";
+
+/** Intervalo do health-check da impressora (ms). */
+const INTERVALO_HEALTHCHECK_MS = 20000;
 
 const SELECT_PEDIDO_IMPRESSAO = `
   id, sequencia_pedido, origem, modalidade, identificador, cliente_nome, cliente_celular,
   status, criado_em, total, valor_total, desconto_aplicado, impresso,
-  status_pagamento,
+  status_pagamento, taxa_entrega, endereco_json,
   pedido_itens (
     id, quantidade, observacoes, preco_unitario, modo_consumo,
     produtos ( nome ),
@@ -54,6 +64,34 @@ export function useImpressaoAutomatica() {
       }
     };
   }, []);
+
+  // Carrega a configuração de impressão uma vez (fica em cache do módulo).
+  useEffect(() => {
+    void buscarConfigImpressao();
+  }, []);
+
+  const verificarImpressora = useCallback(async () => {
+    // No modo PDF (dev) não há servidor: considera sempre "online".
+    if (impressoraEmModoPdf()) {
+      impressoraOfflineRef.current = false;
+      setImpressoraOffline(false);
+      return true;
+    }
+    const online = await verificarImpressoraOnline();
+    impressoraOfflineRef.current = !online;
+    setImpressoraOffline(!online);
+    return online;
+  }, []);
+
+  // Health-check periódico: reflete o status real mesmo com a loja ociosa
+  // e auto-recupera para "online" quando o servidor volta.
+  useEffect(() => {
+    void verificarImpressora();
+    const id = window.setInterval(() => {
+      void verificarImpressora();
+    }, INTERVALO_HEALTHCHECK_MS);
+    return () => window.clearInterval(id);
+  }, [verificarImpressora]);
 
   const alertarImpressoraOffline = () => {
     // Só toca na transição online → offline (evita spam a cada pedido).
@@ -114,7 +152,25 @@ export function useImpressaoAutomatica() {
         return false;
       }
 
-      const sucesso = await enviarParaImpressoraLocal(pedido);
+      // Modo dev: gera PDF em vez de enviar para o servidor de impressão.
+      // Só no clique manual, para não abrir vários downloads automaticamente.
+      if (impressoraEmModoPdf()) {
+        if (!manual) return false;
+        await gerarComandaPdf(pedido, obterConfigImpressaoCache());
+        impressoraOfflineRef.current = false;
+        setImpressoraOffline(false);
+        pedidosImpressosRef.current.add(pedidoId);
+        await supabase
+          .from("pedidos")
+          .update({ impresso: true })
+          .eq("id", pedidoId);
+        return true;
+      }
+
+      const sucesso = await enviarParaImpressoraLocal(
+        pedido,
+        obterConfigImpressaoCache(),
+      );
 
       if (sucesso) {
         impressoraOfflineRef.current = false;
@@ -208,5 +264,6 @@ export function useImpressaoAutomatica() {
   return {
     impressoraOffline,
     imprimirPedido,
+    verificarImpressora,
   };
 }

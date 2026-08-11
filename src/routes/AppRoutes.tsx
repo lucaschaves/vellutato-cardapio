@@ -12,8 +12,7 @@ import { modoTotenConfigurado } from "../lib/modoCardapio";
 import { estaEmModoStandalone } from "../lib/pwaInstalacao";
 
 // Páginas
-import { DashboardVendas } from "@/pages/admin/DashboardVendas";
-import { DashboardAnalytics } from "@/pages/admin/DashboardAnalytics";
+import { Dashboard } from "@/pages/admin/Dashboard";
 import { DetalheCliente } from "@/pages/admin/DetalheCliente";
 import { AdminNovoPedido } from "@/pages/admin/AdminNovoPedido";
 import { GerenciamentoAdicionais } from "@/pages/admin/GerenciamentoAdicionais";
@@ -24,6 +23,7 @@ import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
 import { GerenciamentoChatDelivery } from "@/pages/admin/GerenciamentoChatDelivery";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
+import { GerenciamentoImpressao } from "@/pages/admin/GerenciamentoImpressao";
 import { GerenciamentoIntegracoes } from "@/pages/admin/GerenciamentoIntegracoes";
 import { GerenciamentoMensagens } from "@/pages/admin/GerenciamentoMensagens";
 import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
@@ -34,6 +34,8 @@ import { BemVindo } from "@/pages/client/BemVindo";
 import { AdminLayout } from "../components/AdminLayout";
 import { GerenciamentoCatalogo } from "../pages/admin/GerenciamentoCatalogo";
 import { GerenciamentoEstoque } from "../pages/admin/GerenciamentoEstoque";
+import { GerenciamentoInsumos } from "../pages/admin/GerenciamentoInsumos";
+import { ListaCompras } from "../pages/admin/ListaCompras";
 import { PainelPedidos } from "../pages/admin/PainelPedidos";
 import { ConfirmacaoPedido } from "../pages/client/ConfirmacaoPedido";
 import { FeedProdutos } from "../pages/client/FeedProdutos";
@@ -152,8 +154,11 @@ const router = createBrowserRouter([
   {
     element: <RotaProtegida />,
     children: [
-      { path: "/admin/dashboard", element: <DashboardVendas /> },
-      { path: "/admin/analytics", element: <DashboardAnalytics /> },
+      { path: "/admin/dashboard", element: <Dashboard /> },
+      {
+        path: "/admin/analytics",
+        element: <Navigate to="/admin/dashboard" replace />,
+      },
       { path: "/admin/historico", element: <HistoricoPedidos /> },
       { path: "/admin/pedidos", element: <PainelPedidos /> },
       { path: "/admin/novo-pedido", element: <AdminNovoPedido /> },
@@ -161,6 +166,8 @@ const router = createBrowserRouter([
       { path: "/admin/categorias", element: <GerenciamentoCategorias /> },
       { path: "/admin/mesas", element: <GerenciamentoMesas /> },
       { path: "/admin/estoque", element: <GerenciamentoEstoque /> },
+      { path: "/admin/insumos", element: <GerenciamentoInsumos /> },
+      { path: "/admin/lista-compras", element: <ListaCompras /> },
       { path: "/admin/adicionais", element: <GerenciamentoAdicionais /> },
       { path: "/admin/combos", element: <GerenciamentoCombos /> },
       { path: "/admin/clientes", element: <GerenciamentoClientes /> },
@@ -173,6 +180,7 @@ const router = createBrowserRouter([
       },
       { path: "/admin/delivery", element: <GerenciamentoDelivery /> },
       { path: "/admin/integracoes", element: <GerenciamentoIntegracoes /> },
+      { path: "/admin/impressao", element: <GerenciamentoImpressao /> },
       { path: "/admin/chat", element: <GerenciamentoChatDelivery /> },
       {
         path: "/admin/vendas-cruzadas",

@@ -4,6 +4,7 @@ import {
   FastForward,
   Maximize,
   Minimize,
+  Play,
   ShoppingBag,
   Store,
   Tag,
@@ -265,7 +266,7 @@ export function BemVindo() {
                 transition={{ delay: 0.15, duration: 0.7 }}
                 className="flex flex-col items-center"
               >
-                <span className="font-marca-cursiva text-6xl leading-none text-white drop-shadow-[0_6px_28px_rgba(0,0,0,0.65)] md:text-8xl">
+                <span className="font-marca text-7xl font-bold leading-none tracking-tight text-white drop-shadow-[0_6px_28px_rgba(0,0,0,0.65)] md:text-9xl">
                   Vellutato
                 </span>
                 <span className="mt-5 flex items-center gap-4 text-white/85">
@@ -284,14 +285,15 @@ export function BemVindo() {
                 className="flex flex-col items-center gap-5"
               >
                 <span className="relative inline-flex">
-                  <span className="absolute inset-0 rounded-full bg-white/25 motion-safe:animate-ping" />
-                  <span className="relative inline-flex items-center gap-3 rounded-full bg-cookie-primary px-12 py-6 text-xl font-bold text-white shadow-2xl shadow-black/50 ring-1 ring-white/30 transition-transform group-active:scale-95 md:text-2xl">
-                    <ShoppingBag size={26} className="shrink-0" />
-                    Iniciar pedido
-                    <ArrowRight size={26} className="shrink-0" />
+                  <span className="absolute inset-0 rounded-full bg-white/15 motion-safe:animate-ping" />
+                  <span className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white/15 text-white ring-1 ring-white/40 backdrop-blur-md transition-transform group-hover:bg-white/25 group-active:scale-95 md:h-28 md:w-28">
+                    <Play size={44} className="ml-1 fill-white shrink-0" />
                   </span>
                 </span>
-                <span className="text-sm tracking-wide text-white/70">
+                <span className="text-base font-semibold tracking-wide text-white/85 md:text-lg">
+                  Iniciar pedido
+                </span>
+                <span className="text-sm tracking-wide text-white/60">
                   Toque em qualquer lugar da tela para começar
                 </span>
               </motion.div>

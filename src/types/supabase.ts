@@ -666,11 +666,276 @@ export type Database = {
           },
         ]
       }
+      insumos: {
+        Row: {
+          id: string
+          nome: string
+          unidade: string
+          quantidade_atual: number
+          estoque_minimo: number
+          imagem_url: string | null
+          preco_atual: number | null
+          preco_atualizado_em: string | null
+          observacao: string | null
+          ativo: boolean
+          criado_em: string
+          atualizado_em: string
+        }
+        Insert: {
+          id?: string
+          nome: string
+          unidade?: string
+          quantidade_atual?: number
+          estoque_minimo?: number
+          imagem_url?: string | null
+          preco_atual?: number | null
+          preco_atualizado_em?: string | null
+          observacao?: string | null
+          ativo?: boolean
+          criado_em?: string
+          atualizado_em?: string
+        }
+        Update: {
+          id?: string
+          nome?: string
+          unidade?: string
+          quantidade_atual?: number
+          estoque_minimo?: number
+          imagem_url?: string | null
+          preco_atual?: number | null
+          preco_atualizado_em?: string | null
+          observacao?: string | null
+          ativo?: boolean
+          criado_em?: string
+          atualizado_em?: string
+        }
+        Relationships: []
+      }
+      insumo_alternativas: {
+        Row: {
+          id: string
+          insumo_id: string
+          alternativa_id: string
+          ordem: number
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          insumo_id: string
+          alternativa_id: string
+          ordem?: number
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          insumo_id?: string
+          alternativa_id?: string
+          ordem?: number
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insumo_alternativas_insumo_id_fkey"
+            columns: ["insumo_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insumo_alternativas_alternativa_id_fkey"
+            columns: ["alternativa_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lista_compras: {
+        Row: {
+          id: string
+          status: string
+          titulo: string | null
+          criado_em: string
+          finalizada_em: string | null
+        }
+        Insert: {
+          id?: string
+          status?: string
+          titulo?: string | null
+          criado_em?: string
+          finalizada_em?: string | null
+        }
+        Update: {
+          id?: string
+          status?: string
+          titulo?: string | null
+          criado_em?: string
+          finalizada_em?: string | null
+        }
+        Relationships: []
+      }
+      lista_compras_itens: {
+        Row: {
+          id: string
+          lista_id: string
+          insumo_id: string
+          quantidade_planejada: number
+          quantidade_comprada: number | null
+          marcado: boolean
+          comprado: boolean
+          insumo_comprado_id: string | null
+          preco_unitario: number | null
+          observacao: string | null
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          lista_id: string
+          insumo_id: string
+          quantidade_planejada?: number
+          quantidade_comprada?: number | null
+          marcado?: boolean
+          comprado?: boolean
+          insumo_comprado_id?: string | null
+          preco_unitario?: number | null
+          observacao?: string | null
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          lista_id?: string
+          insumo_id?: string
+          quantidade_planejada?: number
+          quantidade_comprada?: number | null
+          marcado?: boolean
+          comprado?: boolean
+          insumo_comprado_id?: string | null
+          preco_unitario?: number | null
+          observacao?: string | null
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lista_compras_itens_lista_id_fkey"
+            columns: ["lista_id"]
+            isOneToOne: false
+            referencedRelation: "lista_compras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lista_compras_itens_insumo_id_fkey"
+            columns: ["insumo_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lista_compras_itens_insumo_comprado_id_fkey"
+            columns: ["insumo_comprado_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insumo_estoque_movimentos: {
+        Row: {
+          id: string
+          insumo_id: string
+          tipo: string
+          quantidade: number
+          origem: string
+          lista_compra_item_id: string | null
+          observacao: string | null
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          insumo_id: string
+          tipo: string
+          quantidade: number
+          origem?: string
+          lista_compra_item_id?: string | null
+          observacao?: string | null
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          insumo_id?: string
+          tipo?: string
+          quantidade?: number
+          origem?: string
+          lista_compra_item_id?: string | null
+          observacao?: string | null
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insumo_estoque_movimentos_insumo_id_fkey"
+            columns: ["insumo_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insumo_precos_historico: {
+        Row: {
+          id: string
+          insumo_id: string
+          preco_unitario: number
+          quantidade: number | null
+          lista_compra_item_id: string | null
+          observacao: string | null
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          insumo_id: string
+          preco_unitario: number
+          quantidade?: number | null
+          lista_compra_item_id?: string | null
+          observacao?: string | null
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          insumo_id?: string
+          preco_unitario?: number
+          quantidade?: number | null
+          lista_compra_item_id?: string | null
+          observacao?: string | null
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insumo_precos_historico_insumo_id_fkey"
+            columns: ["insumo_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      ajustar_estoque_insumo: {
+        Args: {
+          p_insumo_id: string
+          p_delta: number
+          p_origem?: string
+          p_observacao?: string | null
+          p_lista_compra_item_id?: string | null
+        }
+        Returns: number
+      }
+      finalizar_lista_compras: {
+        Args: { p_lista_id: string }
+        Returns: number
+      }
       cancelar_pedido_com_estoque: {
         Args: { p_pedido_id: string }
         Returns: undefined

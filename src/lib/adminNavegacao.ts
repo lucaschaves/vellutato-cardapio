@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   BarChart3,
   Bike,
   Calculator,
@@ -16,9 +15,13 @@ import {
   MessageCircle,
   Package,
   PlusCircle,
+  Printer,
   QrCode,
+  Settings2,
+  ShoppingCart,
   Ticket,
   Users,
+  Warehouse,
 } from "lucide-react";
 
 export type ItemNavAdmin = {
@@ -27,21 +30,38 @@ export type ItemNavAdmin = {
   icone: LucideIcon;
 };
 
-export type GrupoNavAdmin = {
-  titulo: string;
+export type SecaoNavAdmin = {
+  id: string;
+  rotulo: string;
+  icone: LucideIcon;
   itens: readonly ItemNavAdmin[];
 };
 
-export const GRUPOS_NAVEGACAO_ADMIN: readonly GrupoNavAdmin[] = [
+/** Atalhos sempre visíveis no topo do painel. */
+export const ATALHOS_NAV_ADMIN: readonly ItemNavAdmin[] = [
+  { to: "/admin/pedidos", rotulo: "KDS", icone: LayoutGrid },
+  { to: "/admin/novo-pedido", rotulo: "Novo", icone: PlusCircle },
+  { to: "/admin/caixa", rotulo: "Caixa", icone: Calculator },
+  { to: "/admin/lista-compras", rotulo: "Compras", icone: ShoppingCart },
+] as const;
+
+/**
+ * Navegação por seções (rail de ícones).
+ * Cada seção mostra só os itens dela — menos scroll, mais fácil de achar.
+ */
+export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
   {
-    titulo: "Visão geral",
+    id: "inicio",
+    rotulo: "Início",
+    icone: BarChart3,
     itens: [
       { to: "/admin/dashboard", rotulo: "Dashboard", icone: BarChart3 },
-      { to: "/admin/analytics", rotulo: "Analytics", icone: Activity },
     ],
   },
   {
-    titulo: "Produção",
+    id: "operacao",
+    rotulo: "Operação",
+    icone: LayoutGrid,
     itens: [
       { to: "/admin/pedidos", rotulo: "KDS / Fila", icone: LayoutGrid },
       { to: "/admin/novo-pedido", rotulo: "Novo pedido", icone: PlusCircle },
@@ -53,26 +73,38 @@ export const GRUPOS_NAVEGACAO_ADMIN: readonly GrupoNavAdmin[] = [
     ],
   },
   {
-    titulo: "Cadastro",
+    id: "cardapio",
+    rotulo: "Cardápio",
+    icone: ChefHat,
     itens: [
       { to: "/admin/catalogo", rotulo: "Catálogo", icone: ChefHat },
       { to: "/admin/categorias", rotulo: "Categorias", icone: FolderTree },
       { to: "/admin/adicionais", rotulo: "Adicionais", icone: IceCream },
       { to: "/admin/combos", rotulo: "Combos", icone: Layers },
-      { to: "/admin/estoque", rotulo: "Estoque", icone: Package },
+      { to: "/admin/estoque", rotulo: "Estoque cardápio", icone: Package },
       { to: "/admin/mesas", rotulo: "Mesas", icone: QrCode },
     ],
   },
   {
-    titulo: "Clientes",
+    id: "estoque",
+    rotulo: "Estoque",
+    icone: Warehouse,
     itens: [
-      { to: "/admin/clientes", rotulo: "Clientes", icone: Users },
-      { to: "/admin/mensagens", rotulo: "Mensagens", icone: MessageCircle },
+      { to: "/admin/insumos", rotulo: "Insumos", icone: Warehouse },
+      {
+        to: "/admin/lista-compras",
+        rotulo: "Lista de compras",
+        icone: ShoppingCart,
+      },
     ],
   },
   {
-    titulo: "Promoções",
+    id: "clientes",
+    rotulo: "Clientes",
+    icone: Users,
     itens: [
+      { to: "/admin/clientes", rotulo: "Clientes", icone: Users },
+      { to: "/admin/mensagens", rotulo: "Mensagens", icone: MessageCircle },
       { to: "/admin/cupons", rotulo: "Cupons", icone: Ticket },
       {
         to: "/admin/vendas-cruzadas",
@@ -82,36 +114,75 @@ export const GRUPOS_NAVEGACAO_ADMIN: readonly GrupoNavAdmin[] = [
     ],
   },
   {
-    titulo: "Sistema",
+    id: "sistema",
+    rotulo: "Sistema",
+    icone: Settings2,
     itens: [
       { to: "/admin/integracoes", rotulo: "Integrações", icone: KeyRound },
+      { to: "/admin/impressao", rotulo: "Cupom de impressão", icone: Printer },
     ],
   },
 ] as const;
+
+/** @deprecated use SECOES_NAVEGACAO_ADMIN — mantido para compatibilidade de breadcrumb. */
+export type GrupoNavAdmin = {
+  titulo: string;
+  itens: readonly ItemNavAdmin[];
+};
+
+export const GRUPOS_NAVEGACAO_ADMIN: readonly GrupoNavAdmin[] =
+  SECOES_NAVEGACAO_ADMIN.map((s) => ({
+    titulo: s.rotulo,
+    itens: s.itens,
+  }));
+
+export function itensNavAdminFlat(): ItemNavAdmin[] {
+  const mapa = new Map<string, ItemNavAdmin>();
+  for (const secao of SECOES_NAVEGACAO_ADMIN) {
+    for (const item of secao.itens) {
+      mapa.set(item.to, item);
+    }
+  }
+  return [...mapa.values()];
+}
+
+export function resolverSecaoPorPath(pathname: string): string {
+  const path = pathname.replace(/\/+$/, "") || "/admin";
+  let melhor: { id: string; len: number } | null = null;
+
+  for (const secao of SECOES_NAVEGACAO_ADMIN) {
+    for (const item of secao.itens) {
+      if (path === item.to || path.startsWith(`${item.to}/`)) {
+        if (!melhor || item.to.length > melhor.len) {
+          melhor = { id: secao.id, len: item.to.length };
+        }
+      }
+    }
+  }
+
+  return melhor?.id ?? SECOES_NAVEGACAO_ADMIN[0].id;
+}
 
 export type CrumbAdmin = {
   rotulo: string;
   to?: string;
 };
 
-/** Resolve trilha Admin › grupo › página [› detalhe]. */
+/** Resolve trilha Admin › seção › página [› detalhe]. */
 export function resolverBreadcrumbAdmin(pathname: string): CrumbAdmin[] {
   const path = pathname.replace(/\/+$/, "") || "/admin";
   const crumbs: CrumbAdmin[] = [{ rotulo: "Admin", to: "/admin/dashboard" }];
 
   let melhor: {
-    grupo: string;
+    secao: SecaoNavAdmin;
     item: ItemNavAdmin;
   } | null = null;
 
-  for (const grupo of GRUPOS_NAVEGACAO_ADMIN) {
-    for (const item of grupo.itens) {
-      if (
-        path === item.to ||
-        path.startsWith(`${item.to}/`)
-      ) {
+  for (const secao of SECOES_NAVEGACAO_ADMIN) {
+    for (const item of secao.itens) {
+      if (path === item.to || path.startsWith(`${item.to}/`)) {
         if (!melhor || item.to.length > melhor.item.to.length) {
-          melhor = { grupo: grupo.titulo, item };
+          melhor = { secao, item };
         }
       }
     }
@@ -122,9 +193,10 @@ export function resolverBreadcrumbAdmin(pathname: string): CrumbAdmin[] {
     return crumbs;
   }
 
-  crumbs.push({ rotulo: melhor.grupo });
+  crumbs.push({ rotulo: melhor.secao.rotulo });
 
-  const ehFilho = path !== melhor.item.to && path.startsWith(`${melhor.item.to}/`);
+  const ehFilho =
+    path !== melhor.item.to && path.startsWith(`${melhor.item.to}/`);
   if (ehFilho) {
     crumbs.push({ rotulo: melhor.item.rotulo, to: melhor.item.to });
     crumbs.push({

@@ -12,14 +12,11 @@ import {
   Printer,
   Trash2,
   User,
-  Volume2,
-  VolumeX,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
-import { useAlertaNovoPedidoAdmin } from "../../context/AlertaNovoPedidoContext";
 import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
 import { usePedidosRealtime } from "../../context/PedidosRealtimeContext";
 import {
@@ -179,12 +176,6 @@ export function PainelPedidos() {
     reconectar,
   } = usePedidosRealtime();
   const { impressoraOffline, imprimirPedido } = useImpressaoAdmin();
-  const {
-    ativo: alertaSonoroAtivo,
-    precisaReativar,
-    ativar: ativarAlertaSonoro,
-    desativar: desativarAlertaSonoro,
-  } = useAlertaNovoPedidoAdmin();
 
   const [mensagensWhatsapp, setMensagensWhatsapp] = useState<
     MensagemWhatsapp[]
@@ -706,30 +697,6 @@ export function PainelPedidos() {
               {statusConexao === "reconectando"
                 ? "Reconectando..."
                 : "Realtime desconectado"}
-            </button>
-          )}
-          {alertaSonoroAtivo ? (
-            <button
-              type="button"
-              onClick={desativarAlertaSonoro}
-              title="Desligar alertas sonoros"
-              className="flex items-center gap-1.5 text-sm font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-3 py-2 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors"
-            >
-              <Volume2 size={16} /> Som ativo
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void ativarAlertaSonoro()}
-              title="O Chrome exige um clique para liberar o som (funciona com a aba em segundo plano)"
-              className={`flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg transition-colors ${
-                precisaReativar
-                  ? "bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
-                  : "bg-red-600 text-white hover:bg-red-700"
-              }`}
-            >
-              <VolumeX size={16} />
-              {precisaReativar ? "Reativar som" : "Ativar som"}
             </button>
           )}
           <span className="text-sm bg-cookie-primary text-white px-4 py-2 rounded-lg font-medium">
