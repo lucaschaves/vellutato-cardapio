@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { ChatThread } from "../../components/chat/ChatThread";
 import { IdentificarTelefoneDelivery } from "../../components/IdentificarTelefoneDelivery";
-import { Button } from "../../components/ui/button";
+import { Avatar, AvatarFallback } from "../../components/ui/avatar";
+import { useChatCliente } from "../../context/ChatClienteContext";
 import { useClienteDeliverySessao } from "../../hooks/useClienteDeliverySessao";
 import {
   enviarMensagem,
@@ -15,13 +17,13 @@ import { supabase } from "../../lib/supabase";
 export function DeliveryChat() {
   const { cliente, carregando, precisaIdentificar, identificarPorTelefone } =
     useClienteDeliverySessao();
+  const { marcarLida } = useChatCliente();
   const [params] = useSearchParams();
   const pedidoId = params.get("pedido");
   const [conversaId, setConversaId] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
-  const fimRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!cliente?.id) return;
@@ -33,12 +35,13 @@ export function DeliveryChat() {
         });
         setConversaId(id);
         setMensagens(await listarMensagens(id));
+        await marcarLida(id);
       } catch (e) {
         console.error(e);
         toast.error("Falha ao abrir chat");
       }
     })();
-  }, [cliente?.id, pedidoId]);
+  }, [cliente?.id, pedidoId, marcarLida]);
 
   useEffect(() => {
     if (!conversaId) return;
@@ -57,22 +60,21 @@ export function DeliveryChat() {
           setMensagens((prev) =>
             prev.some((m) => m.id === msg.id) ? prev : [...prev, msg],
           );
+          if (msg.autor === "admin") {
+            void marcarLida(conversaId);
+          }
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(canal);
     };
-  }, [conversaId]);
-
-  useEffect(() => {
-    fimRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [mensagens]);
+  }, [conversaId, marcarLida]);
 
   if (carregando) {
     return (
       <div className="flex justify-center py-20">
-        <div className="animate-spin h-8 w-8 border-4 border-cookie-primary border-t-transparent rounded-full" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-cookie-primary border-t-transparent" />
       </div>
     );
   }
@@ -107,46 +109,36 @@ export function DeliveryChat() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8rem)]">
-      <h1 className="text-xl font-black mb-3">Chat</h1>
-      <div className="flex-1 overflow-y-auto space-y-2 bg-white border rounded-2xl p-3">
-        {mensagens.length === 0 && (
-          <p className="text-sm text-zinc-500 text-center py-8">
-            Envie uma mensagem — respondemos por aqui.
+    <div className="flex h-[calc(100dvh-8rem)] flex-col overflow-hidden rounded-2xl border bg-background">
+      <header className="flex shrink-0 items-center gap-3 border-b bg-muted/40 px-4 py-3">
+        <Avatar size="lg">
+          <AvatarFallback className="bg-cookie-primary text-sm font-semibold text-white">
+            V
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold leading-tight">
+            Vellutato
           </p>
-        )}
-        {mensagens.map((m) => (
-          <div
-            key={m.id}
-            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
-              m.autor === "cliente"
-                ? "ml-auto bg-cookie-primary text-white"
-                : "mr-auto bg-zinc-100 text-zinc-900"
-            }`}
-          >
-            {m.corpo}
-          </div>
-        ))}
-        <div ref={fimRef} />
-      </div>
-      <div className="flex gap-2 mt-3">
-        <input
-          className="flex-1 h-11 rounded-xl border border-zinc-200 px-3 text-sm"
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          placeholder="Digite sua mensagem…"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void enviar();
-          }}
-        />
-        <Button
-          className="bg-cookie-primary hover:bg-cookie-primary-hover"
-          disabled={enviando}
-          onClick={() => void enviar()}
-        >
-          Enviar
-        </Button>
-      </div>
+          <p className="truncate text-xs text-muted-foreground">
+            Atendimento delivery
+            {pedidoId ? ` · Pedido ${pedidoId.slice(0, 8)}` : ""}
+          </p>
+        </div>
+      </header>
+
+      <ChatThread
+        mensagens={mensagens}
+        perspectiva="cliente"
+        nomeCliente={cliente?.nome || "Você"}
+        nomeLoja="Vellutato"
+        texto={texto}
+        onTextoChange={setTexto}
+        onEnviar={() => void enviar()}
+        enviando={enviando}
+        placeholder="Digite sua mensagem…"
+        vazio="Envie uma mensagem — respondemos por aqui."
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Loader2, Pencil, PlusCircle, Search, Ticket, Trash2 } from "lucide-reac
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -34,6 +35,7 @@ interface Cupom {
   usos: number | null;
   ativo: boolean | null;
   cliente_id: string | null;
+  pedido_origem_id?: string | null;
   clientes: { nome: string; celular: string } | null;
 }
 
@@ -53,6 +55,10 @@ export function GerenciamentoCupons() {
   const [limiteUso, setLimiteUso] = useState("");
   const [limitePorCliente, setLimitePorCliente] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [cupomExcluir, setCupomExcluir] = useState<{
+    id: string;
+    codigo: string;
+  } | null>(null);
 
   useEffect(() => {
     void carregarDados();
@@ -218,7 +224,13 @@ export function GerenciamentoCupons() {
       return;
     }
 
-    if (!window.confirm(`Excluir o cupom ${codigoCupom}?`)) return;
+    setCupomExcluir({ id, codigo: codigoCupom });
+  };
+
+  const confirmarExcluirCupom = async () => {
+    if (!cupomExcluir) return;
+    const { id } = cupomExcluir;
+    setCupomExcluir(null);
 
     const { error } = await supabase.from("cupons").delete().eq("id", id);
     if (error) {
@@ -239,6 +251,31 @@ export function GerenciamentoCupons() {
       (c.clientes?.nome || "").toLowerCase().includes(termo)
     );
   });
+
+  const metricasRetorno = (() => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const retorno = cupons.filter((c) => c.pedido_origem_id);
+    let usados = 0;
+    let expirados = 0;
+    let disponiveis = 0;
+    for (const c of retorno) {
+      const usos = Number(c.usos ?? 0);
+      const esgotado =
+        c.limite_uso != null && usos >= Number(c.limite_uso);
+      const vencido =
+        c.validade != null && new Date(c.validade) < hoje;
+      if (esgotado || usos > 0) usados += 1;
+      else if (vencido || c.ativo === false) expirados += 1;
+      else disponiveis += 1;
+    }
+    return {
+      gerados: retorno.length,
+      usados,
+      expirados,
+      disponiveis,
+    };
+  })();
 
   const rotuloCliente = (cupom: Cupom) => {
     if (!cupom.cliente_id || !cupom.clientes) return "Público";
@@ -270,6 +307,41 @@ export function GerenciamentoCupons() {
       }
       contentClassName="space-y-6"
     >
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Retorno gerados
+          </p>
+          <p className="text-2xl font-black text-gray-900 dark:text-white">
+            {metricasRetorno.gerados}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Retorno usados
+          </p>
+          <p className="text-2xl font-black text-emerald-600">
+            {metricasRetorno.usados}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Retorno disponíveis
+          </p>
+          <p className="text-2xl font-black text-sky-600">
+            {metricasRetorno.disponiveis}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Retorno expirados
+          </p>
+          <p className="text-2xl font-black text-amber-600">
+            {metricasRetorno.expirados}
+          </p>
+        </div>
+      </div>
+
       <form
         onSubmit={salvarCupom}
         className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-xl p-5 space-y-4"
@@ -402,7 +474,16 @@ export function GerenciamentoCupons() {
               ) : (
                 cuponsFiltrados.map((cupom) => (
                   <TableRow key={cupom.id}>
-                    <TableCell className="font-bold">{cupom.codigo}</TableCell>
+                    <TableCell className="font-bold">
+                      <span className="inline-flex items-center gap-1.5">
+                        {cupom.codigo}
+                        {cupom.pedido_origem_id && (
+                          <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            Retorno
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-sm max-w-[160px] truncate">
                       {cupom.cliente_id ? (
                         <span className="text-purple-700 dark:text-purple-300 font-medium">
@@ -472,6 +553,18 @@ export function GerenciamentoCupons() {
           </Table>
         </div>
       )}
+
+      <ModalConfirmacao
+        aberto={cupomExcluir != null}
+        titulo="Excluir cupom?"
+        mensagem={
+          cupomExcluir ? `Excluir o cupom ${cupomExcluir.codigo}?` : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setCupomExcluir(null)}
+        aoConfirmar={() => void confirmarExcluirCupom()}
+      />
     </AdminPageShell>
   );
 }

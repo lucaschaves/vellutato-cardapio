@@ -1,4 +1,4 @@
-import { Clock, MapPin, Search } from "lucide-react";
+import { Bike, Clock, MapPin, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,8 +12,18 @@ import {
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
-import type { DeliveryConfig } from "../../lib/deliveryFrete";
+import {
+  avaliarEntregaDelivery,
+  listarBairrosFreteGeojson,
+  taxasDosBairrosGeojson,
+} from "../../lib/deliveryBairros";
+import {
+  formatarDistanciaEntrega,
+  taxaMinimaConfig,
+  type DeliveryConfig,
+} from "../../lib/deliveryFrete";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
 import { supabase } from "../../lib/supabase";
 import {
   lerEnderecoDeliveryLocal,
@@ -131,11 +141,32 @@ export function DeliveryHome() {
   >(null);
   const [cepInput, setCepInput] = useState("");
   const [buscandoCep, setBuscandoCep] = useState(false);
+  const [freteInfo, setFreteInfo] = useState<{
+    texto: string;
+    ok: boolean;
+  } | null>(null);
+  const [taxaMinima, setTaxaMinima] = useState<number | null>(null);
+  const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
   const scrollLockRef = useRef(false);
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
     track("page_view", { canal: "delivery", props: { path: "/" } });
+  }, []);
+
+  useEffect(() => {
+    let ativo = true;
+    const consultar = () => {
+      void buscarStatusLoja().then((status) => {
+        if (ativo) setStatusLoja(status);
+      });
+    };
+    consultar();
+    const intervalo = window.setInterval(consultar, 60_000);
+    return () => {
+      ativo = false;
+      window.clearInterval(intervalo);
+    };
   }, []);
 
   useEffect(() => {
@@ -152,6 +183,16 @@ export function DeliveryHome() {
             .in("disponibilidade", ["levar", "ambos"]),
         ]);
         setConfig(cfg);
+        try {
+          if (cfg.modo_frete === "bairro") {
+            const fc = await listarBairrosFreteGeojson();
+            setTaxaMinima(taxaMinimaConfig(cfg, taxasDosBairrosGeojson(fc)));
+          } else {
+            setTaxaMinima(taxaMinimaConfig(cfg));
+          }
+        } catch {
+          setTaxaMinima(taxaMinimaConfig(cfg));
+        }
         const prods = (
           (prodRes.data || []) as Array<
             Produto & {
@@ -242,6 +283,45 @@ export function DeliveryHome() {
       if (!cliente?.id) setEndereco(null);
     })();
   }, [cliente?.id, carregandoCliente]);
+
+  useEffect(() => {
+    if (!config) {
+      setFreteInfo(null);
+      return;
+    }
+    const lat =
+      endereco && "latitude" in endereco ? endereco.latitude : null;
+    const lng =
+      endereco && "longitude" in endereco ? endereco.longitude : null;
+    if (lat == null || lng == null) {
+      setFreteInfo(null);
+      return;
+    }
+    let cancelado = false;
+    void (async () => {
+      const r = await avaliarEntregaDelivery(config, lat, lng, 0);
+      if (cancelado) return;
+      if (!r.ok) {
+        setFreteInfo({ ok: false, texto: r.erro });
+        return;
+      }
+      const dist =
+        r.distancia_km != null
+          ? ` · ${formatarDistanciaEntrega(r.distancia_km)}`
+          : "";
+      const bairro = r.bairro_nome ? ` · ${r.bairro_nome}` : "";
+      setFreteInfo({
+        ok: true,
+        texto:
+          r.taxa <= 0
+            ? `Frete grátis${dist}${bairro}`
+            : `Frete R$ ${r.taxa.toFixed(2).replace(".", ",")}${dist}${bairro}`,
+      });
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [config, endereco]);
 
   const secoes = useMemo(() => {
     return categorias
@@ -374,6 +454,14 @@ export function DeliveryHome() {
 
   return (
     <div className="space-y-5">
+      {statusLoja && !statusLoja.aberta && (
+        <div className="rounded-2xl bg-cookie-primary px-4 py-3 text-center text-sm font-bold text-white">
+          Estamos fechados no momento.
+          {statusLoja.motivo ? ` ${statusLoja.motivo}` : ""} Você pode montar o
+          pedido e agendar um horário de hoje no checkout.
+        </div>
+      )}
+
       <section className="rounded-2xl bg-white border border-zinc-200 p-3 space-y-2">
         {!temEnderecoCompleto ? (
           <>
@@ -481,8 +569,29 @@ export function DeliveryHome() {
           </button>
         )}
 
-        <p className="text-[11px] text-zinc-400 pl-12">
-          Pedido mínimo R$ {pedidoMinimo.toFixed(2).replace(".", ",")}
+        <p className="text-[11px] text-zinc-500 pl-12 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          {freteInfo ? (
+            <span
+              className={
+                freteInfo.ok
+                  ? "inline-flex items-center gap-1 text-zinc-600"
+                  : "inline-flex items-center gap-1 text-amber-700"
+              }
+            >
+              <Bike size={11} />
+              {freteInfo.texto}
+            </span>
+          ) : taxaMinima != null ? (
+            <span className="inline-flex items-center gap-1">
+              <Bike size={11} />
+              Frete a partir de R$ {taxaMinima.toFixed(2).replace(".", ",")}
+            </span>
+          ) : null}
+          {pedidoMinimo > 0 && (
+            <span>
+              Pedido mínimo R$ {pedidoMinimo.toFixed(2).replace(".", ",")}
+            </span>
+          )}
         </p>
       </section>
 

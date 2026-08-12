@@ -15,9 +15,15 @@ const MENSAGENS_SUCESSO: Record<TipoPwa, string> = {
 type Props = {
   tipo: TipoPwa;
   className?: string;
+  /** Texto ao lado do ícone. Se omitido, só o ícone. */
+  label?: string;
 };
 
-export function BotaoInstalarPwa({ tipo, className = CLASSE_PADRAO }: Props) {
+export function BotaoInstalarPwa({
+  tipo,
+  className = CLASSE_PADRAO,
+  label,
+}: Props) {
   const { podeInstalar, instalado, instalando, instalar } =
     useInstalarPwa(tipo);
 
@@ -50,6 +56,7 @@ export function BotaoInstalarPwa({ tipo, className = CLASSE_PADRAO }: Props) {
       ) : (
         <Download size={18} className="shrink-0" />
       )}
+      {label ?? null}
     </button>
   );
 }

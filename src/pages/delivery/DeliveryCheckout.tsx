@@ -1,4 +1,4 @@
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Clock, Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -45,6 +45,11 @@ import {
   type ModalidadeDelivery,
 } from "../../lib/deliveryPedido";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import {
+  listarSlotsAgendamentoHoje,
+  rotuloSlot,
+} from "../../lib/lojaAgendamento";
+import type { StatusLoja } from "../../lib/lojaStatus";
 import { ErroNegocioCheckout } from "../../lib/pedidos";
 import {
   lembrarClienteAnalytics,
@@ -166,12 +171,17 @@ export function DeliveryCheckout() {
   const [codigoCupom, setCodigoCupom] = useState("");
   const [pagarNaLoja, setPagarNaLoja] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
+  const [slotsHoje, setSlotsHoje] = useState<string[]>([]);
+  const [motivoSemSlots, setMotivoSemSlots] = useState<string | null>(null);
+  const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
+  const [abreHoje, setAbreHoje] = useState(true);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [redirecionandoPagamento, setRedirecionandoPagamento] = useState(false);
   const [freteMsg, setFreteMsg] = useState<string | null>(null);
   const [avaliandoFrete, setAvaliandoFrete] = useState(false);
   const [taxaFrete, setTaxaFrete] = useState(0);
-  const [acrescimoClima, setAcrescimoClima] = useState(0);
+  const [, setAcrescimoClima] = useState(0);
   const [descontoCarrinhoFrete, setDescontoCarrinhoFrete] = useState(0);
   const [distanciaKm, setDistanciaKm] = useState<number | null>(null);
   const [bairroFreteNome, setBairroFreteNome] = useState<string | null>(null);
@@ -215,6 +225,29 @@ export function DeliveryCheckout() {
         }
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+    void (async () => {
+      const r = await listarSlotsAgendamentoHoje();
+      if (cancelado) return;
+      setStatusLoja(r.status);
+      setSlotsHoje(r.slots);
+      setMotivoSemSlots(r.motivoSemSlots);
+      setAbreHoje(r.abreHoje);
+      if (r.status?.aberta) {
+        // Aberto: padrão = o quanto antes
+        setAgendadoPara(null);
+      } else if (r.slots[0]) {
+        setAgendadoPara(r.slots[0]);
+      } else {
+        setAgendadoPara(null);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -732,7 +765,16 @@ export function DeliveryCheckout() {
       (!precisaCpfPagamento || cpfOk),
   );
 
-  const podePagar = !enviando && enderecoEntregaOk && dadosClienteOk;
+  const lojaAberta = Boolean(statusLoja?.aberta);
+  const precisaAgendar = !lojaAberta;
+  const agendamentoOk = abreHoje
+    ? lojaAberta
+      ? true
+      : Boolean(agendadoPara) && slotsHoje.length > 0
+    : false;
+
+  const podePagar =
+    !enviando && enderecoEntregaOk && dadosClienteOk && agendamentoOk;
 
   const aplicarCupomHandler = async () => {
     try {
@@ -787,8 +829,54 @@ export function DeliveryCheckout() {
       toast.warning("Sacola vazia");
       return;
     }
+
+    if (!abreHoje) {
+      toast.error(
+        motivoSemSlots ||
+          "A loja não abre hoje — não é possível fazer pedidos agora.",
+      );
+      return;
+    }
+    if (precisaAgendar && !agendadoPara) {
+      toast.error("Escolha um horário para receber ou retirar o pedido.");
+      return;
+    }
+
+    // Revalida estoque antes de criar o pedido
+    try {
+      const ids = [...new Set(itens.map((i) => i.produtoId))];
+      const { data: prods, error: errEstoque } = await supabase
+        .from("produtos")
+        .select(
+          "id, nome, ativo, controlar_estoque, quantidade_estoque",
+        )
+        .in("id", ids);
+      if (errEstoque) throw new Error(errEstoque.message);
+      const mapa = new Map(
+        (prods || []).map((p) => [p.id as string, p]),
+      );
+      for (const item of itens) {
+        const p = mapa.get(item.produtoId);
+        if (!p || !p.ativo || produtoEstaEsgotado(p)) {
+          toast.error(
+            `${item.nome} está indisponível. Remova da sacola para continuar.`,
+          );
+          return;
+        }
+      }
+    } catch (e: unknown) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Não foi possível validar o estoque.",
+      );
+      return;
+    }
+
     let taxaEntregaFinal = 0;
     let distanciaFinal: number | null = null;
+    let descontoFreteFinal = 0;
+    let acrescimoClimaFinal = 0;
     if (modalidade === "entrega") {
       if (!enderecoAtivo.rua?.trim() || !enderecoAtivo.numero?.trim()) {
         toast.error("Preencha o endereço completo (CEP, rua e número).");
@@ -825,6 +913,8 @@ export function DeliveryCheckout() {
       }
       taxaEntregaFinal = avaliacao.taxa;
       distanciaFinal = avaliacao.distancia_km;
+      descontoFreteFinal = avaliacao.desconto_carrinho;
+      acrescimoClimaFinal = avaliacao.acrescimo_clima;
       setFreteMsg(null);
       setTaxaFrete(avaliacao.taxa);
       setAcrescimoClima(avaliacao.acrescimo_clima);
@@ -909,6 +999,8 @@ export function DeliveryCheckout() {
         modalidade,
         status_pagamento: statusPagamento,
         taxa_entrega: taxaEntregaFinal,
+        desconto_frete: descontoFreteFinal,
+        acrescimo_clima: acrescimoClimaFinal,
         subtotal_itens: subtotal,
         cpf_nota: cpfNota.replace(/\D/g, "") || cpfCliente,
         endereco:
@@ -927,6 +1019,7 @@ export function DeliveryCheckout() {
               }
             : null,
         distancia_km: distanciaFinal,
+        agendado_para: agendadoPara,
       });
 
       lembrarClienteAnalytics(clienteId);
@@ -1012,7 +1105,7 @@ export function DeliveryCheckout() {
   }
 
   return (
-    <div className="relative space-y-4 pb-8">
+    <div className="relative space-y-4 pb-28">
       {enviando && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-white/80 backdrop-blur-sm">
           <div className="animate-spin h-10 w-10 border-4 border-cookie-primary border-t-transparent rounded-full" />
@@ -1248,13 +1341,6 @@ export function DeliveryCheckout() {
               </p>
             )}
           </section>
-
-          <Button
-            className="w-full h-12 bg-cookie-primary hover:bg-cookie-primary-hover text-base font-bold"
-            onClick={irParaEntrega}
-          >
-            Continuar
-          </Button>
         </>
       )}
 
@@ -1598,9 +1684,6 @@ export function DeliveryCheckout() {
                     ? `Entrega para ${bairroFreteNome} · `
                     : ""}
                   Frete: R$ {taxaFrete.toFixed(2).replace(".", ",")}
-                  {acrescimoClima > 0
-                    ? ` (inclui +R$ ${acrescimoClima.toFixed(2).replace(".", ",")} chuva)`
-                    : ""}
                   {descontoCarrinhoFrete > 0
                     ? ` (−R$ ${descontoCarrinhoFrete.toFixed(2).replace(".", ",")} no frete)`
                     : ""}
@@ -1633,6 +1716,69 @@ export function DeliveryCheckout() {
               </label>
             </section>
           )}
+
+          <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <Clock
+                size={18}
+                className="mt-0.5 shrink-0 text-cookie-primary"
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="font-bold">
+                  {modalidade === "retirada"
+                    ? "Horário de retirada"
+                    : "Horário de entrega"}
+                </h2>
+                {!lojaAberta ? (
+                  <p className="mt-0.5 text-xs text-amber-700">
+                    {statusLoja?.motivo || "Loja fechada no momento."} Escolha
+                    um horário de hoje.
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    O quanto antes, ou escolha um horário de hoje.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {!abreHoje || slotsHoje.length === 0 ? (
+              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                {motivoSemSlots ||
+                  "Não há horários disponíveis para hoje."}
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {lojaAberta && (
+                  <button
+                    type="button"
+                    onClick={() => setAgendadoPara(null)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                      agendadoPara == null
+                        ? "border-cookie-primary bg-cookie-primary text-white"
+                        : "border-zinc-200 bg-white text-zinc-700"
+                    }`}
+                  >
+                    O quanto antes
+                  </button>
+                )}
+                {slotsHoje.map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => setAgendadoPara(slot)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                      agendadoPara === slot
+                        ? "border-cookie-primary bg-cookie-primary text-white"
+                        : "border-zinc-200 bg-white text-zinc-700"
+                    }`}
+                  >
+                    {rotuloSlot(slot)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
             <div className="space-y-1">
@@ -1691,29 +1837,62 @@ export function DeliveryCheckout() {
               <span>R$ {total.toFixed(2).replace(".", ",")}</span>
             </div>
           </section>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              className="h-12"
-              onClick={() => setPasso(1)}
-            >
-              Voltar
-            </Button>
-            <Button
-              className="h-12 bg-cookie-primary hover:bg-cookie-primary-hover text-base font-bold"
-              disabled={!podePagar}
-              onClick={() => void finalizar()}
-            >
-              {enviando
-                ? "Enviando…"
-                : pagarNaLoja && modalidade === "retirada"
-                  ? "Confirmar"
-                  : "Pagar"}
-            </Button>
-          </div>
         </>
       )}
+
+      <div className="fixed bottom-0 inset-x-0 z-40 border-t border-zinc-200 bg-white/95 backdrop-blur p-3">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+              Total
+              {passo === 1 && modalidade === "entrega" && !freteConfirmado
+                ? " (est.)"
+                : ""}
+            </p>
+            <p className="truncate text-lg font-black">
+              R${" "}
+              {(passo === 1 ? totalPasso1 : total)
+                .toFixed(2)
+                .replace(".", ",")}
+            </p>
+            {agendadoPara && passo === 2 && (
+              <p className="truncate text-[11px] text-sky-700">
+                {modalidade === "retirada" ? "Retirada" : "Entrega"}{" "}
+                {rotuloSlot(agendadoPara)}
+              </p>
+            )}
+          </div>
+          {passo === 1 ? (
+            <Button
+              className="h-12 shrink-0 bg-cookie-primary px-6 font-bold hover:bg-cookie-primary-hover"
+              onClick={irParaEntrega}
+            >
+              Continuar
+            </Button>
+          ) : (
+            <div className="flex shrink-0 gap-2">
+              <Button
+                variant="outline"
+                className="h-12"
+                onClick={() => setPasso(1)}
+              >
+                Voltar
+              </Button>
+              <Button
+                className="h-12 bg-cookie-primary px-5 font-bold hover:bg-cookie-primary-hover"
+                disabled={!podePagar}
+                onClick={() => void finalizar()}
+              >
+                {enviando
+                  ? "…"
+                  : pagarNaLoja && modalidade === "retirada"
+                    ? "Confirmar"
+                    : "Pagar"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
 
       <ModalConfirmacao
         aberto={confirmarLimparSacola}

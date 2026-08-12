@@ -13,6 +13,7 @@ import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -50,6 +51,7 @@ export function GerenciamentoMesas() {
   const [mesaQr, setMesaQr] = useState<Mesa | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [gerandoQr, setGerandoQr] = useState(false);
+  const [mesaExcluir, setMesaExcluir] = useState<Mesa | null>(null);
 
   useEffect(() => {
     void carregarMesas();
@@ -160,8 +162,6 @@ export function GerenciamentoMesas() {
   };
 
   const excluirMesa = async (id: string) => {
-    if (!window.confirm("Excluir esta mesa?")) return;
-
     const { error } = await supabase.from("mesas").delete().eq("id", id);
     if (error) {
       toast.error("Erro ao excluir mesa.");
@@ -392,7 +392,7 @@ export function GerenciamentoMesas() {
                           variant="ghost"
                           size="icon"
                           className="text-red-600"
-                          onClick={() => void excluirMesa(mesa.id)}
+                          onClick={() => setMesaExcluir(mesa)}
                         >
                           <Trash2 size={16} />
                         </Button>
@@ -488,6 +488,24 @@ export function GerenciamentoMesas() {
           </div>
         </div>
       )}
+
+      <ModalConfirmacao
+        aberto={mesaExcluir != null}
+        titulo="Excluir mesa?"
+        mensagem={
+          mesaExcluir
+            ? `Excluir a mesa ${mesaExcluir.numero}${mesaExcluir.apelido ? ` (${mesaExcluir.apelido})` : ""}?`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setMesaExcluir(null)}
+        aoConfirmar={() => {
+          const mesa = mesaExcluir;
+          setMesaExcluir(null);
+          if (mesa) void excluirMesa(mesa.id);
+        }}
+      />
     </AdminPageShell>
   );
 }

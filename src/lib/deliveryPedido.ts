@@ -31,10 +31,16 @@ export interface NovoPedidoDelivery {
   modalidade: ModalidadeDelivery;
   status_pagamento: StatusPagamentoDelivery;
   taxa_entrega: number;
+  /** Desconto aplicado sobre o frete (já refletido em taxa_entrega). */
+  desconto_frete?: number;
+  /** Acréscimo de chuva no frete (já refletido em taxa_entrega). */
+  acrescimo_clima?: number;
   subtotal_itens: number;
   cpf_nota: string | null;
   endereco: EnderecoSnapshot | null;
   distancia_km: number | null;
+  /** Horário de entrega/retirada (mesmo dia). Null = o quanto antes. */
+  agendado_para?: string | null;
 }
 
 export async function criarPedidoDelivery(
@@ -57,11 +63,14 @@ export async function criarPedidoDelivery(
     p_cpf_nota: pedido.cpf_nota,
     p_endereco_json: pedido.endereco,
     p_distancia_km: pedido.distancia_km,
+    p_desconto_frete: pedido.desconto_frete ?? 0,
+    p_acrescimo_clima: pedido.acrescimo_clima ?? 0,
+    p_agendado_para: pedido.agendado_para || null,
   });
 
   if (error) {
     const prefixosNegocio =
-      /^(LOJA_FECHADA|LOJA_CHEIA|FORA_AREA|DELIVERY_INDISPONIVEL):\s*/;
+      /^(LOJA_FECHADA|LOJA_CHEIA|FORA_AREA|DELIVERY_INDISPONIVEL|AGENDAMENTO_INVALIDO):\s*/;
     const ehNegocio =
       prefixosNegocio.test(error.message) ||
       error.message.includes("Estoque insuficiente");
@@ -170,15 +179,29 @@ export async function confirmarPagamentoAsaas(pedidoId: string): Promise<{
 
 export interface ItemPedidoDelivery {
   id: string;
+  produto_id?: string;
   quantidade: number;
   preco_unitario: number;
   observacoes: string | null;
-  produtos: { nome: string } | null;
+  modo_consumo?: string | null;
+  produtos: {
+    nome: string;
+    imagem_url?: string | null;
+    preco?: number;
+    preco_promocional?: number | null;
+    em_promocao?: boolean | null;
+    disponibilidade?: string | null;
+    controlar_estoque?: boolean | null;
+    quantidade_estoque?: number | null;
+  } | null;
   pedido_item_adicionais: Array<{
+    adicional_id?: string | null;
     preco_aplicado: number;
     adicionais: { nome: string } | null;
   }>;
   pedido_item_combo_escolhas: Array<{
+    grupo_id?: string | null;
+    produto_escolhido_id?: string | null;
     nome_grupo: string;
     nome_produto: string;
     delta_preco: number;
@@ -193,17 +216,20 @@ export async function buscarPedidoDelivery(pedidoId: string) {
       id, sequencia_pedido, status, origem, modalidade, status_pagamento,
       identificador, cliente_nome, cliente_celular, total, valor_total, taxa_entrega,
       subtotal_itens, tracking_url, voa_order_id, criado_em, endereco_json,
-      asaas_checkout_id, cpf_nota, cliente_id, desconto_aplicado,
+      asaas_checkout_id, cpf_nota, cliente_id, desconto_aplicado, agendado_para,
       clientes ( email ),
       pedido_itens (
-        id, quantidade, preco_unitario, observacoes,
-        produtos ( nome ),
+        id, produto_id, quantidade, preco_unitario, observacoes, modo_consumo,
+        produtos (
+          nome, imagem_url, preco, preco_promocional, em_promocao,
+          disponibilidade, controlar_estoque, quantidade_estoque
+        ),
         pedido_item_adicionais (
-          preco_aplicado,
+          adicional_id, preco_aplicado,
           adicionais ( nome )
         ),
         pedido_item_combo_escolhas (
-          nome_grupo, nome_produto, delta_preco
+          grupo_id, produto_escolhido_id, nome_grupo, nome_produto, delta_preco
         )
       )
     `,
@@ -214,5 +240,34 @@ export async function buscarPedidoDelivery(pedidoId: string) {
   if (error) throw new Error(error.message);
   return data as typeof data & {
     pedido_itens: ItemPedidoDelivery[];
+    agendado_para: string | null;
+  };
+}
+
+/** Cupom de retorno gerado a partir deste pedido (se existir). */
+export async function buscarCupomRetornoDoPedido(
+  pedidoId: string,
+): Promise<{ codigo: string; validade: string | null; ativo: boolean } | null> {
+  const { data, error } = await supabase
+    .from("cupons")
+    .select("codigo, validade, ativo, usos, limite_uso")
+    .eq("pedido_origem_id", pedidoId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[CUPOM] retorno:", error.message);
+    return null;
+  }
+  if (!data) return null;
+  const usos = Number(data.usos ?? 0);
+  const limite = data.limite_uso;
+  if (!data.ativo) return { ...data, ativo: false };
+  if (limite != null && usos >= limite) return { ...data, ativo: false };
+  if (data.validade && new Date(data.validade).getTime() < Date.now()) {
+    return { ...data, ativo: false };
+  }
+  return {
+    codigo: data.codigo,
+    validade: data.validade,
+    ativo: true,
   };
 }

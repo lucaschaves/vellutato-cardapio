@@ -184,7 +184,7 @@ export function Dashboard() {
           `
           id, status, total, desconto_aplicado, origem, criado_em,
           cupom_id, cliente_id,
-          cupons ( codigo ),
+          cupons!cupom_id ( codigo ),
           clientes ( nome ),
           pedido_itens (
             quantidade, preco_unitario,
@@ -899,10 +899,11 @@ export function Dashboard() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Funil</CardTitle>
+                  <CardTitle>Funil de conversão</CardTitle>
                   <CardDescription>
                     Sessões únicas por etapa
-                    {canal !== "todos" ? ` · ${CANAL_LABEL[canal]}` : ""}
+                    {canal !== "todos" ? ` · ${CANAL_LABEL[canal]}` : " · todos os canais"}
+                    . Filtre por Delivery para ver o funil do app.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -912,16 +913,30 @@ export function Dashboard() {
                       dados.
                     </p>
                   ) : (
-                    funil.map((etapa) => (
+                    funil.map((etapa, idx) => {
+                      const anterior = idx > 0 ? funil[idx - 1] : null;
+                      const perda =
+                        anterior && anterior.sessoes > 0
+                          ? Math.max(
+                              0,
+                              ((anterior.sessoes - etapa.sessoes) /
+                                anterior.sessoes) *
+                                100,
+                            )
+                          : null;
+                      return (
                       <div key={etapa.evento} className="space-y-1">
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between text-sm gap-2">
                           <span className="font-semibold text-gray-800 dark:text-gray-200">
                             {etapa.label}
                           </span>
-                          <span className="text-gray-500">
+                          <span className="text-gray-500 shrink-0 text-right">
                             {etapa.sessoes}
-                            {etapa.taxaDoAnterior != null
-                              ? ` · ${etapa.taxaDoAnterior.toFixed(0)}% do passo anterior`
+                            {etapa.taxaDoTopo != null
+                              ? ` · ${etapa.taxaDoTopo.toFixed(0)}% do topo`
+                              : ""}
+                            {perda != null && perda > 0
+                              ? ` · −${perda.toFixed(0)}% vs anterior`
                               : ""}
                           </span>
                         </div>
@@ -934,7 +949,8 @@ export function Dashboard() {
                           />
                         </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </CardContent>
               </Card>

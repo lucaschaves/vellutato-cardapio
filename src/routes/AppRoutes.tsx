@@ -12,16 +12,16 @@ import { modoTotenConfigurado } from "../lib/modoCardapio";
 import { estaEmModoStandalone } from "../lib/pwaInstalacao";
 
 // Páginas
+import { AdminNovoPedido } from "@/pages/admin/AdminNovoPedido";
 import { Dashboard } from "@/pages/admin/Dashboard";
 import { DetalheCliente } from "@/pages/admin/DetalheCliente";
-import { AdminNovoPedido } from "@/pages/admin/AdminNovoPedido";
 import { GerenciamentoAdicionais } from "@/pages/admin/GerenciamentoAdicionais";
 import { GerenciamentoCategorias } from "@/pages/admin/GerenciamentoCategorias";
+import { GerenciamentoChatDelivery } from "@/pages/admin/GerenciamentoChatDelivery";
 import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
 import { GerenciamentoCombos } from "@/pages/admin/GerenciamentoCombos";
 import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
-import { GerenciamentoChatDelivery } from "@/pages/admin/GerenciamentoChatDelivery";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
 import { GerenciamentoImpressao } from "@/pages/admin/GerenciamentoImpressao";
 import { GerenciamentoIntegracoes } from "@/pages/admin/GerenciamentoIntegracoes";
@@ -43,18 +43,18 @@ import { ListaErros } from "../pages/client/ListaErros";
 import { MeusPedidos } from "../pages/client/MeusPedidos";
 import { Perfil } from "../pages/client/Perfil";
 import { VisualizadorReels } from "../pages/client/VisualizadorReels";
-import { Login } from "../pages/Login";
-import { DeliveryLayout } from "../pages/delivery/DeliveryLayout";
-import { DeliveryHome } from "../pages/delivery/DeliveryHome";
-import { DeliveryItem } from "../pages/delivery/DeliveryItem";
-import { DeliveryCheckout } from "../pages/delivery/DeliveryCheckout";
-import { DeliveryConta } from "../pages/delivery/DeliveryConta";
-import { DeliveryPedido } from "../pages/delivery/DeliveryPedido";
-import { DeliveryPedidos } from "../pages/delivery/DeliveryPedidos";
-import { DeliveryChat } from "../pages/delivery/DeliveryChat";
 import { DeliveryAuthCallback } from "../pages/delivery/DeliveryAuthCallback";
 import { DeliveryCadastro } from "../pages/delivery/DeliveryCadastro";
+import { DeliveryChat } from "../pages/delivery/DeliveryChat";
+import { DeliveryCheckout } from "../pages/delivery/DeliveryCheckout";
+import { DeliveryConta } from "../pages/delivery/DeliveryConta";
 import { DeliveryEndereco } from "../pages/delivery/DeliveryEndereco";
+import { DeliveryHome } from "../pages/delivery/DeliveryHome";
+import { DeliveryItem } from "../pages/delivery/DeliveryItem";
+import { DeliveryLayout } from "../pages/delivery/DeliveryLayout";
+import { DeliveryPedido } from "../pages/delivery/DeliveryPedido";
+import { DeliveryPedidos } from "../pages/delivery/DeliveryPedidos";
+import { Login } from "../pages/Login";
 
 /** /cardapio-toten/* → /totem/* */
 function RedirecionarTotenLegado() {
@@ -201,11 +201,11 @@ export function AppRoutes() {
       <RouterProvider router={router} />
       <Toaster
         richColors
-        position={isMobile ? "top-center" : "top-left"}
+        position={isMobile ? "top-center" : "top-right"}
         expand={false}
         closeButton
         toastOptions={{ style: { fontFamily: "inherit" } }}
-        duration={isMobile ? 1500 : 3000}
+        duration={isMobile ? 1000 : 3000}
       />
       <TecladoVirtualHost />
     </AuthProvider>

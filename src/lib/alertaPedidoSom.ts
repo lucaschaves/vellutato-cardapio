@@ -74,10 +74,7 @@ export function criarUrlSomNovoPedido(): string {
   );
 }
 
-/**
- * Impressora offline: tons graves descendentes (bem diferente do “novo pedido”).
- * Soa como alerta de falha / buzzer.
- */
+/** Impressora offline: tons graves descendentes (bem diferente do “novo pedido”). */
 export function criarUrlSomImpressoraOffline(): string {
   return sintetizar(
     [
@@ -89,6 +86,21 @@ export function criarUrlSomImpressoraOffline(): string {
       { freq: 280, start: 2.2, dur: 0.45 },
     ],
     2.8,
+  );
+}
+
+/**
+ * Nova mensagem no chat: dois “pings” médios (diferente de pedido e impressora).
+ */
+export function criarUrlSomNovaMensagem(): string {
+  return sintetizar(
+    [
+      { freq: 988, start: 0, dur: 0.14 },
+      { freq: 1319, start: 0.18, dur: 0.22 },
+      { freq: 988, start: 0.55, dur: 0.14 },
+      { freq: 1319, start: 0.73, dur: 0.28 },
+    ],
+    1.15,
   );
 }
 

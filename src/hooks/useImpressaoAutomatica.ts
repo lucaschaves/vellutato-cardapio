@@ -16,15 +16,21 @@ import {
   buscarConfigImpressao,
   obterConfigImpressaoCache,
 } from "../lib/impressaoConfig";
+import {
+  podeImprimirPedidoAgora,
+  instanteImpressaoAgendada,
+} from "../lib/pedidoAgendado";
 import { supabase } from "../lib/supabase";
 
 /** Intervalo do health-check da impressora (ms). */
 const INTERVALO_HEALTHCHECK_MS = 20000;
+/** Revarre pedidos agendados pendentes de impressão. */
+const INTERVALO_AGENDADOS_MS = 60000;
 
 const SELECT_PEDIDO_IMPRESSAO = `
   id, sequencia_pedido, origem, modalidade, identificador, cliente_nome, cliente_celular,
   status, criado_em, total, valor_total, desconto_aplicado, impresso,
-  status_pagamento, taxa_entrega, endereco_json,
+  status_pagamento, taxa_entrega, endereco_json, agendado_para,
   pedido_itens (
     id, quantidade, observacoes, preco_unitario, modo_consumo,
     produtos ( nome ),
@@ -53,6 +59,7 @@ export function useImpressaoAutomatica() {
   const [impressoraOffline, setImpressoraOffline] = useState(false);
   const pedidosEmProcessamentoRef = useRef<Set<string>>(new Set());
   const pedidosImpressosRef = useRef<Set<string>>(new Set());
+  const timeoutsAgendadosRef = useRef<Map<string, number>>(new Map());
   const impressoraOfflineRef = useRef(false);
   const somOfflineUrlRef = useRef<string | null>(null);
 
@@ -62,6 +69,10 @@ export function useImpressaoAutomatica() {
         URL.revokeObjectURL(somOfflineUrlRef.current);
         somOfflineUrlRef.current = null;
       }
+      for (const id of timeoutsAgendadosRef.current.values()) {
+        window.clearTimeout(id);
+      }
+      timeoutsAgendadosRef.current.clear();
     };
   }, []);
 
@@ -152,6 +163,13 @@ export function useImpressaoAutomatica() {
         return false;
       }
 
+      const agendadoPara = (
+        pedido as { agendado_para?: string | null }
+      ).agendado_para;
+      if (!manual && !podeImprimirPedidoAgora(agendadoPara)) {
+        return false;
+      }
+
       // Modo dev: gera PDF em vez de enviar para o servidor de impressão.
       // Só no clique manual, para não abrir vários downloads automaticamente.
       if (impressoraEmModoPdf()) {
@@ -191,6 +209,12 @@ export function useImpressaoAutomatica() {
   };
 
   const agendarImpressaoPedido = (pedidoId: string, tentativa = 0) => {
+    const existente = timeoutsAgendadosRef.current.get(pedidoId);
+    if (existente) {
+      window.clearTimeout(existente);
+      timeoutsAgendadosRef.current.delete(pedidoId);
+    }
+
     window.setTimeout(async () => {
       const pedido = await buscarPedidoParaImpressao(pedidoId);
 
@@ -203,6 +227,26 @@ export function useImpressaoAutomatica() {
 
       if (itensPendentes) {
         agendarImpressaoPedido(pedidoId, tentativa + 1);
+        return;
+      }
+
+      const agendadoPara = (
+        pedido as { agendado_para?: string | null }
+      ).agendado_para;
+      const alvo = instanteImpressaoAgendada(agendadoPara);
+      if (alvo != null && Date.now() < alvo) {
+        // Acorda no horário (ou a cada 5 min, o que for menor) até poder imprimir.
+        const delay = Math.min(Math.max(alvo - Date.now(), 1000), 5 * 60 * 1000);
+        console.info(
+          "[IMPRESSÃO] Pedido agendado — impressão em",
+          new Date(alvo).toLocaleTimeString("pt-BR"),
+          pedidoId,
+        );
+        const tid = window.setTimeout(
+          () => agendarImpressaoPedido(pedidoId, 0),
+          delay,
+        );
+        timeoutsAgendadosRef.current.set(pedidoId, tid);
         return;
       }
 
@@ -221,6 +265,7 @@ export function useImpressaoAutomatica() {
         status?: string;
         status_pagamento?: string | null;
         impresso?: boolean;
+        agendado_para?: string | null;
       };
       if (!pedido.id || pedido.impresso) return;
       if (pedido.status !== "pendente") return;
@@ -229,6 +274,9 @@ export function useImpressaoAutomatica() {
       console.info(
         "[IMPRESSÃO] Pedido liberado para a cozinha, agendando impressão:",
         pedido.id,
+        pedido.agendado_para
+          ? `(agendado → imprime às ${new Date(instanteImpressaoAgendada(pedido.agendado_para)!).toLocaleTimeString("pt-BR")})`
+          : "",
       );
       agendarImpressaoPedido(pedido.id);
     });
@@ -242,7 +290,7 @@ export function useImpressaoAutomatica() {
     void (async () => {
       const { data, error } = await supabase
         .from("pedidos")
-        .select("id, status, status_pagamento, impresso")
+        .select("id, status, status_pagamento, impresso, agendado_para")
         .eq("status", "pendente")
         .or("impresso.eq.false,impresso.is.null");
       if (cancelado || error || !data) return;
@@ -260,6 +308,33 @@ export function useImpressaoAutomatica() {
       cancelado = true;
     };
   }, [versaoConexao]);
+
+  // Varredura periódica: pega agendados que chegaram na janela de impressão.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void (async () => {
+        const { data, error } = await supabase
+          .from("pedidos")
+          .select("id, status_pagamento, impresso, agendado_para")
+          .eq("status", "pendente")
+          .or("impresso.eq.false,impresso.is.null")
+          .not("agendado_para", "is", null);
+        if (error || !data) return;
+        for (const pedido of data) {
+          if (
+            !pedido.id ||
+            !pagamentoLiberaImpressao(pedido.status_pagamento)
+          ) {
+            continue;
+          }
+          if (podeImprimirPedidoAgora(pedido.agendado_para)) {
+            agendarImpressaoPedido(pedido.id);
+          }
+        }
+      })();
+    }, INTERVALO_AGENDADOS_MS);
+    return () => window.clearInterval(id);
+  }, []);
 
   return {
     impressoraOffline,

@@ -78,7 +78,7 @@ export function DetalheCliente() {
           `
           id, sequencia_pedido, status, total, valor_total, desconto_aplicado,
           identificador, criado_em,
-          cupons ( codigo ),
+          cupons!cupom_id ( codigo ),
           pedido_itens (
             id, quantidade, preco_unitario, observacoes,
             produtos ( nome )

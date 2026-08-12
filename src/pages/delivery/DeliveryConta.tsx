@@ -1,4 +1,4 @@
-import { MapPin, Ticket, Trophy } from "lucide-react";
+import { Copy, MapPin, Ticket, Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -24,7 +24,10 @@ import {
   listarExtratoPontos,
   resgatarPontos,
 } from "../../lib/deliveryPontos";
-import { buscarCuponsDoCliente } from "../../lib/clientes";
+import {
+  buscarCuponsDoCliente,
+  type CupomCliente,
+} from "../../lib/clientes";
 import {
   lerGuestDeliveryLocal,
   salvarEnderecoDeliveryLocal,
@@ -59,10 +62,9 @@ export function DeliveryConta() {
       criado_em: string;
     }>
   >([]);
-  const [cupons, setCupons] = useState<
-    Array<{ codigo: string; valor: number; tipo: string }>
-  >([]);
+  const [cupons, setCupons] = useState<CupomCliente[]>([]);
   const [resgateCfg, setResgateCfg] = useState({ pontos: 100, valor: 5 });
+  const [resgatando, setResgatando] = useState(false);
   const [formEnd, setFormEnd] = useState({
     cep: "",
     rua: "",
@@ -137,11 +139,41 @@ export function DeliveryConta() {
         pontos: cfg.resgate_pontos,
         valor: cfg.resgate_valor_reais,
       });
-      setCupons(
-        (cups as Array<{ codigo: string; valor: number; tipo: string }>) || [],
-      );
+      setCupons(cups || []);
     })();
   }, [cliente?.id]);
+
+  const copiarCupom = async (codigo: string) => {
+    try {
+      await navigator.clipboard.writeText(codigo);
+      toast.success(`Cupom ${codigo} copiado`);
+    } catch {
+      toast.error("Não foi possível copiar o código");
+    }
+  };
+
+  const resgatar = async () => {
+    if (!cliente?.id || resgatando) return;
+    setResgatando(true);
+    try {
+      const r = await resgatarPontos(cliente.id);
+      const [s, x, cups] = await Promise.all([
+        buscarSaldoPontos(cliente.id),
+        listarExtratoPontos(cliente.id),
+        buscarCuponsDoCliente(cliente.id),
+      ]);
+      setSaldo(s);
+      setExtrato(x as typeof extrato);
+      setCupons(cups);
+      toast.success(
+        `Cupom ${r.codigo} gerado (R$ ${r.valor.toFixed(2).replace(".", ",")})`,
+      );
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setResgatando(false);
+    }
+  };
 
   const entrarComTelefone = async () => {
     const erroTel = mensagemTelefoneInvalido(loginTel);
@@ -640,24 +672,12 @@ export function DeliveryConta() {
             <Button
               className="ml-auto"
               variant="outline"
-              disabled={saldo < resgateCfg.pontos}
-              onClick={() =>
-                void resgatarPontos(cliente.id)
-                  .then(async () => {
-                    setSaldo(await buscarSaldoPontos(cliente.id));
-                    setExtrato(
-                      (await listarExtratoPontos(cliente.id)) as typeof extrato,
-                    );
-                    toast.success(
-                      `Cupom de R$ ${resgateCfg.valor.toFixed(2)} gerado!`,
-                    );
-                  })
-                  .catch((e: unknown) =>
-                    toast.error(e instanceof Error ? e.message : "Erro"),
-                  )
-              }
+              disabled={saldo < resgateCfg.pontos || resgatando}
+              onClick={() => void resgatar()}
             >
-              Resgatar ({resgateCfg.pontos} pts)
+              {resgatando
+                ? "Resgatando…"
+                : `Resgatar (${resgateCfg.pontos} pts)`}
             </Button>
           </div>
 
@@ -667,12 +687,33 @@ export function DeliveryConta() {
                 <Ticket size={14} /> Seus cupons
               </p>
               {cupons.map((c) => (
-                <p key={c.codigo} className="text-sm">
-                  <span className="font-mono font-bold">{c.codigo}</span> —{" "}
-                  {c.tipo === "percentual"
-                    ? `${c.valor}%`
-                    : `R$ ${Number(c.valor).toFixed(2)}`}
-                </p>
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 rounded-xl border border-zinc-100 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm font-bold">{c.codigo}</p>
+                    <p className="text-xs text-zinc-500">
+                      {c.tipo === "percentual"
+                        ? `${c.valor}% de desconto`
+                        : `R$ ${Number(c.valor).toFixed(2).replace(".", ",")}`}
+                      {c.validade
+                        ? ` · até ${new Date(c.validade).toLocaleDateString("pt-BR")}`
+                        : ""}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => void copiarCupom(c.codigo)}
+                    aria-label={`Copiar cupom ${c.codigo}`}
+                  >
+                    <Copy size={14} data-icon="inline-start" />
+                    Copiar
+                  </Button>
+                </div>
               ))}
             </div>
           )}

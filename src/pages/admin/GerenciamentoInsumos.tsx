@@ -16,56 +16,138 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Switch } from "../../components/ui/switch";
 import {
-  formatarPrecoInsumo,
+  formatarEquivalenteBase,
+  formatarEstoqueInsumo,
+  formatarPrecoBaseInsumo,
+  formatarPrecoMoeda,
+  formatarQtd,
+  formatarQtdInput,
   insumoAbaixoDoMinimo,
+  normalizarMarcas,
+  parseDecimalBr,
+  precoBaseParaEmbalagem,
+  precoEmbalagemParaBase,
+  rotuloConteudoEmbalagem,
+  rotuloTipoInsumo,
   rotuloUnidade,
+  TIPOS_INSUMO,
+  UNIDADES_CONTEUDO_PESO,
+  UNIDADES_CONTEUDO_VOLUME,
   UNIDADES_INSUMO,
+  unidadePrecoBase,
+  compraParaUnidadeConteudo,
+  unidadeConteudoParaCompra,
   type Insumo,
+  type TipoInsumo,
+  type UnidadeConteudo,
   type UnidadeInsumo,
 } from "../../lib/insumos";
 import { supabase } from "../../lib/supabase";
 
-type AlternativaRow = {
-  id: string;
-  alternativa_id: string;
-  ordem: number;
-  alternativa: Pick<Insumo, "id" | "nome" | "imagem_url" | "unidade"> | null;
-};
+function asInsumo(row: Record<string, unknown>): Insumo {
+  const tipo = TIPOS_INSUMO.includes(row.tipo as TipoInsumo)
+    ? (row.tipo as TipoInsumo)
+    : "contagem";
+  const unidade = UNIDADES_INSUMO.includes(row.unidade as UnidadeInsumo)
+    ? (row.unidade as UnidadeInsumo)
+    : "unidade";
+  const conteudoUn =
+    row.conteudo_unidade === "g" ||
+    row.conteudo_unidade === "kg" ||
+    row.conteudo_unidade === "ml" ||
+    row.conteudo_unidade === "L"
+      ? (row.conteudo_unidade as UnidadeConteudo)
+      : null;
+
+  return {
+    id: String(row.id),
+    nome: String(row.nome ?? ""),
+    unidade,
+    tipo,
+    conteudo_valor:
+      row.conteudo_valor == null ? null : Number(row.conteudo_valor),
+    conteudo_unidade: conteudoUn,
+    marcas: normalizarMarcas(
+      Array.isArray(row.marcas) ? (row.marcas as string[]) : [],
+    ),
+    quantidade_atual: Number(row.quantidade_atual ?? 0),
+    estoque_minimo: Number(row.estoque_minimo ?? 0),
+    imagem_url: (row.imagem_url as string | null) ?? null,
+    preco_atual: row.preco_atual == null ? null : Number(row.preco_atual),
+    preco_atualizado_em: (row.preco_atualizado_em as string | null) ?? null,
+    observacao: (row.observacao as string | null) ?? null,
+    ativo: Boolean(row.ativo),
+    criado_em: String(row.criado_em ?? ""),
+    atualizado_em: String(row.atualizado_em ?? ""),
+  };
+}
 
 export function GerenciamentoInsumos() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
-  const [alternativasPorInsumo, setAlternativasPorInsumo] = useState<
-    Record<string, AlternativaRow[]>
-  >({});
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
   const [aba, setAba] = useState<"ativos" | "desativados">("ativos");
   const [processandoId, setProcessandoId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [insumoExcluir, setInsumoExcluir] = useState<Insumo | null>(null);
 
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [nome, setNome] = useState("");
+  const [tipo, setTipo] = useState<TipoInsumo>("peso");
   const [unidade, setUnidade] = useState<UnidadeInsumo>("unidade");
+  const [conteudoValor, setConteudoValor] = useState("200");
+  const [conteudoUnidade, setConteudoUnidade] = useState<UnidadeConteudo>("g");
   const [quantidade, setQuantidade] = useState("0");
+  const [quantidadeBase, setQuantidadeBase] = useState("");
   const [estoqueMinimo, setEstoqueMinimo] = useState("0");
+  const [estoqueMinimoBase, setEstoqueMinimoBase] = useState("");
   const [observacao, setObservacao] = useState("");
-  const [precoAtual, setPrecoAtual] = useState("");
+  const [precoEmbalagem, setPrecoEmbalagem] = useState("");
   const [imagemUrlAtual, setImagemUrlAtual] = useState<string | null>(null);
   const [imagemArquivo, setImagemArquivo] = useState<File | null>(null);
   const [imagemPreview, setImagemPreview] = useState<string | null>(null);
-  const [alternativasSelecionadas, setAlternativasSelecionadas] = useState<
-    string[]
-  >([]);
+  const [marcas, setMarcas] = useState<string[]>([]);
+  const [marcaInput, setMarcaInput] = useState("");
+
+  const conversaoAtual = useMemo(
+    () => ({
+      tipo,
+      unidade,
+      conteudo_valor:
+        tipo === "contagem" ? null : parseDecimalBr(conteudoValor),
+      conteudo_unidade: tipo === "contagem" ? null : conteudoUnidade,
+    }),
+    [tipo, unidade, conteudoValor, conteudoUnidade],
+  );
+
+  const precoBasePreview = useMemo(() => {
+    const embalagem = parseDecimalBr(precoEmbalagem);
+    if (embalagem == null) return null;
+    return precoEmbalagemParaBase(embalagem, conversaoAtual);
+  }, [precoEmbalagem, conversaoAtual]);
 
   useEffect(() => {
     void carregar();
   }, []);
+
+  useEffect(() => {
+    if (tipo === "contagem") {
+      setQuantidadeBase("");
+      setEstoqueMinimoBase("");
+      return;
+    }
+    syncBaseFromCompra(quantidade, "qtd");
+    syncBaseFromCompra(estoqueMinimo, "min");
+    // Recalcula equivalente quando muda o conteúdo da embalagem.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só conteúdo/tipo
+  }, [tipo, conteudoValor, conteudoUnidade]);
 
   useEffect(() => {
     return () => {
@@ -76,47 +158,12 @@ export function GerenciamentoInsumos() {
   const carregar = async () => {
     try {
       setCarregando(true);
-      const [{ data, error }, { data: alts, error: erroAlts }] =
-        await Promise.all([
-          supabase.from("insumos").select("*").order("nome", { ascending: true }),
-          supabase
-            .from("insumo_alternativas")
-            .select(
-              "id, insumo_id, alternativa_id, ordem, alternativa:insumos!insumo_alternativas_alternativa_id_fkey ( id, nome, imagem_url, unidade )",
-            )
-            .order("ordem", { ascending: true }),
-        ]);
-
+      const { data, error } = await supabase
+        .from("insumos")
+        .select("*")
+        .order("nome", { ascending: true });
       if (error) throw new Error(error.message);
-      if (erroAlts) throw new Error(erroAlts.message);
-
-      setInsumos((data as Insumo[]) || []);
-
-      const mapa: Record<string, AlternativaRow[]> = {};
-      for (const row of alts || []) {
-        // Supabase tipa joins many-to-one como array; normalizamos para objeto.
-        const bruto = row as {
-          id: string;
-          insumo_id: string;
-          alternativa_id: string;
-          ordem: number;
-          alternativa:
-            | AlternativaRow["alternativa"]
-            | NonNullable<AlternativaRow["alternativa"]>[]
-            | null;
-        };
-        const alternativa = Array.isArray(bruto.alternativa)
-          ? (bruto.alternativa[0] ?? null)
-          : bruto.alternativa;
-        if (!mapa[bruto.insumo_id]) mapa[bruto.insumo_id] = [];
-        mapa[bruto.insumo_id].push({
-          id: bruto.id,
-          alternativa_id: bruto.alternativa_id,
-          ordem: bruto.ordem,
-          alternativa,
-        });
-      }
-      setAlternativasPorInsumo(mapa);
+      setInsumos(((data ?? []) as Record<string, unknown>[]).map(asInsumo));
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - INSUMOS]", mensagem);
@@ -126,42 +173,104 @@ export function GerenciamentoInsumos() {
     }
   };
 
+  const aplicarTipo = (novo: TipoInsumo) => {
+    setTipo(novo);
+    if (novo === "peso") {
+      setConteudoUnidade("g");
+      if (!conteudoValor.trim()) setConteudoValor("200");
+    } else if (novo === "volume") {
+      setConteudoUnidade("ml");
+      if (!conteudoValor.trim()) setConteudoValor("1000");
+    } else {
+      setConteudoValor("");
+      setQuantidadeBase("");
+      setEstoqueMinimoBase("");
+    }
+  };
+
+  const syncBaseFromCompra = (qtdCompraStr: string, qual: "qtd" | "min") => {
+    const n = parseDecimalBr(qtdCompraStr);
+    if (n == null || tipo === "contagem") {
+      if (qual === "qtd") setQuantidadeBase("");
+      else setEstoqueMinimoBase("");
+      return;
+    }
+    const base = compraParaUnidadeConteudo(n, {
+      tipo,
+      conteudo_valor: parseDecimalBr(conteudoValor),
+      conteudo_unidade: conteudoUnidade,
+    });
+    const txt = base == null ? "" : formatarQtdInput(base);
+    if (qual === "qtd") setQuantidadeBase(txt);
+    else setEstoqueMinimoBase(txt);
+  };
+
+  const syncCompraFromBase = (qtdBaseStr: string, qual: "qtd" | "min") => {
+    const n = parseDecimalBr(qtdBaseStr);
+    if (n == null || tipo === "contagem") return;
+    const compra = unidadeConteudoParaCompra(n, {
+      tipo,
+      conteudo_valor: parseDecimalBr(conteudoValor),
+      conteudo_unidade: conteudoUnidade,
+    });
+    if (compra == null) return;
+    const txt = formatarQtdInput(compra);
+    if (qual === "qtd") setQuantidade(txt);
+    else setEstoqueMinimo(txt);
+  };
+
   const limparFormulario = () => {
     setEditandoId(null);
     setNome("");
+    setTipo("peso");
     setUnidade("unidade");
+    setConteudoValor("200");
+    setConteudoUnidade("g");
     setQuantidade("0");
+    setQuantidadeBase("");
     setEstoqueMinimo("0");
+    setEstoqueMinimoBase("");
     setObservacao("");
-    setPrecoAtual("");
+    setPrecoEmbalagem("");
     setImagemUrlAtual(null);
     setImagemArquivo(null);
     if (imagemPreview) URL.revokeObjectURL(imagemPreview);
     setImagemPreview(null);
-    setAlternativasSelecionadas([]);
+    setMarcas([]);
+    setMarcaInput("");
   };
 
   const iniciarEdicao = (item: Insumo) => {
     setEditandoId(item.id);
     setNome(item.nome);
-    setUnidade(
-      (UNIDADES_INSUMO.includes(item.unidade as UnidadeInsumo)
-        ? item.unidade
-        : "unidade") as UnidadeInsumo,
+    setTipo(item.tipo);
+    setUnidade(item.unidade);
+    setConteudoValor(
+      item.conteudo_valor != null ? formatarQtdInput(item.conteudo_valor) : "",
     );
-    setQuantidade(String(item.quantidade_atual));
-    setEstoqueMinimo(String(item.estoque_minimo));
+    setConteudoUnidade(
+      item.conteudo_unidade ?? (item.tipo === "volume" ? "ml" : "g"),
+    );
+    setQuantidade(formatarQtdInput(item.quantidade_atual));
+    setEstoqueMinimo(formatarQtdInput(item.estoque_minimo));
+    const baseQtd = compraParaUnidadeConteudo(item.quantidade_atual, item);
+    const baseMin = compraParaUnidadeConteudo(item.estoque_minimo, item);
+    setQuantidadeBase(baseQtd == null ? "" : formatarQtdInput(baseQtd));
+    setEstoqueMinimoBase(baseMin == null ? "" : formatarQtdInput(baseMin));
     setObservacao(item.observacao || "");
-    setPrecoAtual(
-      item.preco_atual != null ? Number(item.preco_atual).toFixed(2) : "",
+    const embalagem =
+      item.preco_atual != null
+        ? precoBaseParaEmbalagem(item.preco_atual, item)
+        : null;
+    setPrecoEmbalagem(
+      embalagem != null ? String(embalagem).replace(".", ",") : "",
     );
     setImagemUrlAtual(item.imagem_url);
     setImagemArquivo(null);
     if (imagemPreview) URL.revokeObjectURL(imagemPreview);
     setImagemPreview(null);
-    setAlternativasSelecionadas(
-      (alternativasPorInsumo[item.id] || []).map((a) => a.alternativa_id),
-    );
+    setMarcas(item.marcas);
+    setMarcaInput("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -192,45 +301,51 @@ export function GerenciamentoInsumos() {
     }
   };
 
-  const salvarAlternativas = async (insumoId: string, ids: string[]) => {
-    const { error: delErr } = await supabase
-      .from("insumo_alternativas")
-      .delete()
-      .eq("insumo_id", insumoId);
-    if (delErr) throw new Error(delErr.message);
-
-    if (ids.length === 0) return;
-
-    const rows = ids.map((alternativa_id, ordem) => ({
-      insumo_id: insumoId,
-      alternativa_id,
-      ordem,
-    }));
-    const { error: insErr } = await supabase
-      .from("insumo_alternativas")
-      .insert(rows);
-    if (insErr) throw new Error(insErr.message);
+  const adicionarMarca = (raw: string) => {
+    const lista = normalizarMarcas([...marcas, raw]);
+    setMarcas(lista);
+    setMarcaInput("");
   };
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nome.trim()) {
-      toast.warning("Informe o nome do insumo.");
+      toast.warning("Informe o nome do insumo (ex.: Manteiga).");
       return;
     }
 
-    const qtd = parseInt(quantidade, 10);
-    const min = parseInt(estoqueMinimo, 10);
-    if (Number.isNaN(qtd) || qtd < 0 || Number.isNaN(min) || min < 0) {
+    const qtd = parseDecimalBr(quantidade);
+    const min = parseDecimalBr(estoqueMinimo);
+    if (qtd == null || qtd < 0 || min == null || min < 0) {
       toast.warning("Quantidade e estoque mínimo devem ser números ≥ 0.");
       return;
     }
 
-    let preco: number | null = null;
-    if (precoAtual.trim()) {
-      preco = parseFloat(precoAtual.replace(",", "."));
-      if (Number.isNaN(preco) || preco < 0) {
-        toast.warning("Preço inválido.");
+    let conteudoNum: number | null = null;
+    let conteudoUn: UnidadeConteudo | null = null;
+    if (tipo !== "contagem") {
+      conteudoNum = parseDecimalBr(conteudoValor);
+      if (conteudoNum == null || conteudoNum <= 0) {
+        toast.warning("Informe o conteúdo de 1 embalagem (ex.: 200 g).");
+        return;
+      }
+      conteudoUn = conteudoUnidade;
+    }
+
+    let precoBase: number | null = null;
+    if (precoEmbalagem.trim()) {
+      const embalagem = parseDecimalBr(precoEmbalagem);
+      if (embalagem == null || embalagem < 0) {
+        toast.warning("Preço da embalagem inválido.");
+        return;
+      }
+      precoBase = precoEmbalagemParaBase(embalagem, {
+        tipo,
+        conteudo_valor: conteudoNum,
+        conteudo_unidade: conteudoUn,
+      });
+      if (precoBase == null) {
+        toast.warning("Não foi possível converter o preço. Confira o conteúdo.");
         return;
       }
     }
@@ -251,32 +366,46 @@ export function GerenciamentoInsumos() {
       const payload = {
         nome: nome.trim(),
         unidade,
+        tipo,
+        conteudo_valor: conteudoNum,
+        conteudo_unidade: conteudoUn,
+        marcas: normalizarMarcas(marcas),
         estoque_minimo: min,
         observacao: observacao.trim() || null,
         imagem_url: imagemUrl,
-        preco_atual: preco,
-        preco_atualizado_em: preco != null ? new Date().toISOString() : null,
+        preco_atual: precoBase,
+        preco_atualizado_em: precoBase != null ? new Date().toISOString() : null,
         atualizado_em: new Date().toISOString(),
       };
 
       if (editandoId) {
+        const atual = insumos.find((i) => i.id === editandoId);
         const { error } = await supabase
           .from("insumos")
           .update(payload)
           .eq("id", editandoId);
         if (error) throw new Error(error.message);
 
-        await salvarAlternativas(editandoId, alternativasSelecionadas);
+        if (atual && Math.abs(Number(atual.quantidade_atual) - qtd) > 0.0001) {
+          const delta = qtd - Number(atual.quantidade_atual);
+          const { error: errEst } = await supabase.rpc(
+            "ajustar_estoque_insumo",
+            {
+              p_insumo_id: editandoId,
+              p_delta: delta,
+              p_origem: "ajuste",
+              p_observacao: "Ajuste no cadastro",
+            },
+          );
+          if (errEst) throw new Error(errEst.message);
+        }
 
-        if (preco != null) {
-          const atual = insumos.find((i) => i.id === editandoId);
-          if (atual && Number(atual.preco_atual) !== preco) {
-            await supabase.from("insumo_precos_historico").insert({
-              insumo_id: editandoId,
-              preco_unitario: preco,
-              observacao: "Ajuste manual no cadastro",
-            });
-          }
+        if (precoBase != null && atual && Number(atual.preco_atual) !== precoBase) {
+          await supabase.from("insumo_precos_historico").insert({
+            insumo_id: editandoId,
+            preco_unitario: precoBase,
+            observacao: "Ajuste manual no cadastro",
+          });
         }
 
         toast.success("Insumo atualizado.");
@@ -288,14 +417,10 @@ export function GerenciamentoInsumos() {
           .single();
         if (error) throw new Error(error.message);
 
-        if (data && alternativasSelecionadas.length > 0) {
-          await salvarAlternativas(data.id, alternativasSelecionadas);
-        }
-
-        if (data && preco != null) {
+        if (data && precoBase != null) {
           await supabase.from("insumo_precos_historico").insert({
             insumo_id: data.id,
-            preco_unitario: preco,
+            preco_unitario: precoBase,
             observacao: "Preço inicial",
           });
         }
@@ -360,13 +485,6 @@ export function GerenciamentoInsumos() {
   };
 
   const excluir = async (insumo: Insumo) => {
-    if (
-      !window.confirm(
-        `Excluir "${insumo.nome}"? Histórico e vínculos de alternativas serão removidos.`,
-      )
-    ) {
-      return;
-    }
     try {
       const { error } = await supabase.from("insumos").delete().eq("id", insumo.id);
       if (error) throw new Error(error.message);
@@ -443,17 +561,13 @@ export function GerenciamentoInsumos() {
     return insumos.filter((i) => {
       if (aba === "ativos" ? !i.ativo : i.ativo) return false;
       if (!termo) return true;
-      return i.nome.toLowerCase().includes(termo);
+      if (i.nome.toLowerCase().includes(termo)) return true;
+      return i.marcas.some((m) => m.toLowerCase().includes(termo));
     });
   }, [insumos, termoBusca, aba]);
 
-  const candidatosAlternativa = useMemo(
-    () =>
-      insumos.filter(
-        (i) => i.ativo && i.id !== editandoId && !alternativasSelecionadas.includes(i.id),
-      ),
-    [insumos, editandoId, alternativasSelecionadas],
-  );
+  const unidadesConteudo =
+    tipo === "volume" ? UNIDADES_CONTEUDO_VOLUME : UNIDADES_CONTEUDO_PESO;
 
   return (
     <AdminPageShell
@@ -463,7 +577,7 @@ export function GerenciamentoInsumos() {
           Insumos
         </span>
       }
-      description="Controle de pacotes, latas e unidades (não é o estoque do cardápio)."
+      description="Ingrediente genérico (manteiga, farinha). Marcas só ajudam na compra; estoque e preço são um só."
       actions={
         <Button asChild variant="outline" size="sm">
           <Link to="/admin/lista-compras">
@@ -496,12 +610,28 @@ export function GerenciamentoInsumos() {
               id="insumo-nome"
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex.: Chocolate em pó 2kg"
+              placeholder="Ex.: Manteiga"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="insumo-unidade">Unidade</Label>
+            <Label htmlFor="insumo-tipo">Tipo</Label>
+            <select
+              id="insumo-tipo"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={tipo}
+              onChange={(e) => aplicarTipo(e.target.value as TipoInsumo)}
+            >
+              {TIPOS_INSUMO.map((t) => (
+                <option key={t} value={t}>
+                  {rotuloTipoInsumo(t)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="insumo-unidade">Unidade de compra</Label>
             <select
               id="insumo-unidade"
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -516,39 +646,117 @@ export function GerenciamentoInsumos() {
             </select>
           </div>
 
-          {!editandoId && (
+          {tipo !== "contagem" && (
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+              <Label>Conteúdo de 1 {rotuloUnidade(unidade, 1)}</Label>
+              <div className="flex max-w-md gap-2">
+                <Input
+                  inputMode="decimal"
+                  value={conteudoValor}
+                  onChange={(e) => setConteudoValor(e.target.value)}
+                  placeholder="200"
+                />
+                <select
+                  className="flex h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
+                  value={conteudoUnidade}
+                  onChange={(e) =>
+                    setConteudoUnidade(e.target.value as UnidadeConteudo)
+                  }
+                >
+                  {unidadesConteudo.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ex.: tablete de manteiga = 200 g; saco de farinha = 5 kg; leite = 1 L.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="insumo-qtd">
+              Estoque ({rotuloUnidade(unidade, 2)})
+            </Label>
+            <Input
+              id="insumo-qtd"
+              inputMode="decimal"
+              value={quantidade}
+              onChange={(e) => {
+                setQuantidade(e.target.value);
+                syncBaseFromCompra(e.target.value, "qtd");
+              }}
+            />
+          </div>
+
+          {tipo !== "contagem" && (
             <div className="space-y-1.5">
-              <Label htmlFor="insumo-qtd">Qtd. inicial</Label>
+              <Label htmlFor="insumo-qtd-base">
+                Estoque ({conteudoUnidade})
+              </Label>
               <Input
-                id="insumo-qtd"
-                type="number"
-                min={0}
-                value={quantidade}
-                onChange={(e) => setQuantidade(e.target.value)}
+                id="insumo-qtd-base"
+                inputMode="decimal"
+                value={quantidadeBase}
+                onChange={(e) => {
+                  setQuantidadeBase(e.target.value);
+                  syncCompraFromBase(e.target.value, "qtd");
+                }}
+                placeholder="0"
               />
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="insumo-min">Estoque mínimo</Label>
+            <Label htmlFor="insumo-min">
+              Mínimo ({rotuloUnidade(unidade, 2)})
+            </Label>
             <Input
               id="insumo-min"
-              type="number"
-              min={0}
+              inputMode="decimal"
               value={estoqueMinimo}
-              onChange={(e) => setEstoqueMinimo(e.target.value)}
+              onChange={(e) => {
+                setEstoqueMinimo(e.target.value);
+                syncBaseFromCompra(e.target.value, "min");
+              }}
             />
           </div>
 
+          {tipo !== "contagem" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="insumo-min-base">
+                Mínimo ({conteudoUnidade})
+              </Label>
+              <Input
+                id="insumo-min-base"
+                inputMode="decimal"
+                value={estoqueMinimoBase}
+                onChange={(e) => {
+                  setEstoqueMinimoBase(e.target.value);
+                  syncCompraFromBase(e.target.value, "min");
+                }}
+                placeholder="0"
+              />
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <Label htmlFor="insumo-preco">Preço atual (opcional)</Label>
+            <Label htmlFor="insumo-preco">Preço da embalagem (opcional)</Label>
             <Input
               id="insumo-preco"
               inputMode="decimal"
               placeholder="0,00"
-              value={precoAtual}
-              onChange={(e) => setPrecoAtual(e.target.value)}
+              value={precoEmbalagem}
+              onChange={(e) => setPrecoEmbalagem(e.target.value)}
             />
+            {precoBasePreview != null && (
+              <p className="text-xs text-muted-foreground">
+                = {formatarPrecoMoeda(precoBasePreview)} /{" "}
+                {unidadePrecoBase(tipo)}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">
@@ -557,8 +765,48 @@ export function GerenciamentoInsumos() {
               id="insumo-obs"
               value={observacao}
               onChange={(e) => setObservacao(e.target.value)}
-              placeholder="Preferir marca X, embalagem 2kg…"
+              placeholder="Preferir tablete, evitar com sal…"
             />
+          </div>
+
+          <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+            <Label>Marcas possíveis</Label>
+            {marcas.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {marcas.map((m) => (
+                  <Badge key={m} variant="secondary" className="gap-1 pr-1">
+                    {m}
+                    <button
+                      type="button"
+                      className="rounded p-0.5 hover:bg-black/10"
+                      onClick={() =>
+                        setMarcas((prev) => prev.filter((x) => x !== m))
+                      }
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <Input
+              value={marcaInput}
+              onChange={(e) => setMarcaInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  adicionarMarca(marcaInput.replace(/,/g, ""));
+                }
+              }}
+              onBlur={() => {
+                if (marcaInput.trim()) adicionarMarca(marcaInput);
+              }}
+              placeholder="Batavo, Tirol… (Enter para adicionar)"
+              className="max-w-md"
+            />
+            <p className="text-xs text-muted-foreground">
+              Só uma lista para facilitar a compra. Não cria estoque separado.
+            </p>
           </div>
 
           <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
@@ -588,52 +836,6 @@ export function GerenciamentoInsumos() {
                 />
               </label>
             </div>
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
-            <Label>Alternativas (podem substituir na compra)</Label>
-            {alternativasSelecionadas.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-2">
-                {alternativasSelecionadas.map((id) => {
-                  const alt = insumos.find((i) => i.id === id);
-                  return (
-                    <Badge key={id} variant="secondary" className="gap-1 pr-1">
-                      {alt?.nome || id}
-                      <button
-                        type="button"
-                        className="rounded p-0.5 hover:bg-black/10"
-                        onClick={() =>
-                          setAlternativasSelecionadas((prev) =>
-                            prev.filter((x) => x !== id),
-                          )
-                        }
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  );
-                })}
-              </div>
-            )}
-            <select
-              className="flex h-10 w-full max-w-md rounded-md border border-input bg-background px-3 text-sm"
-              value=""
-              onChange={(e) => {
-                const id = e.target.value;
-                if (!id) return;
-                setAlternativasSelecionadas((prev) => [...prev, id]);
-              }}
-            >
-              <option value="">Adicionar alternativa…</option>
-              {candidatosAlternativa.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.nome}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-muted-foreground">
-              Cadastre cada marca/embalagem como insumo e vincule aqui.
-            </p>
           </div>
         </div>
 
@@ -672,7 +874,7 @@ export function GerenciamentoInsumos() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Buscar insumo…"
+            placeholder="Buscar insumo ou marca…"
             value={termoBusca}
             onChange={(e) => setTermoBusca(e.target.value)}
           />
@@ -691,8 +893,13 @@ export function GerenciamentoInsumos() {
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {filtrados.map((insumo) => {
             const baixo = insumoAbaixoDoMinimo(insumo);
-            const alts = alternativasPorInsumo[insumo.id] || [];
             const busy = processandoId === insumo.id;
+            const deltaMenos =
+              insumo.quantidade_atual <= 0
+                ? 0
+                : -Math.min(1, insumo.quantidade_atual);
+            const conteudo = rotuloConteudoEmbalagem(insumo);
+            const eqMin = formatarEquivalenteBase(insumo.estoque_minimo, insumo);
 
             return (
               <li
@@ -720,8 +927,11 @@ export function GerenciamentoInsumos() {
                         {insumo.nome}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {rotuloUnidade(insumo.unidade)} ·{" "}
-                        {formatarPrecoInsumo(insumo.preco_atual)}
+                        {rotuloTipoInsumo(insumo.tipo)}
+                        {conteudo ? ` · ${conteudo}` : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatarPrecoBaseInsumo(insumo)}
                       </p>
                     </div>
                     {baixo && insumo.ativo && (
@@ -738,14 +948,14 @@ export function GerenciamentoInsumos() {
                       size="icon"
                       variant="outline"
                       className="h-8 w-8"
-                      disabled={busy || insumo.quantidade_atual <= 0}
-                      onClick={() => void ajustarQtd(insumo, -1)}
+                      disabled={busy || deltaMenos === 0}
+                      onClick={() => void ajustarQtd(insumo, deltaMenos)}
                       title="Registrar uso (−1)"
                     >
                       <Minus className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="min-w-12 text-center text-sm font-semibold tabular-nums">
-                      {insumo.quantidade_atual}
+                    <span className="min-w-16 text-center text-sm font-semibold tabular-nums leading-tight">
+                      {formatarEstoqueInsumo(insumo)}
                     </span>
                     <Button
                       type="button"
@@ -758,14 +968,16 @@ export function GerenciamentoInsumos() {
                     >
                       <Plus className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="text-xs text-muted-foreground">
-                      mín. {insumo.estoque_minimo}
-                    </span>
                   </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    mín. {formatarQtd(insumo.estoque_minimo)}{" "}
+                    {rotuloUnidade(insumo.unidade, insumo.estoque_minimo)}
+                    {eqMin ? ` (${eqMin})` : ""}
+                  </p>
 
-                  {alts.length > 0 && (
+                  {insumo.marcas.length > 0 && (
                     <p className="mt-1.5 truncate text-xs text-muted-foreground">
-                      Ou: {alts.map((a) => a.alternativa?.nome).filter(Boolean).join(", ")}
+                      Marcas: {insumo.marcas.join(", ")}
                     </p>
                   )}
 
@@ -795,7 +1007,7 @@ export function GerenciamentoInsumos() {
                       size="sm"
                       variant="ghost"
                       className="h-8 px-2 text-destructive"
-                      onClick={() => void excluir(insumo)}
+                      onClick={() => setInsumoExcluir(insumo)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -814,6 +1026,24 @@ export function GerenciamentoInsumos() {
           })}
         </ul>
       )}
+
+      <ModalConfirmacao
+        aberto={insumoExcluir != null}
+        titulo="Excluir insumo?"
+        mensagem={
+          insumoExcluir
+            ? `Excluir "${insumoExcluir.nome}"? Histórico de estoque e preços será removido.`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setInsumoExcluir(null)}
+        aoConfirmar={() => {
+          const item = insumoExcluir;
+          setInsumoExcluir(null);
+          if (item) void excluir(item);
+        }}
+      />
     </AdminPageShell>
   );
 }

@@ -1,6 +1,6 @@
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { IdentificarTelefoneDelivery } from "../../components/IdentificarTelefoneDelivery";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
@@ -12,12 +12,17 @@ import {
   type ItemPedidoDelivery,
 } from "../../lib/deliveryPedido";
 import { lerGuestDeliveryLocal } from "../../lib/deliveryGuestStorage";
+import {
+  pedirDeNovo,
+  type ItemPedidoParaRecompra,
+} from "../../lib/pedirDeNovo";
 import { obterClasseStatus } from "../../lib/pedidosAdmin";
 import {
   pedidoEmAndamento,
   rotuloStatusCliente,
 } from "../../lib/pedidoStatusCliente";
 import { supabase } from "../../lib/supabase";
+import { urlDelivery } from "../../lib/urlDelivery";
 
 interface PedidoLista {
   id: string;
@@ -54,6 +59,7 @@ function CardPedido({
   onToggle: () => void;
   onCancelado: (id: string) => void;
 }) {
+  const navigate = useNavigate();
   const itens = p.pedido_itens || [];
   const rotulo = rotuloStatusCliente(p);
   const precisaPagar =
@@ -62,6 +68,7 @@ function CardPedido({
   const [pagando, setPagando] = useState(false);
   const [confirmarCancelar, setConfirmarCancelar] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [repedindo, setRepedindo] = useState(false);
   const classeStatus =
     rotulo === "Em rota"
       ? "bg-violet-100 text-violet-800"
@@ -112,6 +119,21 @@ function CardPedido({
       toast.error(msg || "Falha ao cancelar");
     } finally {
       setCancelando(false);
+    }
+  };
+
+  const repedir = async () => {
+    if (repedindo) return;
+    setRepedindo(true);
+    try {
+      const { adicionados } = await pedirDeNovo(
+        itens as ItemPedidoParaRecompra[],
+      );
+      if (adicionados > 0) navigate(urlDelivery("/checkout"));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao montar sacola");
+    } finally {
+      setRepedindo(false);
     }
   };
 
@@ -217,6 +239,17 @@ function CardPedido({
                 </button>
               </>
             )}
+            {!precisaPagar && itens.length > 0 && (
+              <button
+                type="button"
+                disabled={repedindo}
+                onClick={() => void repedir()}
+                className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full bg-zinc-900 text-white disabled:opacity-60"
+              >
+                <RotateCcw size={12} />
+                {repedindo ? "Montando…" : "Pedir de novo"}
+              </button>
+            )}
             <Link
               to={`/pedido/${p.id}`}
               className="text-xs font-semibold text-cookie-primary"
@@ -273,14 +306,17 @@ export function DeliveryPedidos() {
             id, sequencia_pedido, status, modalidade, total, criado_em, tracking_url,
             status_pagamento,
             pedido_itens (
-              id, quantidade, preco_unitario, observacoes,
-              produtos ( nome ),
+              id, produto_id, quantidade, preco_unitario, observacoes, modo_consumo,
+              produtos (
+                nome, imagem_url, preco, preco_promocional, em_promocao,
+                disponibilidade, controlar_estoque, quantidade_estoque
+              ),
               pedido_item_adicionais (
-                preco_aplicado,
+                adicional_id, preco_aplicado,
                 adicionais ( nome )
               ),
               pedido_item_combo_escolhas (
-                nome_grupo, nome_produto, delta_preco
+                grupo_id, produto_escolhido_id, nome_grupo, nome_produto, delta_preco
               )
             )
           `,

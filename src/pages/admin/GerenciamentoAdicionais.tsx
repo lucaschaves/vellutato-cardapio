@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -54,6 +55,10 @@ export function GerenciamentoAdicionais() {
   const [novaDisponibilidade, setNovaDisponibilidade] =
     useState<DisponibilidadeProduto>("ambos");
   const [salvando, setSalvando] = useState(false);
+  const [adicionalExcluir, setAdicionalExcluir] = useState<{
+    id: string;
+    nome: string;
+  } | null>(null);
 
   useEffect(() => {
     void carregarAdicionais();
@@ -116,13 +121,13 @@ export function GerenciamentoAdicionais() {
       return;
     }
 
-    if (
-      !window.confirm(
-        `Excluir o adicional "${nomeAdicional}"? Esta ação não pode ser desfeita.`,
-      )
-    ) {
-      return;
-    }
+    setAdicionalExcluir({ id, nome: nomeAdicional });
+  };
+
+  const confirmarExcluirAdicional = async () => {
+    if (!adicionalExcluir) return;
+    const { id } = adicionalExcluir;
+    setAdicionalExcluir(null);
 
     try {
       const { error: erroVinculos } = await supabase
@@ -579,6 +584,20 @@ export function GerenciamentoAdicionais() {
           </Table>
         )}
       </div>
+
+      <ModalConfirmacao
+        aberto={adicionalExcluir != null}
+        titulo="Excluir adicional?"
+        mensagem={
+          adicionalExcluir
+            ? `Excluir o adicional "${adicionalExcluir.nome}"? Esta ação não pode ser desfeita.`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setAdicionalExcluir(null)}
+        aoConfirmar={() => void confirmarExcluirAdicional()}
+      />
     </AdminPageShell>
   );
 }

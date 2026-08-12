@@ -313,6 +313,12 @@ export type Database = {
           origem: Database["public"]["Enums"]["tipo_origem_pedido"]
           sequencia_pedido: number
           status: string
+          status_pagamento?: string | null
+          modalidade?: string | null
+          taxa_entrega?: number | null
+          subtotal_itens?: number | null
+          desconto_frete?: number | null
+          acrescimo_clima?: number | null
           total: number | null
           valor_total: number
         }
@@ -330,6 +336,12 @@ export type Database = {
           origem: Database["public"]["Enums"]["tipo_origem_pedido"]
           sequencia_pedido?: number
           status?: string
+          status_pagamento?: string | null
+          modalidade?: string | null
+          taxa_entrega?: number | null
+          subtotal_itens?: number | null
+          desconto_frete?: number | null
+          acrescimo_clima?: number | null
           total?: number | null
           valor_total?: number
         }
@@ -347,6 +359,12 @@ export type Database = {
           origem?: Database["public"]["Enums"]["tipo_origem_pedido"]
           sequencia_pedido?: number
           status?: string
+          status_pagamento?: string | null
+          modalidade?: string | null
+          taxa_entrega?: number | null
+          subtotal_itens?: number | null
+          desconto_frete?: number | null
+          acrescimo_clima?: number | null
           total?: number | null
           valor_total?: number
         }
@@ -671,6 +689,10 @@ export type Database = {
           id: string
           nome: string
           unidade: string
+          tipo: string
+          conteudo_valor: number | null
+          conteudo_unidade: string | null
+          marcas: string[]
           quantidade_atual: number
           estoque_minimo: number
           imagem_url: string | null
@@ -685,6 +707,10 @@ export type Database = {
           id?: string
           nome: string
           unidade?: string
+          tipo?: string
+          conteudo_valor?: number | null
+          conteudo_unidade?: string | null
+          marcas?: string[]
           quantidade_atual?: number
           estoque_minimo?: number
           imagem_url?: string | null
@@ -699,6 +725,10 @@ export type Database = {
           id?: string
           nome?: string
           unidade?: string
+          tipo?: string
+          conteudo_valor?: number | null
+          conteudo_unidade?: string | null
+          marcas?: string[]
           quantidade_atual?: number
           estoque_minimo?: number
           imagem_url?: string | null

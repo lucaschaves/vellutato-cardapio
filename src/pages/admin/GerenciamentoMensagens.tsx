@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { supabase } from "../../lib/supabase";
 import {
   buscarMensagensWhatsapp,
@@ -27,6 +28,8 @@ export function GerenciamentoMensagens() {
   const [titulo, setTitulo] = useState("");
   const [conteudo, setConteudo] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [mensagemExcluir, setMensagemExcluir] =
+    useState<MensagemWhatsapp | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -117,8 +120,6 @@ export function GerenciamentoMensagens() {
   };
 
   const excluirMensagem = async (mensagem: MensagemWhatsapp) => {
-    if (!window.confirm(`Excluir a mensagem "${mensagem.titulo}"?`)) return;
-
     const { error } = await supabase
       .from("whatsapp_mensagens")
       .delete()
@@ -275,7 +276,7 @@ export function GerenciamentoMensagens() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => void excluirMensagem(mensagem)}
+                    onClick={() => setMensagemExcluir(mensagem)}
                     title="Excluir mensagem"
                     className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
                   >
@@ -290,6 +291,24 @@ export function GerenciamentoMensagens() {
           ))
         )}
       </div>
+
+      <ModalConfirmacao
+        aberto={mensagemExcluir != null}
+        titulo="Excluir mensagem?"
+        mensagem={
+          mensagemExcluir
+            ? `Excluir a mensagem "${mensagemExcluir.titulo}"?`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setMensagemExcluir(null)}
+        aoConfirmar={() => {
+          const msg = mensagemExcluir;
+          setMensagemExcluir(null);
+          if (msg) void excluirMensagem(msg);
+        }}
+      />
     </AdminPageShell>
   );
 }

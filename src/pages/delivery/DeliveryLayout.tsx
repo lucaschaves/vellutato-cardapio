@@ -1,12 +1,36 @@
-import { ArrowLeft, ClipboardList, MessageCircle, ShoppingBag, User } from "lucide-react";
+import { ArrowLeft, ClipboardList, MessageCircle, User } from "lucide-react";
 import { useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { DeliverySacolaBar } from "../../components/DeliverySacolaBar";
 import { LogoMarca } from "../../components/LogoMarca";
+import { ChatClienteProvider, useChatCliente } from "../../context/ChatClienteContext";
 import { usePedidosDeliveryAtivosCount } from "../../hooks/usePedidosDeliveryAtivosCount";
 import { urlDelivery } from "../../lib/urlDelivery";
 import { useCartStore } from "../../store/useCartStore";
 
-export function DeliveryLayout() {
+function DeliveryHeaderChatLink() {
+  const { naoLidas } = useChatCliente();
+  return (
+    <Link
+      to={urlDelivery("/chat")}
+      className="relative p-2 rounded-full hover:bg-zinc-100"
+      aria-label={
+        naoLidas > 0
+          ? `Chat (${naoLidas} resposta${naoLidas === 1 ? "" : "s"} nova${naoLidas === 1 ? "" : "s"})`
+          : "Chat"
+      }
+    >
+      <MessageCircle size={20} />
+      {naoLidas > 0 && (
+        <span className="absolute top-0.5 right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-cookie-primary text-white text-[10px] font-bold leading-[1.1rem] text-center">
+          {naoLidas > 9 ? "9+" : naoLidas}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+function DeliveryLayoutInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const qtd = useCartStore((s) => s.obterQuantidadeTotal());
@@ -36,6 +60,11 @@ export function DeliveryLayout() {
     }
   };
 
+  const paddingBottom =
+    esconderSacola || qtd <= 0
+      ? "pb-4"
+      : "pb-44"; /* sacola + mínimo + upsell */
+
   return (
     <div className="min-h-dvh bg-[#f4f4f5] text-zinc-900 flex flex-col">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-zinc-200">
@@ -61,13 +90,7 @@ export function DeliveryLayout() {
             </button>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
-            <Link
-              to={urlDelivery("/chat")}
-              className="p-2 rounded-full hover:bg-zinc-100"
-              aria-label="Chat"
-            >
-              <MessageCircle size={20} />
-            </Link>
+            <DeliveryHeaderChatLink />
             <Link
               to={urlDelivery("/pedidos")}
               className="relative p-2 rounded-full hover:bg-zinc-100"
@@ -96,32 +119,20 @@ export function DeliveryLayout() {
       </header>
 
       <main
-        className={`flex-1 max-w-3xl w-full mx-auto px-4 pt-4 ${
-          esconderSacola ? "pb-4" : "pb-24"
-        }`}
+        className={`flex-1 max-w-3xl w-full mx-auto px-4 pt-4 ${paddingBottom}`}
       >
         <Outlet />
       </main>
 
-      {!esconderSacola && qtd > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-40 p-4 pointer-events-none">
-          <div className="max-w-3xl mx-auto pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => navigate(urlDelivery("/checkout"))}
-              className="w-full h-14 rounded-2xl bg-cookie-primary text-white font-bold flex items-center justify-between px-5 shadow-lg shadow-cookie-primary/25"
-            >
-              <span className="flex items-center gap-2">
-                <ShoppingBag size={18} />
-                Ver sacola
-              </span>
-              <span className="bg-white/20 rounded-full px-3 py-1 text-sm">
-                {qtd}
-              </span>
-            </button>
-          </div>
-        </div>
-      )}
+      {!esconderSacola && <DeliverySacolaBar />}
     </div>
+  );
+}
+
+export function DeliveryLayout() {
+  return (
+    <ChatClienteProvider>
+      <DeliveryLayoutInner />
+    </ChatClienteProvider>
   );
 }

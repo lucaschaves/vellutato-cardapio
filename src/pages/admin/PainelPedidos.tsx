@@ -28,6 +28,12 @@ import {
   type MensagemWhatsapp,
 } from "../../lib/mensagensWhatsapp";
 import { dispararNotificacaoStatusPedido } from "../../lib/notificacoesPedido";
+import {
+  compararPedidosKds,
+  minutosAteAgendado,
+  pedidoAgendadoEmAlerta,
+  rotuloHoraAgendada,
+} from "../../lib/pedidoAgendado";
 import { supabase } from "../../lib/supabase";
 
 // Tipagens
@@ -56,6 +62,10 @@ interface Pedido {
   cliente_nome: string;
   cliente_celular: string | null;
   total: number | null;
+  taxa_entrega?: number | null;
+  desconto_aplicado?: number | null;
+  desconto_frete?: number | null;
+  acrescimo_clima?: number | null;
   status:
     | "pendente"
     | "em_producao"
@@ -64,6 +74,7 @@ interface Pedido {
     | "cancelado"
     | "aguardando_pagamento";
   criado_em: string;
+  agendado_para?: string | null;
   voa_order_id?: string | null;
   tracking_url?: string | null;
   endereco_json?: EnderecoPedido | null;
@@ -175,7 +186,7 @@ export function PainelPedidos() {
     assinar: assinarPedidos,
     reconectar,
   } = usePedidosRealtime();
-  const { impressoraOffline, imprimirPedido } = useImpressaoAdmin();
+  const { imprimirPedido } = useImpressaoAdmin();
 
   const [mensagensWhatsapp, setMensagensWhatsapp] = useState<
     MensagemWhatsapp[]
@@ -194,7 +205,7 @@ export function PainelPedidos() {
           .from("pedidos")
           .select(
             `
-            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, status, criado_em, voa_order_id, tracking_url, endereco_json,
+            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, taxa_entrega, desconto_aplicado, desconto_frete, acrescimo_clima, status, criado_em, voa_order_id, tracking_url, endereco_json, agendado_para,
             pedido_itens (
               id, quantidade, observacoes, modo_consumo,
               produtos ( nome ),
@@ -437,10 +448,25 @@ export function PainelPedidos() {
         : "Este pedido não tem complemento.",
     );
 
-  // Separação em colunas (Kanban)
-  const pendentes = pedidos.filter((p) => p.status === "pendente");
-  const emProducao = pedidos.filter((p) => p.status === "em_producao");
-  const prontos = pedidos.filter((p) => p.status === "pronto");
+  // Separação em colunas (Kanban) — agendados primeiro, por horário
+  const [agoraTick, setAgoraTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setAgoraTick(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const pendentes = pedidos
+    .filter((p) => p.status === "pendente")
+    .slice()
+    .sort(compararPedidosKds);
+  const emProducao = pedidos
+    .filter((p) => p.status === "em_producao")
+    .slice()
+    .sort(compararPedidosKds);
+  const prontos = pedidos
+    .filter((p) => p.status === "pronto")
+    .slice()
+    .sort(compararPedidosKds);
 
   // Subcomponente para renderizar o Card do Pedido
   const CardPedido = ({
@@ -449,13 +475,21 @@ export function PainelPedidos() {
   }: {
     pedido: Pedido;
     corBorder: string;
-  }) => (
+  }) => {
+    const emAlerta = pedidoAgendadoEmAlerta(pedido.agendado_para, agoraTick);
+    const minAte = minutosAteAgendado(pedido.agendado_para, agoraTick);
+
+    return (
     <motion.div
       layout
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
-      className={`bg-white dark:bg-surface-dark border-l-4 ${corBorder} shadow-sm p-4 rounded-lg flex flex-col gap-3`}
+      className={`bg-white dark:bg-surface-dark border-l-4 ${corBorder} shadow-sm p-4 rounded-lg flex flex-col gap-3 ${
+        emAlerta
+          ? "ring-2 ring-amber-400 animate-pulse shadow-amber-200/50 dark:shadow-amber-900/30"
+          : ""
+      }`}
     >
       <div className="flex justify-between items-start border-b border-gray-100 dark:border-gray-800 pb-2">
         <div>
@@ -463,16 +497,79 @@ export function PainelPedidos() {
             #{pedido.sequencia_pedido} - {pedido.identificador}
           </h3>
           <p className="text-sm text-gray-500">{pedido.cliente_nome}</p>
-          {pedido.origem === "delivery" && (
-            <span
-              className={`inline-block mt-1 text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                pedido.modalidade === "retirada"
-                  ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-                  : "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
+          {pedido.agendado_para && (
+            <p
+              className={`mt-1 text-sm font-bold ${
+                emAlerta
+                  ? "text-amber-700 dark:text-amber-300"
+                  : "text-sky-700 dark:text-sky-300"
               }`}
             >
-              {pedido.modalidade === "retirada" ? "Retirada" : "Delivery"}
-            </span>
+              {pedido.modalidade === "retirada" ? "Retirada" : "Entrega"} às{" "}
+              {rotuloHoraAgendada(pedido.agendado_para)}
+              {emAlerta && minAte != null
+                ? minAte <= 0
+                  ? " · agora!"
+                  : ` · em ${minAte} min`
+                : ""}
+            </p>
+          )}
+          {(pedido.origem === "delivery" ||
+            Number(pedido.desconto_aplicado || 0) > 0) && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              {pedido.origem === "delivery" && (
+                <span
+                  className={`inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                    pedido.modalidade === "retirada"
+                      ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                      : "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
+                  }`}
+                >
+                  {pedido.modalidade === "retirada" ? "Retirada" : "Delivery"}
+                </span>
+              )}
+              {pedido.agendado_para && (
+                <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                  Agendado
+                </span>
+              )}
+              {pedido.origem === "delivery" &&
+                pedido.modalidade === "entrega" &&
+                Number(pedido.taxa_entrega || 0) > 0 && (
+                  <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                    Frete R${" "}
+                    {Number(pedido.taxa_entrega)
+                      .toFixed(2)
+                      .replace(".", ",")}
+                  </span>
+                )}
+              {pedido.origem === "delivery" &&
+                Number(pedido.desconto_frete || 0) > 0 && (
+                  <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                    Frete -R${" "}
+                    {Number(pedido.desconto_frete)
+                      .toFixed(2)
+                      .replace(".", ",")}
+                  </span>
+                )}
+              {pedido.origem === "delivery" &&
+                Number(pedido.acrescimo_clima || 0) > 0 && (
+                  <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                    Chuva +R${" "}
+                    {Number(pedido.acrescimo_clima)
+                      .toFixed(2)
+                      .replace(".", ",")}
+                  </span>
+                )}
+              {Number(pedido.desconto_aplicado || 0) > 0 && (
+                <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                  Desconto -R${" "}
+                  {Number(pedido.desconto_aplicado)
+                    .toFixed(2)
+                    .replace(".", ",")}
+                </span>
+              )}
+            </div>
           )}
         </div>
         <div className="flex flex-wrap items-end justify-end gap-3">
@@ -675,17 +772,13 @@ export function PainelPedidos() {
       </div>
     </motion.div>
   );
+  };
 
   return (
     <AdminPageShell
       title="Fila de Produção"
       actions={
         <>
-          {impressoraOffline && (
-            <span className="flex items-center gap-1 text-orange-600 font-bold text-sm bg-orange-100 dark:bg-orange-900/30 px-3 py-1 rounded-full">
-              <Printer size={16} /> Impressora offline
-            </span>
-          )}
           {statusConexao !== "conectado" && (
             <button
               type="button"

@@ -1,8 +1,9 @@
-import { FileText, Loader2, Menu, Printer, Volume2, VolumeX } from "lucide-react";
+import { FileText, Loader2, Menu, MessageCircle, Printer, Volume2, VolumeX } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { useAlertaNovoPedidoAdmin } from "../context/AlertaNovoPedidoContext";
+import { useChatAdmin } from "../context/ChatAdminContext";
 import { useImpressaoAdmin } from "../context/ImpressaoAdminContext";
 import { impressoraEmModoPdf } from "../lib/impressoraLocal";
 import { resolverBreadcrumbAdmin } from "../lib/adminNavegacao";
@@ -59,6 +60,38 @@ function StatusSom() {
         {precisaReativar ? "Reativar som" : "Ativar som"}
       </span>
     </button>
+  );
+}
+
+function StatusChat() {
+  const { naoLidas } = useChatAdmin();
+  const temNaoLidas = naoLidas > 0;
+
+  return (
+    <Link
+      to="/admin/chat"
+      title={
+        temNaoLidas
+          ? `${naoLidas} mensagem${naoLidas === 1 ? "" : "ns"} não lida${naoLidas === 1 ? "" : "s"}`
+          : "Chat delivery"
+      }
+      className={cn(
+        "relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+        temNaoLidas
+          ? "animate-pulse bg-cookie-primary text-white shadow-lg shadow-cookie-primary/40 ring-2 ring-amber-300 hover:bg-cookie-primary-hover"
+          : "border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-800",
+      )}
+    >
+      <MessageCircle size={15} className="shrink-0" />
+      <span className="hidden sm:inline">
+        {temNaoLidas ? `Chat (${naoLidas})` : "Chat"}
+      </span>
+      {temNaoLidas && (
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-black text-cookie-primary ring-2 ring-white dark:ring-surface-dark">
+          {naoLidas > 99 ? "99+" : naoLidas}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -182,6 +215,7 @@ export function AdminBreadcrumbHeader({ onAbrirMenu }: Props) {
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <StatusSom />
+        <StatusChat />
         <StatusImpressora />
       </div>
     </header>

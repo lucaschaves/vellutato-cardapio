@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -58,6 +59,10 @@ export function GerenciamentoCategorias() {
   >([]);
   const [carregandoProdutos, setCarregandoProdutos] = useState(false);
   const [reordenandoId, setReordenandoId] = useState<string | null>(null);
+  const [categoriaExcluir, setCategoriaExcluir] = useState<{
+    id: string;
+    nome: string;
+  } | null>(null);
 
   useEffect(() => {
     void carregarCategorias();
@@ -257,15 +262,7 @@ export function GerenciamentoCategorias() {
     }
   };
 
-  const excluirCategoria = async (id: string, nomeCat: string) => {
-    if (
-      !window.confirm(
-        `Excluir a categoria "${nomeCat}"? Produtos vinculados podem impedir a exclusão.`,
-      )
-    ) {
-      return;
-    }
-
+  const excluirCategoria = async (id: string) => {
     const { error } = await supabase.from("categorias").delete().eq("id", id);
     if (error) {
       console.error("[ERRO - CATEGORIAS] excluir:", error.message);
@@ -449,7 +446,7 @@ export function GerenciamentoCategorias() {
               className="text-red-600 mr-auto"
               onClick={() => {
                 const cat = categorias.find((c) => c.id === editandoId);
-                if (cat) void excluirCategoria(cat.id, cat.nome);
+                if (cat) setCategoriaExcluir({ id: cat.id, nome: cat.nome });
               }}
             >
               <Trash2 size={16} className="mr-2" />
@@ -546,6 +543,24 @@ export function GerenciamentoCategorias() {
           </TabsContent>
         </Tabs>
       )}
+
+      <ModalConfirmacao
+        aberto={categoriaExcluir != null}
+        titulo="Excluir categoria?"
+        mensagem={
+          categoriaExcluir
+            ? `Excluir a categoria "${categoriaExcluir.nome}"? Produtos vinculados podem impedir a exclusão.`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setCategoriaExcluir(null)}
+        aoConfirmar={() => {
+          const cat = categoriaExcluir;
+          setCategoriaExcluir(null);
+          if (cat) void excluirCategoria(cat.id);
+        }}
+      />
     </AdminPageShell>
   );
 }

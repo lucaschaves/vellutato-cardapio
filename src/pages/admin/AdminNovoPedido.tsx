@@ -550,6 +550,8 @@ export function AdminNovoPedido() {
     }
     let taxaEntregaFinal = 0;
     let distanciaFinal: number | null = null;
+    let descontoFreteFinal = 0;
+    let acrescimoClimaFinal = 0;
     if (canal === "entrega") {
       if (!enderecoAtivo) {
         toast.warning("Informe e localize o endereço completo");
@@ -578,6 +580,8 @@ export function AdminNovoPedido() {
       }
       taxaEntregaFinal = avaliacao.taxa;
       distanciaFinal = avaliacao.distancia_km;
+      descontoFreteFinal = avaliacao.desconto_carrinho;
+      acrescimoClimaFinal = avaliacao.acrescimo_clima;
       setFreteMsg(null);
       setTaxaFrete(avaliacao.taxa);
       setAcrescimoClima(avaliacao.acrescimo_clima);
@@ -612,6 +616,8 @@ export function AdminNovoPedido() {
           modalidade: canal,
           status_pagamento: "pago",
           taxa_entrega: taxaEntregaFinal,
+          desconto_frete: descontoFreteFinal,
+          acrescimo_clima: acrescimoClimaFinal,
           subtotal_itens: subtotal,
           cpf_nota: null,
           endereco: canal === "entrega" ? enderecoAtivo : null,

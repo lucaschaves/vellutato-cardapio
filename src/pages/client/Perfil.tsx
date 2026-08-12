@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import {
   buscarClientePorCelular,
   buscarCuponsDoCliente,
@@ -62,6 +63,7 @@ export function Perfil() {
   const [carregando, setCarregando] = useState(true);
   const [salvandoNome, setSalvandoNome] = useState(false);
   const [identificando, setIdentificando] = useState(false);
+  const [confirmarSair, setConfirmarSair] = useState(false);
 
   const celularNormalizado = normalizarTelefoneParaSalvar(celular);
   const celularValido = telefoneDigitosCompleto(celular);
@@ -193,13 +195,6 @@ export function Perfil() {
   };
 
   const sair = () => {
-    if (
-      !window.confirm(
-        "Sair desta conta neste aparelho? Você precisará informar o celular de novo.",
-      )
-    ) {
-      return;
-    }
     encerrarSessaoCliente();
     setCelular("");
     setNome("");
@@ -405,7 +400,7 @@ export function Perfil() {
 
               <button
                 type="button"
-                onClick={sair}
+                onClick={() => setConfirmarSair(true)}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 font-bold text-sm active:scale-[0.98]"
               >
                 <LogOut size={16} />
@@ -577,6 +572,19 @@ export function Perfil() {
           </>
         )}
       </div>
+
+      <ModalConfirmacao
+        aberto={confirmarSair}
+        titulo="Sair da conta?"
+        mensagem="Sair desta conta neste aparelho? Você precisará informar o celular de novo."
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setConfirmarSair(false)}
+        aoConfirmar={() => {
+          setConfirmarSair(false);
+          sair();
+        }}
+      />
     </motion.div>
   );
 }

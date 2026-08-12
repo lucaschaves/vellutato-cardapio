@@ -1,11 +1,5 @@
-import {
-  ChevronDown,
-  ChevronUp,
-  History,
-  Loader2,
-  Search,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
+import { ChevronDown, ChevronUp, History, Loader2, Search } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
 import { Badge } from "../../components/ui/badge";
@@ -62,6 +56,10 @@ interface PedidoHistorico {
   total: number | null;
   valor_total: number | null;
   desconto_aplicado: number | null;
+  taxa_entrega: number | null;
+  desconto_frete: number | null;
+  acrescimo_clima: number | null;
+  subtotal_itens: number | null;
   criado_em: string;
   cupons: { codigo: string; tipo: string; valor: number } | null;
   pedido_itens: ItemHistorico[];
@@ -112,7 +110,7 @@ export function HistoricoPedidos() {
   const [pedidos, setPedidos] = useState<PedidoHistorico[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
-  const [periodo, setPeriodo] = useState<PeriodoRelatorio>("30dias");
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>("hoje");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
   const [pagina, setPagina] = useState(1);
@@ -127,8 +125,8 @@ export function HistoricoPedidos() {
           `
           id, sequencia_pedido, cliente_nome, cliente_celular, cliente_id,
           identificador, origem, status, total, valor_total, desconto_aplicado,
-          criado_em,
-          cupons ( codigo, tipo, valor ),
+          taxa_entrega, desconto_frete, acrescimo_clima, subtotal_itens, criado_em,
+          cupons!cupom_id ( codigo, tipo, valor ),
           pedido_itens (
             id, quantidade, preco_unitario, observacoes,
             produtos ( nome ),
@@ -154,7 +152,12 @@ export function HistoricoPedidos() {
       const { data, error } = await query;
       if (error) throw error;
 
-      setPedidos((data as unknown as PedidoHistorico[]) || []);
+      setPedidos(
+        ((data as unknown as PedidoHistorico[]) || []).map((p) => ({
+          ...p,
+          pedido_itens: p.pedido_itens || [],
+        })),
+      );
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - HISTÓRICO]", mensagem);
@@ -185,9 +188,7 @@ export function HistoricoPedidos() {
         pedido.identificador,
         String(pedido.sequencia_pedido),
         pedido.cupons?.codigo || "",
-        pedido.pedido_itens
-          .map((item) => item.produtos?.nome || "")
-          .join(" "),
+        pedido.pedido_itens.map((item) => item.produtos?.nome || "").join(" "),
       ];
 
       return campos.some((campo) => campo.toLowerCase().includes(termo));
@@ -304,6 +305,27 @@ export function HistoricoPedidos() {
                     (acc, item) => acc + item.quantidade,
                     0,
                   );
+                  const somaProdutosCalculada = pedido.pedido_itens.reduce(
+                    (acc, item) => {
+                      const adicionais = (
+                        item.pedido_item_adicionais || []
+                      ).reduce((s, a) => s + Number(a.preco_aplicado || 0), 0);
+                      return (
+                        acc +
+                        Number(item.preco_unitario || 0) * item.quantidade +
+                        adicionais
+                      );
+                    },
+                    0,
+                  );
+                  const subtotalProdutos =
+                    pedido.subtotal_itens != null
+                      ? Number(pedido.subtotal_itens)
+                      : somaProdutosCalculada;
+                  const taxaEntrega = Number(pedido.taxa_entrega || 0);
+                  const descontoFrete = Number(pedido.desconto_frete || 0);
+                  const acrescimoClima = Number(pedido.acrescimo_clima || 0);
+                  const desconto = Number(pedido.desconto_aplicado || 0);
 
                   return (
                     <Fragment key={pedido.id}>
@@ -332,6 +354,21 @@ export function HistoricoPedidos() {
                               {pedido.cupons && (
                                 <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border-0 text-[10px]">
                                   {pedido.cupons.codigo}
+                                </Badge>
+                              )}
+                              {desconto > 0 && (
+                                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-0 text-[10px]">
+                                  Desconto -{formatarMoeda(desconto)}
+                                </Badge>
+                              )}
+                              {descontoFrete > 0 && (
+                                <Badge className="bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300 border-0 text-[10px]">
+                                  Frete -{formatarMoeda(descontoFrete)}
+                                </Badge>
+                              )}
+                              {acrescimoClima > 0 && (
+                                <Badge className="bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300 border-0 text-[10px]">
+                                  Chuva +{formatarMoeda(acrescimoClima)}
                                 </Badge>
                               )}
                             </div>
@@ -378,32 +415,61 @@ export function HistoricoPedidos() {
                             className="bg-gray-50/80 dark:bg-[#1a1815] p-4"
                           >
                             <div className="space-y-3">
-                              {(Number(pedido.desconto_aplicado || 0) > 0 ||
-                                pedido.valor_total != null) && (
-                                <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-3">
-                                  {pedido.valor_total != null && (
-                                    <p>
-                                      Subtotal:{" "}
-                                      {formatarMoeda(pedido.valor_total)}
+                              <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-dark p-3">
+                                <p className="flex justify-between gap-4">
+                                  <span>Produtos</span>
+                                  <span className="tabular-nums font-medium text-gray-900 dark:text-white">
+                                    {formatarMoeda(subtotalProdutos)}
+                                  </span>
+                                </p>
+                                {(taxaEntrega > 0 ||
+                                  descontoFrete > 0 ||
+                                  acrescimoClima > 0) && (
+                                  <>
+                                    <p className="flex justify-between gap-4">
+                                      <span>Frete cobrado</span>
+                                      <span className="tabular-nums font-medium text-gray-900 dark:text-white">
+                                        {formatarMoeda(taxaEntrega)}
+                                      </span>
                                     </p>
-                                  )}
-                                  {Number(pedido.desconto_aplicado || 0) >
-                                    0 && (
-                                    <p className="text-green-600 dark:text-green-400 font-medium">
-                                      Desconto
+                                    {acrescimoClima > 0 && (
+                                      <p className="flex justify-between gap-4 text-sky-700 dark:text-sky-400 pl-2 text-xs">
+                                        <span>Acréscimo chuva</span>
+                                        <span className="tabular-nums">
+                                          +{formatarMoeda(acrescimoClima)}
+                                        </span>
+                                      </p>
+                                    )}
+                                    {descontoFrete > 0 && (
+                                      <p className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 pl-2 text-xs">
+                                        <span>Desconto no frete</span>
+                                        <span className="tabular-nums">
+                                          -{formatarMoeda(descontoFrete)}
+                                        </span>
+                                      </p>
+                                    )}
+                                  </>
+                                )}
+                                {desconto > 0 && (
+                                  <p className="flex justify-between gap-4 text-green-600 dark:text-green-400 font-medium">
+                                    <span>
+                                      Desconto cupom
                                       {pedido.cupons
                                         ? ` (${pedido.cupons.codigo})`
                                         : ""}
-                                      : -
-                                      {formatarMoeda(pedido.desconto_aplicado)}
-                                    </p>
-                                  )}
-                                  <p className="font-bold text-gray-900 dark:text-white">
-                                    Total:{" "}
-                                    {formatarMoeda(obterValorPedido(pedido))}
+                                    </span>
+                                    <span className="tabular-nums">
+                                      -{formatarMoeda(desconto)}
+                                    </span>
                                   </p>
-                                </div>
-                              )}
+                                )}
+                                <p className="flex justify-between gap-4 border-t border-gray-200 dark:border-gray-700 pt-1.5 font-bold text-gray-900 dark:text-white">
+                                  <span>Total</span>
+                                  <span className="tabular-nums">
+                                    {formatarMoeda(obterValorPedido(pedido))}
+                                  </span>
+                                </p>
+                              </div>
 
                               {pedido.pedido_itens.map((item) => (
                                 <div
@@ -420,9 +486,10 @@ export function HistoricoPedidos() {
                                         Obs: {item.observacoes}
                                       </p>
                                     )}
-                                    {item.pedido_item_adicionais.length > 0 && (
+                                    {(item.pedido_item_adicionais || []).length >
+                                      0 && (
                                       <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                                        {item.pedido_item_adicionais.map(
+                                        {(item.pedido_item_adicionais || []).map(
                                           (adicional, idx) => (
                                             <p key={idx}>
                                               + {adicional.adicionais?.nome} (

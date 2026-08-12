@@ -17,6 +17,7 @@ import { supabase } from "../../lib/supabase";
 // Shadcn/ui
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -76,6 +77,9 @@ export function GerenciamentoEstoque() {
   >([]);
   const [vinculosAtivos, setVinculosAtivos] = useState<string[]>([]); // Array de IDs de adicionais ligados a este produto
   const [carregandoModal, setCarregandoModal] = useState(false);
+  const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoque | null>(
+    null,
+  );
 
   useEffect(() => {
     carregarProdutos();
@@ -189,13 +193,24 @@ export function GerenciamentoEstoque() {
         return;
       }
 
-      if (
-        !window.confirm(
-          `Excluir o produto "${produto.nome}"? Esta ação não pode ser desfeita.`,
-        )
-      ) {
-        return;
-      }
+      setProcessandoId(null);
+      setProdutoExcluir(produto);
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - ESTOQUE] Falha ao verificar exclusão:", mensagem);
+      toast.error("Erro ao verificar se o produto pode ser excluído.");
+    } finally {
+      setProcessandoId(null);
+    }
+  };
+
+  const confirmarExcluirProduto = async () => {
+    if (!produtoExcluir) return;
+    const produto = produtoExcluir;
+    setProdutoExcluir(null);
+
+    try {
+      setProcessandoId(produto.id);
 
       await supabase
         .from("produto_adicionais")
@@ -865,6 +880,20 @@ export function GerenciamentoEstoque() {
           </>
         )}
       </AnimatePresence>
+
+      <ModalConfirmacao
+        aberto={produtoExcluir != null}
+        titulo="Excluir produto?"
+        mensagem={
+          produtoExcluir
+            ? `Excluir o produto "${produtoExcluir.nome}"? Esta ação não pode ser desfeita.`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setProdutoExcluir(null)}
+        aoConfirmar={() => void confirmarExcluirProduto()}
+      />
     </AdminPageShell>
   );
 }

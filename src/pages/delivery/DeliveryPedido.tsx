@@ -1,12 +1,14 @@
-import { Bell, MessageCircle } from "lucide-react";
+import { Bell, MessageCircle, RotateCcw, Ticket } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { TimelinePedido } from "../../components/TimelinePedido";
 import { track } from "../../lib/analytics";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
 import {
+  buscarCupomRetornoDoPedido,
   buscarPedidoDelivery,
   cancelarPedidoDeliveryAguardando,
   cancelarPedidosDeliveryExpirados,
@@ -15,10 +17,15 @@ import {
   type ItemPedidoDelivery,
 } from "../../lib/deliveryPedido";
 import { lerGuestDeliveryLocal } from "../../lib/deliveryGuestStorage";
+import { textoPrevisaoPedido } from "../../lib/pedidoEta";
 import {
   montarLinkWhatsappLoja,
   textoWhatsappAcompanhamentoPedido,
 } from "../../lib/notificacoesPedido";
+import {
+  pedirDeNovo,
+  type ItemPedidoParaRecompra,
+} from "../../lib/pedirDeNovo";
 import {
   montarTimelinePedido,
   rotuloStatusCliente,
@@ -52,18 +59,26 @@ export function DeliveryPedido() {
   const [carregando, setCarregando] = useState(true);
   const [confirmandoPagamento, setConfirmandoPagamento] = useState(false);
   const [whatsappNumero, setWhatsappNumero] = useState<string | null>(null);
+  const [tempoEstimadoMin, setTempoEstimadoMin] = useState<number | null>(null);
   const [pushAtivo, setPushAtivo] = useState(false);
   const [ativandoPush, setAtivandoPush] = useState(false);
   const [pagandoNovamente, setPagandoNovamente] = useState(false);
   const [confirmarCancelar, setConfirmarCancelar] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [repedindo, setRepedindo] = useState(false);
+  const [cupomRetorno, setCupomRetorno] = useState<{
+    codigo: string;
+    validade: string | null;
+    ativo: boolean;
+  } | null>(null);
   const syncFeitoRef = useRef(false);
 
   useEffect(() => {
     void cancelarPedidosDeliveryExpirados(30);
-    void buscarDeliveryConfig().then((cfg) =>
-      setWhatsappNumero(cfg.whatsapp_numero),
-    );
+    void buscarDeliveryConfig().then((cfg) => {
+      setWhatsappNumero(cfg.whatsapp_numero);
+      setTempoEstimadoMin(cfg.tempo_estimado_min ?? null);
+    });
   }, []);
 
   useEffect(() => {
@@ -84,6 +99,11 @@ export function DeliveryPedido() {
         const p = await buscarPedidoDelivery(id);
         if (cancelado) return;
         setPedido(p);
+        if (p.status === "entregue") {
+          void buscarCupomRetornoDoPedido(p.id).then(setCupomRetorno);
+        } else {
+          setCupomRetorno(null);
+        }
         if (
           p.status_pagamento === "pago" ||
           p.status_pagamento === "na_loja"
@@ -273,6 +293,21 @@ export function DeliveryPedido() {
     }
   };
 
+  const repedir = async () => {
+    if (!pedido || repedindo) return;
+    setRepedindo(true);
+    try {
+      const { adicionados } = await pedirDeNovo(
+        (pedido.pedido_itens || []) as ItemPedidoParaRecompra[],
+      );
+      if (adicionados > 0) navigate(urlDelivery("/checkout"));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao montar sacola");
+    } finally {
+      setRepedindo(false);
+    }
+  };
+
   if (carregando) {
     return (
       <div className="flex justify-center py-20">
@@ -386,6 +421,27 @@ export function DeliveryPedido() {
           {pedido.modalidade} · pagamento:{" "}
           {pagamentoConfirmado ? "pago" : pedido.status_pagamento}
         </p>
+        {(() => {
+          const previsao = textoPrevisaoPedido({
+            status: pedido.status,
+            agendadoPara: pedido.agendado_para,
+            criadoEm: pedido.criado_em,
+            tempoEstimadoMin,
+            modalidade: pedido.modalidade,
+          });
+          if (!previsao) return null;
+          return (
+            <p
+              className={`text-sm font-semibold rounded-xl px-3 py-2 ${
+                pedido.agendado_para
+                  ? "text-sky-800 bg-sky-50"
+                  : "text-zinc-800 bg-zinc-50"
+              }`}
+            >
+              {previsao}
+            </p>
+          );
+        })()}
         {aguardandoConfirmacao && (
           <p className="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">
             Pagamento recebido pelo Asaas — confirmando no sistema…
@@ -431,12 +487,36 @@ export function DeliveryPedido() {
 
       <section className="bg-white border rounded-3xl p-5 space-y-3">
         <h2 className="font-bold text-sm text-zinc-500 uppercase tracking-wider">
-          Notificações
+          Dúvidas ou atualizações
         </h2>
         <p className="text-sm text-zinc-600">
-          Ative as notificações e/ou abra o WhatsApp para falar conosco sobre
-          este pedido.
+          Fale conosco pelo chat ou WhatsApp com o resumo do pedido.
         </p>
+
+        <Link
+          to={`/chat?pedido=${pedido.id}`}
+          className="w-full flex items-center justify-center gap-2 border-2 border-cookie-primary text-cookie-primary rounded-2xl py-3 text-sm font-bold"
+        >
+          <MessageCircle size={18} />
+          Abrir chat do pedido
+        </Link>
+
+        {linkWhatsapp ? (
+          <a
+            href={linkWhatsapp}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white rounded-2xl py-3.5 text-sm font-bold shadow-sm"
+          >
+            <MessageCircle size={18} />
+            WhatsApp da loja (com resumo)
+          </a>
+        ) : (
+          <p className="text-xs text-zinc-400">
+            Configure o número da loja em Admin → Delivery para habilitar o
+            WhatsApp.
+          </p>
+        )}
 
         {pushSuportado() && (
           <button
@@ -454,22 +534,11 @@ export function DeliveryPedido() {
           </button>
         )}
 
-        {linkWhatsapp ? (
-          <a
-            href={linkWhatsapp}
-            target="_blank"
-            rel="noreferrer"
-            className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white rounded-2xl py-3 text-sm font-bold"
-          >
-            <MessageCircle size={18} />
-            Acompanhar no WhatsApp
-          </a>
-        ) : (
-          <p className="text-xs text-zinc-400">
-            Configure o número da loja em Admin → Delivery para habilitar o
-            WhatsApp.
-          </p>
-        )}
+        <BotaoInstalarPwa
+          tipo="cardapio"
+          label="Adicionar à tela inicial"
+          className="w-full flex items-center justify-center gap-2 border border-zinc-200 rounded-2xl py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+        />
 
         {pedido.tracking_url && (
           <a
@@ -482,6 +551,29 @@ export function DeliveryPedido() {
           </a>
         )}
       </section>
+
+      {cupomRetorno?.ativo && (
+        <section className="bg-emerald-50 border border-emerald-200 rounded-3xl p-5 space-y-2">
+          <h2 className="font-bold text-sm text-emerald-800 uppercase tracking-wider flex items-center gap-2">
+            <Ticket size={16} /> Cupom de retorno
+          </h2>
+          <p className="text-sm text-emerald-900">
+            10% no próximo pedido. Use o código:
+          </p>
+          <p className="font-mono text-xl font-black tracking-wider text-emerald-950">
+            {cupomRetorno.codigo}
+          </p>
+          {cupomRetorno.validade && (
+            <p className="text-xs text-emerald-700">
+              Válido até{" "}
+              {new Date(cupomRetorno.validade).toLocaleDateString("pt-BR")}
+            </p>
+          )}
+          <p className="text-xs text-emerald-700">
+            Também disponível em Conta → Seus cupons.
+          </p>
+        </section>
+      )}
 
       <section className="bg-white border rounded-3xl p-5 space-y-3">
         <h2 className="font-bold text-sm text-zinc-500 uppercase tracking-wider">
@@ -571,19 +663,32 @@ export function DeliveryPedido() {
         </div>
       </section>
 
-      <div className="flex gap-2">
-        <Link
-          to={`/chat?pedido=${pedido.id}`}
-          className="flex-1 text-center border border-zinc-200 rounded-2xl py-3 text-sm font-semibold"
-        >
-          Falar conosco
-        </Link>
-        <Link
-          to="/"
-          className="flex-1 text-center bg-cookie-primary text-white rounded-2xl py-3 text-sm font-bold"
-        >
-          Novo pedido
-        </Link>
+      <div className="flex flex-col gap-2">
+        {!precisaPagar && itens.length > 0 && (
+          <button
+            type="button"
+            disabled={repedindo}
+            onClick={() => void repedir()}
+            className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white rounded-2xl py-3 text-sm font-bold disabled:opacity-60"
+          >
+            <RotateCcw size={16} />
+            {repedindo ? "Montando sacola…" : "Pedir de novo"}
+          </button>
+        )}
+        <div className="flex gap-2">
+          <Link
+            to={`/chat?pedido=${pedido.id}`}
+            className="flex-1 text-center border border-zinc-200 rounded-2xl py-3 text-sm font-semibold"
+          >
+            Chat
+          </Link>
+          <Link
+            to="/"
+            className="flex-1 text-center bg-cookie-primary text-white rounded-2xl py-3 text-sm font-bold"
+          >
+            Cardápio
+          </Link>
+        </div>
       </div>
 
       <ModalConfirmacao

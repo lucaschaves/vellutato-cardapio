@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AlertaNovoPedidoProvider } from "../context/AlertaNovoPedidoContext";
 import { useAuth } from "../context/AuthContext";
+import { ChatAdminProvider } from "../context/ChatAdminContext";
 import { ImpressaoAdminProvider } from "../context/ImpressaoAdminContext";
 import { PedidosRealtimeProvider } from "../context/PedidosRealtimeContext";
 import {
@@ -92,6 +93,7 @@ export function AdminLayout() {
     <PedidosRealtimeProvider>
       <ImpressaoAdminProvider>
         <AlertaNovoPedidoProvider>
+          <ChatAdminProvider>
           <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-background-dark">
             {menuMobileAberto && (
               <button
@@ -252,6 +254,7 @@ export function AdminLayout() {
               </main>
             </div>
           </div>
+          </ChatAdminProvider>
         </AlertaNovoPedidoProvider>
       </ImpressaoAdminProvider>
     </PedidosRealtimeProvider>

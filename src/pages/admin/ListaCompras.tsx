@@ -10,21 +10,44 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import {
-  formatarPrecoInsumo,
+  TIPOS_INSUMO,
+  UNIDADES_INSUMO,
+  formatarEquivalenteBase,
+  formatarPrecoBaseInsumo,
+  formatarPrecoMoeda,
+  formatarQtd,
+  normalizarMarcas,
+  parseDecimalBr,
+  precoBaseParaEmbalagem,
+  precoEmbalagemParaBase,
+  rotuloConteudoEmbalagem,
   rotuloUnidade,
   type Insumo,
+  type TipoInsumo,
+  type UnidadeConteudo,
+  type UnidadeInsumo,
 } from "../../lib/insumos";
 import { supabase } from "../../lib/supabase";
 import { cn } from "../../lib/utils";
 
 type InsumoResumo = Pick<
   Insumo,
-  "id" | "nome" | "imagem_url" | "unidade" | "preco_atual" | "ativo"
+  | "id"
+  | "nome"
+  | "imagem_url"
+  | "unidade"
+  | "tipo"
+  | "conteudo_valor"
+  | "conteudo_unidade"
+  | "marcas"
+  | "preco_atual"
+  | "ativo"
 >;
 
 type ItemLista = {
@@ -35,27 +58,80 @@ type ItemLista = {
   quantidade_comprada: number | null;
   marcado: boolean;
   comprado: boolean;
-  insumo_comprado_id: string | null;
   preco_unitario: number | null;
   observacao: string | null;
   insumo: InsumoResumo | null;
 };
 
-type AlternativaMap = Record<
-  string,
-  Array<{ id: string; nome: string; imagem_url: string | null }>
->;
+const SELECT_INSUMO =
+  "id, nome, imagem_url, unidade, tipo, conteudo_valor, conteudo_unidade, marcas, preco_atual, ativo";
+
+function asInsumoResumo(row: Record<string, unknown> | null): InsumoResumo | null {
+  if (!row) return null;
+  const tipo = TIPOS_INSUMO.includes(row.tipo as TipoInsumo)
+    ? (row.tipo as TipoInsumo)
+    : "contagem";
+  const unidade = UNIDADES_INSUMO.includes(row.unidade as UnidadeInsumo)
+    ? (row.unidade as UnidadeInsumo)
+    : "unidade";
+  const conteudoUn =
+    row.conteudo_unidade === "g" ||
+    row.conteudo_unidade === "kg" ||
+    row.conteudo_unidade === "ml" ||
+    row.conteudo_unidade === "L"
+      ? (row.conteudo_unidade as UnidadeConteudo)
+      : null;
+  return {
+    id: String(row.id),
+    nome: String(row.nome ?? ""),
+    imagem_url: (row.imagem_url as string | null) ?? null,
+    unidade,
+    tipo,
+    conteudo_valor:
+      row.conteudo_valor == null ? null : Number(row.conteudo_valor),
+    conteudo_unidade: conteudoUn,
+    marcas: normalizarMarcas(
+      Array.isArray(row.marcas) ? (row.marcas as string[]) : [],
+    ),
+    preco_atual: row.preco_atual == null ? null : Number(row.preco_atual),
+    ativo: Boolean(row.ativo),
+  };
+}
+
+function asItemLista(row: Record<string, unknown>): ItemLista {
+  const insumoRaw = row.insumo;
+  const insumoObj = Array.isArray(insumoRaw)
+    ? (insumoRaw[0] as Record<string, unknown> | undefined)
+    : (insumoRaw as Record<string, unknown> | null);
+  return {
+    id: String(row.id),
+    lista_id: String(row.lista_id),
+    insumo_id: String(row.insumo_id),
+    quantidade_planejada: Number(row.quantidade_planejada ?? 1),
+    quantidade_comprada:
+      row.quantidade_comprada == null ? null : Number(row.quantidade_comprada),
+    marcado: Boolean(row.marcado),
+    comprado: Boolean(row.comprado),
+    preco_unitario:
+      row.preco_unitario == null ? null : Number(row.preco_unitario),
+    observacao: (row.observacao as string | null) ?? null,
+    insumo: asInsumoResumo(insumoObj ?? null),
+  };
+}
 
 export function ListaCompras() {
   const [listaId, setListaId] = useState<string | null>(null);
   const [itens, setItens] = useState<ItemLista[]>([]);
   const [insumos, setInsumos] = useState<InsumoResumo[]>([]);
-  const [alternativas, setAlternativas] = useState<AlternativaMap>({});
   const [carregando, setCarregando] = useState(true);
   const [finalizando, setFinalizando] = useState(false);
   const [insumoParaAdd, setInsumoParaAdd] = useState("");
   const [qtdParaAdd, setQtdParaAdd] = useState("1");
   const [salvandoId, setSalvandoId] = useState<string | null>(null);
+  const [itemRemover, setItemRemover] = useState<ItemLista | null>(null);
+  const [confirmacaoFinalizar, setConfirmacaoFinalizar] = useState<
+    string | null
+  >(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -63,37 +139,15 @@ export function ListaCompras() {
 
       const { data: insumosData, error: erroInsumos } = await supabase
         .from("insumos")
-        .select("id, nome, imagem_url, unidade, preco_atual, ativo")
+        .select(SELECT_INSUMO)
         .eq("ativo", true)
         .order("nome", { ascending: true });
       if (erroInsumos) throw new Error(erroInsumos.message);
-      setInsumos((insumosData as InsumoResumo[]) || []);
-
-      const { data: alts } = await supabase
-        .from("insumo_alternativas")
-        .select(
-          "insumo_id, alternativa:insumos!insumo_alternativas_alternativa_id_fkey ( id, nome, imagem_url )",
-        )
-        .order("ordem", { ascending: true });
-
-      const mapa: AlternativaMap = {};
-      for (const row of alts || []) {
-        // Supabase tipa joins many-to-one como array; normalizamos para objeto.
-        const bruto = row as {
-          insumo_id: string;
-          alternativa:
-            | { id: string; nome: string; imagem_url: string | null }
-            | { id: string; nome: string; imagem_url: string | null }[]
-            | null;
-        };
-        const alternativa = Array.isArray(bruto.alternativa)
-          ? (bruto.alternativa[0] ?? null)
-          : bruto.alternativa;
-        if (!alternativa) continue;
-        if (!mapa[bruto.insumo_id]) mapa[bruto.insumo_id] = [];
-        mapa[bruto.insumo_id].push(alternativa);
-      }
-      setAlternativas(mapa);
+      setInsumos(
+        ((insumosData ?? []) as Record<string, unknown>[])
+          .map((r) => asInsumoResumo(r))
+          .filter((x): x is InsumoResumo => x != null),
+      );
 
       let { data: lista } = await supabase
         .from("lista_compras")
@@ -120,9 +174,9 @@ export function ListaCompras() {
         .select(
           `
           id, lista_id, insumo_id, quantidade_planejada, quantidade_comprada,
-          marcado, comprado, insumo_comprado_id, preco_unitario, observacao,
+          marcado, comprado, preco_unitario, observacao,
           insumo:insumos!lista_compras_itens_insumo_id_fkey (
-            id, nome, imagem_url, unidade, preco_atual, ativo
+            ${SELECT_INSUMO}
           )
         `,
         )
@@ -131,7 +185,11 @@ export function ListaCompras() {
         .order("criado_em", { ascending: true });
 
       if (erroItens) throw new Error(erroItens.message);
-      setItens((itensData as unknown as ItemLista[]) || []);
+      setItens(
+        ((itensData ?? []) as unknown as Record<string, unknown>[]).map(
+          asItemLista,
+        ),
+      );
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - LISTA COMPRAS]", mensagem);
@@ -162,7 +220,6 @@ export function ListaCompras() {
       quantidade_planejada: number;
       quantidade_comprada: number | null;
       preco_unitario: number | null;
-      insumo_comprado_id: string | null;
     }>,
   ) => {
     try {
@@ -188,8 +245,8 @@ export function ListaCompras() {
       toast.warning("Selecione um insumo.");
       return;
     }
-    const qtd = parseInt(qtdParaAdd, 10);
-    if (Number.isNaN(qtd) || qtd < 1) {
+    const qtd = parseDecimalBr(qtdParaAdd);
+    if (qtd == null || qtd <= 0) {
       toast.warning("Quantidade inválida.");
       return;
     }
@@ -205,16 +262,16 @@ export function ListaCompras() {
         .select(
           `
           id, lista_id, insumo_id, quantidade_planejada, quantidade_comprada,
-          marcado, comprado, insumo_comprado_id, preco_unitario, observacao,
+          marcado, comprado, preco_unitario, observacao,
           insumo:insumos!lista_compras_itens_insumo_id_fkey (
-            id, nome, imagem_url, unidade, preco_atual, ativo
+            ${SELECT_INSUMO}
           )
         `,
         )
         .single();
 
       if (error) throw new Error(error.message);
-      setItens((prev) => [...prev, data as unknown as ItemLista]);
+      setItens((prev) => [...prev, asItemLista(data as unknown as Record<string, unknown>)]);
       setInsumoParaAdd("");
       setQtdParaAdd("1");
       toast.success("Item adicionado.");
@@ -225,7 +282,6 @@ export function ListaCompras() {
   };
 
   const removerItem = async (item: ItemLista) => {
-    if (!window.confirm(`Remover "${item.insumo?.nome}" da lista?`)) return;
     try {
       const { error } = await supabase
         .from("lista_compras_itens")
@@ -252,15 +308,20 @@ export function ListaCompras() {
         ? `${marcados.length} item(ns) entram no estoque. ${semPreco.length} sem preço novo (mantém o atual). Continuar?`
         : `${marcados.length} item(ns) entram no estoque. Confirmar compra?`;
 
-    if (!window.confirm(msg)) return;
+    setConfirmacaoFinalizar(msg);
+  };
 
+  const executarFinalizar = async () => {
+    if (!listaId) return;
     try {
       setFinalizando(true);
       const { data, error } = await supabase.rpc("finalizar_lista_compras", {
         p_lista_id: listaId,
       });
       if (error) throw new Error(error.message);
-      toast.success(`${data ?? marcados.length} item(ns) entraram no estoque.`);
+      toast.success(
+        `${data ?? itens.filter((i) => i.marcado).length} item(ns) entraram no estoque.`,
+      );
       await carregar();
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
@@ -280,7 +341,7 @@ export function ListaCompras() {
           Lista de compras
         </span>
       }
-      description="Checklist do mercado: marque o que pegou, informe preço se mudou, e finalize para entrar no estoque."
+      description="Checklist do mercado: informe o preço da embalagem; o sistema grava R$/kg (ou R$/L)."
       actions={
         <Button asChild variant="outline" size="sm">
           <Link to="/admin/insumos">
@@ -331,8 +392,7 @@ export function ListaCompras() {
           <Label htmlFor="add-qtd">Qtd</Label>
           <Input
             id="add-qtd"
-            type="number"
-            min={1}
+            inputMode="decimal"
             value={qtdParaAdd}
             onChange={(e) => setQtdParaAdd(e.target.value)}
           />
@@ -360,12 +420,29 @@ export function ListaCompras() {
       ) : (
         <ul className="space-y-3">
           {itens.map((item) => {
-            const alts = alternativas[item.insumo_id] || [];
             const busy = salvandoId === item.id;
+            const marcas = item.insumo?.marcas ?? [];
             const precoStr =
               item.preco_unitario != null
                 ? String(item.preco_unitario).replace(".", ",")
                 : "";
+            const qtd = item.quantidade_planejada;
+            const eq = item.insumo
+              ? formatarEquivalenteBase(qtd, item.insumo)
+              : null;
+            const conteudo = item.insumo
+              ? rotuloConteudoEmbalagem(item.insumo)
+              : null;
+            const precoEmbalagemHint =
+              item.insumo?.preco_atual != null
+                ? precoBaseParaEmbalagem(item.insumo.preco_atual, item.insumo)
+                : null;
+            const precoBaseNovo =
+              item.marcado &&
+              item.preco_unitario != null &&
+              item.insumo
+                ? precoEmbalagemParaBase(item.preco_unitario, item.insumo)
+                : null;
 
             return (
               <li
@@ -421,51 +498,47 @@ export function ListaCompras() {
                           {item.insumo?.nome || "Insumo"}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {item.quantidade_planejada}{" "}
+                          {formatarQtd(qtd)}{" "}
                           {rotuloUnidade(
                             item.insumo?.unidade || "unidade",
-                            item.quantidade_planejada,
+                            qtd,
                           )}
-                          {item.insumo?.preco_atual != null && (
-                            <>
-                              {" "}
-                              · último{" "}
-                              {formatarPrecoInsumo(item.insumo.preco_atual)}
-                            </>
-                          )}
+                          {eq ? ` (${eq})` : ""}
+                          {conteudo ? ` · ${conteudo}` : ""}
                         </p>
+                        {item.insumo?.preco_atual != null && (
+                          <p className="text-xs text-muted-foreground">
+                            último {formatarPrecoBaseInsumo(item.insumo)}
+                            {precoEmbalagemHint != null
+                              ? ` · embalagem ${formatarPrecoMoeda(precoEmbalagemHint)}`
+                              : ""}
+                          </p>
+                        )}
                       </div>
                       <Button
                         type="button"
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8 text-destructive"
-                        onClick={() => void removerItem(item)}
+                        onClick={() => setItemRemover(item)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
 
-                    {alts.length > 0 && (
+                    {marcas.length > 0 && (
                       <div className="mt-2">
                         <p className="mb-1 text-xs font-medium text-muted-foreground">
                           Pode ser:
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          {alts.map((alt) => (
+                          {marcas.map((marca) => (
                             <Badge
-                              key={alt.id}
+                              key={marca}
                               variant="outline"
-                              className="gap-1.5 py-1 pl-1 pr-2"
+                              className="py-1"
                             >
-                              {alt.imagem_url ? (
-                                <img
-                                  src={alt.imagem_url}
-                                  alt=""
-                                  className="h-5 w-5 rounded object-cover"
-                                />
-                              ) : null}
-                              {alt.nome}
+                              {marca}
                             </Badge>
                           ))}
                         </div>
@@ -473,39 +546,53 @@ export function ListaCompras() {
                     )}
 
                     {item.marcado && (
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <div className="space-y-1">
                           <Label className="text-xs">Qtd comprada</Label>
                           <Input
-                            type="number"
-                            min={1}
+                            inputMode="decimal"
                             disabled={busy}
-                            defaultValue={
+                            defaultValue={String(
                               item.quantidade_comprada ??
-                              item.quantidade_planejada
-                            }
+                                item.quantidade_planejada,
+                            ).replace(".", ",")}
                             onBlur={(e) => {
-                              const n = parseInt(e.target.value, 10);
-                              if (Number.isNaN(n) || n < 1) return;
-                              if (n === (item.quantidade_comprada ?? item.quantidade_planejada))
-                                return;
+                              const n = parseDecimalBr(e.target.value);
+                              if (n == null || n <= 0) return;
+                              const atual =
+                                item.quantidade_comprada ??
+                                item.quantidade_planejada;
+                              if (Math.abs(n - atual) < 0.0001) return;
                               void atualizarItem(item.id, {
                                 quantidade_comprada: n,
                               });
                             }}
                           />
+                          {item.insumo &&
+                            formatarEquivalenteBase(
+                              item.quantidade_comprada ??
+                                item.quantidade_planejada,
+                              item.insumo,
+                            ) && (
+                              <p className="text-[11px] text-muted-foreground">
+                                ≈{" "}
+                                {formatarEquivalenteBase(
+                                  item.quantidade_comprada ??
+                                    item.quantidade_planejada,
+                                  item.insumo,
+                                )}
+                              </p>
+                            )}
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">
-                            Preço unit. (opcional)
+                            Preço da embalagem (opcional)
                           </Label>
                           <Input
                             inputMode="decimal"
                             placeholder={
-                              item.insumo?.preco_atual != null
-                                ? Number(item.insumo.preco_atual)
-                                    .toFixed(2)
-                                    .replace(".", ",")
+                              precoEmbalagemHint != null
+                                ? String(precoEmbalagemHint).replace(".", ",")
                                 : "mesmo preço"
                             }
                             disabled={busy}
@@ -520,8 +607,8 @@ export function ListaCompras() {
                                 }
                                 return;
                               }
-                              const n = parseFloat(raw.replace(",", "."));
-                              if (Number.isNaN(n) || n < 0) {
+                              const n = parseDecimalBr(raw);
+                              if (n == null || n < 0) {
                                 toast.warning("Preço inválido.");
                                 return;
                               }
@@ -531,35 +618,17 @@ export function ListaCompras() {
                               });
                             }}
                           />
+                          {precoBaseNovo != null && item.insumo && (
+                            <p className="text-[11px] text-muted-foreground">
+                              = {formatarPrecoMoeda(precoBaseNovo)} /{" "}
+                              {item.insumo.tipo === "peso"
+                                ? "kg"
+                                : item.insumo.tipo === "volume"
+                                  ? "L"
+                                  : "un"}
+                            </p>
+                          )}
                         </div>
-                        {(alts.length > 0 || item.insumo) && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Comprei</Label>
-                            <select
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              disabled={busy}
-                              value={
-                                item.insumo_comprado_id || item.insumo_id
-                              }
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                void atualizarItem(item.id, {
-                                  insumo_comprado_id:
-                                    val === item.insumo_id ? null : val,
-                                });
-                              }}
-                            >
-                              <option value={item.insumo_id}>
-                                {item.insumo?.nome} (principal)
-                              </option>
-                              {alts.map((alt) => (
-                                <option key={alt.id} value={alt.id}>
-                                  {alt.nome}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -569,6 +638,39 @@ export function ListaCompras() {
           })}
         </ul>
       )}
+
+      <ModalConfirmacao
+        aberto={itemRemover != null}
+        titulo="Remover da lista?"
+        mensagem={
+          itemRemover
+            ? `Remover "${itemRemover.insumo?.nome || "item"}" da lista?`
+            : ""
+        }
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        aoCancelar={() => setItemRemover(null)}
+        aoConfirmar={() => {
+          const item = itemRemover;
+          setItemRemover(null);
+          if (item) void removerItem(item);
+        }}
+      />
+
+      <ModalConfirmacao
+        aberto={confirmacaoFinalizar != null}
+        titulo="Finalizar compra?"
+        mensagem={confirmacaoFinalizar || ""}
+        textoConfirmar="Sim"
+        textoCancelar="Não"
+        varianteConfirmar="default"
+        carregando={finalizando}
+        aoCancelar={() => setConfirmacaoFinalizar(null)}
+        aoConfirmar={() => {
+          setConfirmacaoFinalizar(null);
+          void executarFinalizar();
+        }}
+      />
     </AdminPageShell>
   );
 }
