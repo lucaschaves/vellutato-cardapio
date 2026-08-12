@@ -16,16 +16,18 @@ import {
   buscarConfigImpressao,
   obterConfigImpressaoCache,
 } from "../lib/impressaoConfig";
+import { dispararNotificacaoStatusPedido } from "../lib/notificacoesPedido";
 import {
-  podeImprimirPedidoAgora,
-  instanteImpressaoAgendada,
+  instantePreparoAgendado,
+  podeAutoPrepararImediatoAgora,
+  podePrepararPedidoAgendadoAgora,
 } from "../lib/pedidoAgendado";
 import { supabase } from "../lib/supabase";
 
 /** Intervalo do health-check da impressora (ms). */
 const INTERVALO_HEALTHCHECK_MS = 20000;
-/** Revarre pedidos agendados pendentes de impressão. */
-const INTERVALO_AGENDADOS_MS = 60000;
+/** Varre auto-preparar (1 min / agendados −30 min). */
+const INTERVALO_AUTO_PREPARAR_MS = 15000;
 
 const SELECT_PEDIDO_IMPRESSAO = `
   id, sequencia_pedido, origem, modalidade, identificador, cliente_nome, cliente_celular,
@@ -54,12 +56,39 @@ function pagamentoLiberaImpressao(statusPagamento: string | null | undefined) {
 const MAX_TENTATIVAS_ITENS = 6;
 const INTERVALO_TENTATIVA_MS = 400;
 
+type PedidoImpressaoSnap = {
+  id?: string;
+  status?: string;
+  status_pagamento?: string | null;
+  impresso?: boolean;
+  agendado_para?: string | null;
+  criado_em?: string;
+};
+
+/**
+ * Impressão automática:
+ * - Sem agendamento: imprime ao entrar em "Novos" (pendente).
+ * - Agendado: imprime só ao ir para "Preparando" (em_producao),
+ *   o que ocorre 30 min antes do horário (ou no clique Preparar).
+ */
+function deveImprimirAutomatico(pedido: PedidoImpressaoSnap): boolean {
+  if (!pedido.id || pedido.impresso) return false;
+  if (!pagamentoLiberaImpressao(pedido.status_pagamento)) return false;
+
+  const agendado = Boolean(pedido.agendado_para);
+  if (agendado) {
+    return pedido.status === "em_producao";
+  }
+  return pedido.status === "pendente";
+}
+
 export function useImpressaoAutomatica() {
   const { assinar, versaoConexao } = usePedidosRealtime();
   const [impressoraOffline, setImpressoraOffline] = useState(false);
   const pedidosEmProcessamentoRef = useRef<Set<string>>(new Set());
   const pedidosImpressosRef = useRef<Set<string>>(new Set());
   const timeoutsAgendadosRef = useRef<Map<string, number>>(new Map());
+  const autoPrepararEmCursoRef = useRef<Set<string>>(new Set());
   const impressoraOfflineRef = useRef(false);
   const somOfflineUrlRef = useRef<string | null>(null);
 
@@ -149,25 +178,32 @@ export function useImpressaoAutomatica() {
       const pedido = await buscarPedidoParaImpressao(pedidoId);
       if (!pedido) return false;
 
-      if (pedido.status !== "pendente") return false;
-
       const statusPagamento = (
         pedido as { status_pagamento?: string | null }
       ).status_pagamento;
       if (!pagamentoLiberaImpressao(statusPagamento)) return false;
 
-      if (
-        !manual &&
-        (pedido.impresso || pedidosImpressosRef.current.has(pedidoId))
-      ) {
-        return false;
-      }
-
       const agendadoPara = (
         pedido as { agendado_para?: string | null }
       ).agendado_para;
-      if (!manual && !podeImprimirPedidoAgora(agendadoPara)) {
-        return false;
+      const ehAgendado = Boolean(agendadoPara);
+
+      if (!manual) {
+        // Agendado: só imprime em preparando. Imediato: ao entrar em novos.
+        if (ehAgendado) {
+          if (pedido.status !== "em_producao") return false;
+        } else if (pedido.status !== "pendente") {
+          return false;
+        }
+
+        if (pedido.impresso || pedidosImpressosRef.current.has(pedidoId)) {
+          return false;
+        }
+      } else {
+        // Manual: permite pendente ou em_producao (reimpressão na cozinha).
+        if (pedido.status !== "pendente" && pedido.status !== "em_producao") {
+          return false;
+        }
       }
 
       // Modo dev: gera PDF em vez de enviar para o servidor de impressão.
@@ -230,23 +266,40 @@ export function useImpressaoAutomatica() {
         return;
       }
 
-      const agendadoPara = (
-        pedido as { agendado_para?: string | null }
-      ).agendado_para;
-      const alvo = instanteImpressaoAgendada(agendadoPara);
-      if (alvo != null && Date.now() < alvo) {
-        // Acorda no horário (ou a cada 5 min, o que for menor) até poder imprimir.
-        const delay = Math.min(Math.max(alvo - Date.now(), 1000), 5 * 60 * 1000);
-        console.info(
-          "[IMPRESSÃO] Pedido agendado — impressão em",
-          new Date(alvo).toLocaleTimeString("pt-BR"),
-          pedidoId,
-        );
-        const tid = window.setTimeout(
-          () => agendarImpressaoPedido(pedidoId, 0),
-          delay,
-        );
-        timeoutsAgendadosRef.current.set(pedidoId, tid);
+      const snap = pedido as PedidoImpressaoSnap;
+      if (!deveImprimirAutomatico(snap)) {
+        // Agendado ainda em "Novos": espera a janela (−30 min) e promove.
+        if (
+          snap.agendado_para &&
+          snap.status === "pendente" &&
+          !snap.impresso &&
+          pagamentoLiberaImpressao(snap.status_pagamento)
+        ) {
+          const alvo = instantePreparoAgendado(snap.agendado_para);
+          if (alvo != null && Date.now() < alvo) {
+            const delay = Math.min(
+              Math.max(alvo - Date.now(), 1000),
+              5 * 60 * 1000,
+            );
+            console.info(
+              "[KDS] Agendado — preparo/impressão a partir de",
+              new Date(alvo).toLocaleTimeString("pt-BR"),
+              pedidoId,
+            );
+            const tid = window.setTimeout(
+              () => agendarImpressaoPedido(pedidoId, 0),
+              delay,
+            );
+            timeoutsAgendadosRef.current.set(pedidoId, tid);
+            return;
+          }
+
+          // Já na janela: promove → realtime/impressão em preparando.
+          const ok = await promoverParaPreparando(pedidoId);
+          if (ok) {
+            agendarImpressaoPedido(pedidoId, 0);
+          }
+        }
         return;
       }
 
@@ -254,50 +307,122 @@ export function useImpressaoAutomatica() {
     }, tentativa === 0 ? INTERVALO_TENTATIVA_MS : INTERVALO_TENTATIVA_MS);
   };
 
+  const promoverParaPreparando = useCallback(async (pedidoId: string) => {
+    if (autoPrepararEmCursoRef.current.has(pedidoId)) return false;
+    autoPrepararEmCursoRef.current.add(pedidoId);
+    try {
+      const { data, error } = await supabase
+        .from("pedidos")
+        .update({ status: "em_producao" })
+        .eq("id", pedidoId)
+        .eq("status", "pendente")
+        .select("id, agendado_para")
+        .maybeSingle();
+
+      if (error) {
+        console.warn("[KDS] auto-preparar falhou:", error.message);
+        return false;
+      }
+      if (!data?.id) return false;
+
+      console.info(
+        "[KDS] Pedido promovido automaticamente para preparando:",
+        pedidoId,
+        data.agendado_para ? "(agendado)" : "(1 min sem Preparar)",
+      );
+      void dispararNotificacaoStatusPedido(pedidoId, "em_producao");
+      return true;
+    } finally {
+      autoPrepararEmCursoRef.current.delete(pedidoId);
+    }
+  }, []);
+
+  const varrerAutoPreparar = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("pedidos")
+      .select("id, criado_em, agendado_para, status_pagamento")
+      .eq("status", "pendente");
+
+    if (error || !data) return;
+
+    const agora = Date.now();
+    for (const pedido of data) {
+      if (!pedido.id || !pagamentoLiberaImpressao(pedido.status_pagamento)) {
+        continue;
+      }
+
+      if (pedido.agendado_para) {
+        if (podePrepararPedidoAgendadoAgora(pedido.agendado_para, agora)) {
+          const ok = await promoverParaPreparando(pedido.id);
+          // Impressão dispara no realtime UPDATE → em_producao.
+          if (ok) agendarImpressaoPedido(pedido.id);
+        }
+        continue;
+      }
+
+      if (podeAutoPrepararImediatoAgora(pedido.criado_em, agora)) {
+        await promoverParaPreparando(pedido.id);
+      }
+    }
+  }, [promoverParaPreparando]);
+
   useEffect(() => {
     return assinar((payload) => {
       if (payload.eventType !== "INSERT" && payload.eventType !== "UPDATE") {
         return;
       }
 
-      const pedido = payload.new as {
-        id?: string;
-        status?: string;
-        status_pagamento?: string | null;
-        impresso?: boolean;
-        agendado_para?: string | null;
-      };
-      if (!pedido.id || pedido.impresso) return;
-      if (pedido.status !== "pendente") return;
-      if (!pagamentoLiberaImpressao(pedido.status_pagamento)) return;
+      const pedido = payload.new as PedidoImpressaoSnap;
+      if (!deveImprimirAutomatico(pedido)) {
+        // Agendado chegou em Novos: só agenda o despertador da janela de preparo.
+        if (
+          pedido.id &&
+          pedido.status === "pendente" &&
+          pedido.agendado_para &&
+          !pedido.impresso &&
+          pagamentoLiberaImpressao(pedido.status_pagamento)
+        ) {
+          console.info(
+            "[KDS] Pedido agendado em Novos (sem impressão ainda):",
+            pedido.id,
+          );
+          agendarImpressaoPedido(pedido.id);
+        }
+        return;
+      }
 
       console.info(
-        "[IMPRESSÃO] Pedido liberado para a cozinha, agendando impressão:",
+        "[IMPRESSÃO] Liberado para impressão:",
         pedido.id,
         pedido.agendado_para
-          ? `(agendado → imprime às ${new Date(instanteImpressaoAgendada(pedido.agendado_para)!).toLocaleTimeString("pt-BR")})`
-          : "",
+          ? "(agendado → preparando)"
+          : "(novos / imediato)",
       );
-      agendarImpressaoPedido(pedido.id);
+      agendarImpressaoPedido(pedido.id!);
     });
   }, [assinar]);
 
-  // Recupera impressões perdidas enquanto o websocket esteve desconectado
-  // (inclui reinício do navegador/servidor da impressora).
+  // Recupera impressões / promoções perdidas (reconnect / reload).
   useEffect(() => {
     if (versaoConexao === 0) return;
     let cancelado = false;
     void (async () => {
+      await varrerAutoPreparar();
+      if (cancelado) return;
+
       const { data, error } = await supabase
         .from("pedidos")
         .select("id, status, status_pagamento, impresso, agendado_para")
-        .eq("status", "pendente")
+        .in("status", ["pendente", "em_producao"])
         .or("impresso.eq.false,impresso.is.null");
       if (cancelado || error || !data) return;
 
       for (const pedido of data) {
-        if (
-          pedido.id &&
+        if (deveImprimirAutomatico(pedido as PedidoImpressaoSnap)) {
+          agendarImpressaoPedido(pedido.id);
+        } else if (
+          pedido.status === "pendente" &&
+          pedido.agendado_para &&
           pagamentoLiberaImpressao(pedido.status_pagamento)
         ) {
           agendarImpressaoPedido(pedido.id);
@@ -307,34 +432,16 @@ export function useImpressaoAutomatica() {
     return () => {
       cancelado = true;
     };
-  }, [versaoConexao]);
+  }, [versaoConexao, varrerAutoPreparar]);
 
-  // Varredura periódica: pega agendados que chegaram na janela de impressão.
+  // Varredura periódica: auto-preparar + agendados na janela.
   useEffect(() => {
+    void varrerAutoPreparar();
     const id = window.setInterval(() => {
-      void (async () => {
-        const { data, error } = await supabase
-          .from("pedidos")
-          .select("id, status_pagamento, impresso, agendado_para")
-          .eq("status", "pendente")
-          .or("impresso.eq.false,impresso.is.null")
-          .not("agendado_para", "is", null);
-        if (error || !data) return;
-        for (const pedido of data) {
-          if (
-            !pedido.id ||
-            !pagamentoLiberaImpressao(pedido.status_pagamento)
-          ) {
-            continue;
-          }
-          if (podeImprimirPedidoAgora(pedido.agendado_para)) {
-            agendarImpressaoPedido(pedido.id);
-          }
-        }
-      })();
-    }, INTERVALO_AGENDADOS_MS);
+      void varrerAutoPreparar();
+    }, INTERVALO_AUTO_PREPARAR_MS);
     return () => window.clearInterval(id);
-  }, []);
+  }, [varrerAutoPreparar]);
 
   return {
     impressoraOffline,

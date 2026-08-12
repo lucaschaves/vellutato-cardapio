@@ -96,8 +96,11 @@ export async function cancelarPedidoDeliveryAguardando(
   return Boolean(data);
 }
 
+/** Prazo padrão para abandonar checkout Asaas sem pagamento (minutos). */
+export const MINUTOS_EXPIRA_PAGAMENTO_DELIVERY = 5;
+
 export async function cancelarPedidosDeliveryExpirados(
-  minutos = 30,
+  minutos = MINUTOS_EXPIRA_PAGAMENTO_DELIVERY,
 ): Promise<number> {
   const { data, error } = await supabase.rpc(
     "cancelar_pedidos_delivery_sem_pagamento",

@@ -85,6 +85,14 @@ Deno.serve(async (req) => {
 
     if (updErr) throw updErr;
 
+    try {
+      await supabase.rpc("registrar_uso_cupom_ao_confirmar_pagamento", {
+        p_pedido_id: pedido.id,
+      });
+    } catch (e) {
+      console.error("[ASAAS WEBHOOK] cupom", e);
+    }
+
     await supabase.rpc("creditar_pontos_pedido", { p_pedido_id: pedido.id });
 
     return json({ ok: true, pedido_id: pedido.id });

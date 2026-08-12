@@ -298,7 +298,7 @@ export function DeliveryPedidos() {
     const carregar = async () => {
       setCarregandoLista(true);
       try {
-        await cancelarPedidosDeliveryExpirados(30);
+        await cancelarPedidosDeliveryExpirados();
         const { data } = await supabase
           .from("pedidos")
           .select(
@@ -326,7 +326,17 @@ export function DeliveryPedidos() {
           .order("criado_em", { ascending: false })
           .limit(40);
         if (!ativo) return;
-        setPedidos((data as unknown as PedidoLista[]) || []);
+        // Expirados são apagados no RPC; filtra resíduos antigos sem pagamento.
+        const lista = ((data as unknown as PedidoLista[]) || []).filter(
+          (p) =>
+            !(
+              p.status === "cancelado" &&
+              (p.status_pagamento === "expirado" ||
+                p.status_pagamento === "aguardando" ||
+                p.status_pagamento === "cancelado")
+            ),
+        );
+        setPedidos(lista);
       } finally {
         if (ativo) setCarregandoLista(false);
       }

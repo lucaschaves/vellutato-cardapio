@@ -11,15 +11,20 @@ export function useRevalidarCupomCarrinho(
   carrinhoAberto: boolean,
 ) {
   const itens = useCartStore((s) => s.itens);
-  const cupomAplicado = useCartStore((s) => s.cupomAplicado);
+  const cuponsAplicados = useCartStore((s) => s.cuponsAplicados);
   const aplicarCupom = useCartStore((s) => s.aplicarCupom);
   const removerCupom = useCartStore((s) => s.removerCupom);
   const obterSubtotal = useCartStore((s) => s.obterSubtotal);
 
   const revalidandoRef = useRef(false);
+  const assinatura = cuponsAplicados
+    .map((c) => `${c.id}:${c.desconto}`)
+    .join("|");
 
   useEffect(() => {
-    if (!carrinhoAberto || !cupomAplicado || itens.length === 0) return;
+    if (!carrinhoAberto || cuponsAplicados.length === 0 || itens.length === 0) {
+      return;
+    }
 
     let cancelado = false;
 
@@ -37,22 +42,31 @@ export function useRevalidarCupomCarrinho(
           clienteId = cliente?.id ?? null;
         }
 
-        const resultado = await validarCupom(
-          cupomAplicado.codigo,
-          subtotal,
-          clienteId,
-        );
+        const atuais = [...useCartStore.getState().cuponsAplicados];
+        for (const atual of atuais) {
+          if (cancelado) return;
 
-        if (cancelado) return;
+          const resultado = await validarCupom(
+            atual.codigo,
+            subtotal,
+            clienteId,
+          );
 
-        if (resultado.ok === false) {
-          removerCupom();
-          toast.info(`Cupom removido: ${resultado.erro}`);
-          return;
-        }
+          if (cancelado) return;
 
-        if (resultado.cupom.desconto !== cupomAplicado.desconto) {
-          aplicarCupom(resultado.cupom);
+          if (resultado.ok === false) {
+            removerCupom(atual.id);
+            toast.info(`Cupom ${atual.codigo} removido: ${resultado.erro}`);
+            continue;
+          }
+
+          if (
+            resultado.cupom.desconto !== atual.desconto ||
+            resultado.cupom.acumulativo !== atual.acumulativo
+          ) {
+            removerCupom(atual.id);
+            aplicarCupom(resultado.cupom);
+          }
         }
       } catch {
         /* falha silenciosa — checkout revalida */
@@ -68,13 +82,13 @@ export function useRevalidarCupomCarrinho(
     };
   }, [
     itens,
-    cupomAplicado?.codigo,
-    cupomAplicado?.desconto,
+    assinatura,
     celular,
     nomeCliente,
     carrinhoAberto,
     aplicarCupom,
     removerCupom,
     obterSubtotal,
+    cuponsAplicados.length,
   ]);
 }

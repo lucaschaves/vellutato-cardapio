@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { track } from "../lib/analytics";
-import type { CupomValidado } from "../lib/cupons";
+import {
+  tentarMontarCuponsAplicados,
+  type CupomValidado,
+  type ResultadoAplicarCupomCarrinho,
+} from "../lib/cupons";
 import type { EscolhaCombo } from "../lib/combos";
 import { somarDeltasCombo } from "../lib/combos";
 import type {
@@ -49,8 +53,31 @@ function calcularSubtotalItens(itens: ItemCarrinho[]): number {
   }, 0);
 }
 
+function normalizarCuponsPersistidos(
+  state: Partial<CartStore> & { cupomAplicado?: CupomValidado | null },
+): CupomValidado[] {
+  if (Array.isArray(state.cuponsAplicados) && state.cuponsAplicados.length > 0) {
+    return state.cuponsAplicados.map((c) => ({
+      ...c,
+      acumulativo: Boolean(c.acumulativo),
+    }));
+  }
+  if (state.cupomAplicado) {
+    return [
+      {
+        ...state.cupomAplicado,
+        acumulativo: Boolean(state.cupomAplicado.acumulativo),
+      },
+    ];
+  }
+  return [];
+}
+
 interface CartStore {
   itens: ItemCarrinho[];
+  /** Cupons no pedido (1 por padrão; N só se todos acumulativos). */
+  cuponsAplicados: CupomValidado[];
+  /** Compat: primeiro cupom (ou null). */
   cupomAplicado: CupomValidado | null;
   adicionarItem: (
     item: Omit<ItemCarrinho, "idUnico" | "disponibilidade" | "modoConsumo"> & {
@@ -63,8 +90,8 @@ interface CartStore {
   alterarObservacoes: (idUnico: string, observacoes: string) => void;
   consolidarItensIguais: () => void;
   limparCarrinho: () => void;
-  aplicarCupom: (cupom: CupomValidado) => void;
-  removerCupom: () => void;
+  aplicarCupom: (cupom: CupomValidado) => ResultadoAplicarCupomCarrinho;
+  removerCupom: (cupomId?: string) => void;
   obterSubtotal: () => number;
   obterDescontoCupom: () => number;
   obterTotal: () => number;
@@ -102,10 +129,18 @@ function chaveItemIgual(
   ].join("|");
 }
 
+function comCupons(cupons: CupomValidado[]) {
+  return {
+    cuponsAplicados: cupons,
+    cupomAplicado: cupons[0] ?? null,
+  };
+}
+
 export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
       itens: [],
+      cuponsAplicados: [],
       cupomAplicado: null,
 
       adicionarItem: (novoItem) => {
@@ -207,24 +242,48 @@ export const useCartStore = create<CartStore>()(
       },
 
       limparCarrinho: () => {
-        set({ itens: [], cupomAplicado: null });
+        set({ itens: [], ...comCupons([]) });
       },
 
       aplicarCupom: (cupom) => {
-        set({ cupomAplicado: cupom });
+        const resultado = tentarMontarCuponsAplicados(
+          get().cuponsAplicados,
+          {
+            ...cupom,
+            acumulativo: Boolean(cupom.acumulativo),
+          },
+        );
+        if (!resultado.ok || !resultado.cupons) {
+          return resultado;
+        }
+        set(comCupons(resultado.cupons));
+        return resultado;
       },
 
-      removerCupom: () => {
-        set({ cupomAplicado: null });
+      removerCupom: (cupomId) => {
+        if (!cupomId) {
+          set(comCupons([]));
+          return;
+        }
+        set((state) =>
+          comCupons(state.cuponsAplicados.filter((c) => c.id !== cupomId)),
+        );
       },
 
       obterSubtotal: () => calcularSubtotalItens(get().itens),
 
-      obterDescontoCupom: () => get().cupomAplicado?.desconto || 0,
+      obterDescontoCupom: () => {
+        const subtotal = calcularSubtotalItens(get().itens);
+        const soma = get().cuponsAplicados.reduce(
+          (s, c) => s + Number(c.desconto || 0),
+          0,
+        );
+        return Math.min(Math.max(soma, 0), subtotal);
+      },
 
       obterTotal: () => {
         const subtotal = calcularSubtotalItens(get().itens);
-        const desconto = get().cupomAplicado?.desconto || 0;
+        const desconto = get().obterDescontoCupom();
         return Math.max(subtotal - desconto, 0);
       },
 
@@ -236,8 +295,21 @@ export const useCartStore = create<CartStore>()(
       name: "vellutato-carrinho",
       partialize: (state) => ({
         itens: state.itens,
+        cuponsAplicados: state.cuponsAplicados,
         cupomAplicado: state.cupomAplicado,
       }),
+      merge: (persisted, current) => {
+        const p = (persisted || {}) as Partial<CartStore> & {
+          cupomAplicado?: CupomValidado | null;
+        };
+        const cupons = normalizarCuponsPersistidos(p);
+        return {
+          ...current,
+          ...p,
+          ...comCupons(cupons),
+          itens: Array.isArray(p.itens) ? p.itens : current.itens,
+        };
+      },
     },
   ),
 );

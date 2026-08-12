@@ -294,7 +294,7 @@ Deno.serve(async (req) => {
     const payload = {
       billingTypes: ["PIX", "CREDIT_CARD"],
       chargeTypes: ["DETACHED"],
-      minutesToExpire: 30,
+      minutesToExpire: 5,
       externalReference: String(pedido.id).slice(0, 200),
       callback: {
         successUrl: callbackUrl(`/pedido/${pedido.id}?pago=1`),

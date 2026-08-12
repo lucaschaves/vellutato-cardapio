@@ -2,28 +2,68 @@
 
 const MS_MIN = 60_000;
 
-/** Impressão automática: agendado_para + 10 minutos. */
-export const ATRASO_IMPRESSAO_AGENDADO_MIN = 10;
+/**
+ * Pedido agendado: vai para "Preparando" + impressão
+ * N minutos antes de `agendado_para`.
+ */
+export const ANTECEDENCIA_PREPARO_AGENDADO_MIN = 30;
 
-/** Alerta visual no KDS: a partir de N minutos antes do horário. */
-export const ALERTA_KDS_ANTES_MIN = 15;
+/** Pedido imediato em "Novos": se ninguém clicar Preparar, sobe sozinho após N ms. */
+export const AUTO_PREPARAR_IMEDIATO_MS = 60_000;
 
-export function instanteImpressaoAgendada(
+/** Alerta visual no KDS: a partir da janela de preparo do agendado. */
+export const ALERTA_KDS_ANTES_MIN = ANTECEDENCIA_PREPARO_AGENDADO_MIN;
+
+/** @deprecated use ANTECEDENCIA_PREPARO_AGENDADO_MIN */
+export const ATRASO_IMPRESSAO_AGENDADO_MIN = ANTECEDENCIA_PREPARO_AGENDADO_MIN;
+
+/** Instante em que o agendado deve ir para preparando (e imprimir). */
+export function instantePreparoAgendado(
   agendadoPara: string | null | undefined,
 ): number | null {
   if (!agendadoPara) return null;
   const t = new Date(agendadoPara).getTime();
   if (!Number.isFinite(t)) return null;
-  return t + ATRASO_IMPRESSAO_AGENDADO_MIN * MS_MIN;
+  return t - ANTECEDENCIA_PREPARO_AGENDADO_MIN * MS_MIN;
 }
 
+/** Alias compatível com impressão automática. */
+export function instanteImpressaoAgendada(
+  agendadoPara: string | null | undefined,
+): number | null {
+  return instantePreparoAgendado(agendadoPara);
+}
+
+/** Já entrou na janela de preparo do agendado (30 min antes ou depois). */
+export function podePrepararPedidoAgendadoAgora(
+  agendadoPara: string | null | undefined,
+  agora = Date.now(),
+): boolean {
+  const alvo = instantePreparoAgendado(agendadoPara);
+  if (alvo == null) return true;
+  return agora >= alvo;
+}
+
+/** @deprecated use podePrepararPedidoAgendadoAgora */
 export function podeImprimirPedidoAgora(
   agendadoPara: string | null | undefined,
   agora = Date.now(),
 ): boolean {
-  const alvo = instanteImpressaoAgendada(agendadoPara);
-  if (alvo == null) return true;
-  return agora >= alvo;
+  return podePrepararPedidoAgendadoAgora(agendadoPara, agora);
+}
+
+/**
+ * Pedido imediato (sem agendamento) já esperou 1 min em "Novos"
+ * sem alguém clicar em Preparar.
+ */
+export function podeAutoPrepararImediatoAgora(
+  criadoEm: string | null | undefined,
+  agora = Date.now(),
+): boolean {
+  if (!criadoEm) return false;
+  const t = new Date(criadoEm).getTime();
+  if (!Number.isFinite(t)) return false;
+  return agora >= t + AUTO_PREPARAR_IMEDIATO_MS;
 }
 
 /** Minutos até agendado_para (negativo = atrasado). */

@@ -135,5 +135,10 @@ Migration: `20250723150000_notificacoes_push_whatsapp.sql`
 ## Fluxo KDS / impressão
 
 1. Checkout online cria pedido com `status_pagamento = aguardando` → **não** aparece no KDS e **não** imprime.
-2. Webhook Asaas marca `pago` + `status = pendente` → aí entra no KDS e imprime.
-3. Retirada com “pagar na loja” (`na_loja`) entra direto na cozinha.
+2. Cupom no pedido aguardando **não** incrementa `cupons.usos` — só ao confirmar pagamento (webhook/sync → `pendente`) ou ao criar já no KDS (`na_loja` / pago).
+3. Sem pagamento em **5 minutos**: pedido é cancelado (estoque/stats) e **apagado** (não fica no histórico do cliente). Checkout Asaas `minutesToExpire: 5`.
+4. Webhook Asaas marca `pago` + `status = pendente` → aí entra no KDS e registra uso do cupom.
+5. Retirada com “pagar na loja” (`na_loja`) entra direto na cozinha (cupom já conta no `processar_pedido_pos_criacao`).
+6. **Impressão / preparo**
+   - Pedido **imediato**: imprime ao entrar em Novos (`pendente`); se ninguém clicar Preparar em **1 min**, sobe sozinho para Preparando.
+   - Pedido **agendado**: fica em Novos **sem impressão**; **30 min antes** de `agendado_para` vai para Preparando e **só então** imprime (ou no clique Preparar).

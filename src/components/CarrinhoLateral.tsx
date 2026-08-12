@@ -22,7 +22,7 @@ import {
   buscarClientePorCelular,
   upsertCliente,
 } from "../lib/clientes";
-import { validarCupom } from "../lib/cupons";
+import { anexarCuponsPedido, validarCupom } from "../lib/cupons";
 import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
 import { lembrarClienteAnalytics, track } from "../lib/analytics";
 import { buscarStatusLoja, type StatusLoja } from "../lib/lojaStatus";
@@ -69,6 +69,7 @@ export function CarrinhoLateral({
     obterTotal,
     limparCarrinho,
     cupomAplicado,
+    cuponsAplicados,
     aplicarCupom,
     removerCupom,
   } = useCartStore();
@@ -201,8 +202,20 @@ export function CarrinhoLateral({
         return;
       }
 
-      aplicarCupom(resultado.cupom);
-      toast.success(`Cupom ${resultado.cupom.codigo} aplicado!`);
+      const aplicado = aplicarCupom(resultado.cupom);
+      if (!aplicado.ok) {
+        toast.error(aplicado.erro);
+        return;
+      }
+      if (aplicado.modo === "substituido") {
+        toast.success(
+          `Cupom ${resultado.cupom.codigo} aplicado (substituiu o anterior — cupons não acumulativos).`,
+        );
+      } else if (aplicado.modo === "empilhado") {
+        toast.success(`Cupom ${resultado.cupom.codigo} combinado!`);
+      } else {
+        toast.success(`Cupom ${resultado.cupom.codigo} aplicado!`);
+      }
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - CUPOM]", mensagem);
@@ -293,6 +306,8 @@ export function CarrinhoLateral({
         })),
       });
 
+      await anexarCuponsPedido(pedido.pedido_id, cuponsAplicados);
+
       lembrarClienteAnalytics(clienteId);
       track("order_created", {
         pedidoId: pedido.pedido_id,
@@ -354,9 +369,14 @@ export function CarrinhoLateral({
         </>
       )}
 
-      {descontoCupom > 0 && cupomAplicado && (
+      {descontoCupom > 0 && cuponsAplicados.length > 0 && (
         <div className="flex justify-between text-green-600 font-bold text-sm">
-          <span>Cupom {cupomAplicado.codigo}</span>
+          <span>
+            Cupom
+            {cuponsAplicados.length > 1
+              ? ` (${cuponsAplicados.map((c) => c.codigo).join(" + ")})`
+              : ` ${cuponsAplicados[0].codigo}`}
+          </span>
           <span>- R$ {descontoCupom.toFixed(2)}</span>
         </div>
       )}
@@ -379,22 +399,60 @@ export function CarrinhoLateral({
       <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
         Cupom de desconto
       </label>
-      {cupomAplicado ? (
-        <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-bold text-sm">
-            <Ticket size={16} />
-            {cupomAplicado.codigo}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              removerCupom();
-              setCodigoCupom("");
-            }}
-            className="text-xs font-bold text-cookie-primary hover:text-red-700"
-          >
-            Remover
-          </button>
+      {cuponsAplicados.length > 0 ? (
+        <div className="space-y-2">
+          {cuponsAplicados.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center justify-between gap-2 p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+            >
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-bold text-sm">
+                <Ticket size={16} />
+                {c.codigo}
+                {c.acumulativo && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
+                    acumulativo
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  removerCupom(c.id);
+                  setCodigoCupom("");
+                }}
+                className="text-xs font-bold text-cookie-primary hover:text-red-700"
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+          {(cuponsAplicados.length === 0 ||
+            cuponsAplicados.every((c) => c.acumulativo)) && (
+            <p className="text-[11px] text-zinc-500">
+              Cupons acumulativos podem ser combinados. Demais códigos
+              substituem o atual.
+            </p>
+          )}
+          {cuponsAplicados.every((c) => c.acumulativo) && (
+            <div className="flex gap-2 pt-1">
+              <InputTelaCheia
+                modo="cupom"
+                value={codigoCupom}
+                onValorChange={setCodigoCupom}
+                placeholder="Outro cupom acumulativo"
+                className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] text-gray-950 dark:text-white uppercase outline-none focus:ring-2 focus:ring-[#6b1d2a]"
+              />
+              <button
+                type="button"
+                disabled={validandoCupom || !codigoCupom.trim()}
+                onClick={() => void handleAplicarCupom()}
+                className="px-4 py-3 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold text-sm disabled:opacity-50"
+              >
+                +
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex gap-2">

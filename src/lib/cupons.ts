@@ -7,6 +7,8 @@ export interface CupomValidado {
   valor: number;
   desconto: number;
   usos: number | null;
+  /** Se false (padrão), não combina com outros no mesmo pedido. */
+  acumulativo: boolean;
 }
 
 interface RespostaValidarCupom {
@@ -19,6 +21,7 @@ interface RespostaValidarCupom {
     valor: number;
     desconto: number;
     usos: number | null;
+    acumulativo?: boolean;
   };
 }
 
@@ -55,6 +58,54 @@ export async function validarCupom(
       valor: Number(resposta.cupom.valor),
       desconto: Number(resposta.cupom.desconto),
       usos: resposta.cupom.usos,
+      acumulativo: Boolean(resposta.cupom.acumulativo),
     },
   };
+}
+
+/** Resultado ao tentar aplicar cupom no carrinho (regras de acumulação). */
+export type ResultadoAplicarCupomCarrinho =
+  | { ok: true; modo: "unico" | "empilhado" | "substituido" }
+  | { ok: false; erro: string };
+
+export function tentarMontarCuponsAplicados(
+  atuais: CupomValidado[],
+  novo: CupomValidado,
+): ResultadoAplicarCupomCarrinho & { cupons?: CupomValidado[] } {
+  if (atuais.some((c) => c.id === novo.id)) {
+    return { ok: false, erro: "Este cupom já está aplicado." };
+  }
+
+  if (atuais.length === 0) {
+    return { ok: true, modo: "unico", cupons: [novo] };
+  }
+
+  const todosAcumulativos =
+    novo.acumulativo && atuais.every((c) => c.acumulativo);
+
+  if (todosAcumulativos) {
+    return { ok: true, modo: "empilhado", cupons: [...atuais, novo] };
+  }
+
+  // Padrão: não acumula — substitui o(s) cupom(ns) atual(is).
+  return { ok: true, modo: "substituido", cupons: [novo] };
+}
+
+export async function anexarCuponsPedido(
+  pedidoId: string,
+  cupons: CupomValidado[],
+): Promise<void> {
+  if (!pedidoId || cupons.length === 0) return;
+
+  const { error } = await supabase.rpc("anexar_cupons_pedido", {
+    p_pedido_id: pedidoId,
+    p_cupons: cupons.map((c) => ({
+      cupom_id: c.id,
+      desconto: c.desconto,
+    })),
+  });
+
+  if (error) {
+    console.error("[CUPOM] anexar_cupons_pedido", error.message);
+  }
 }

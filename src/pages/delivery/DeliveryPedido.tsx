@@ -96,6 +96,7 @@ export function DeliveryPedido() {
 
     const carregar = async () => {
       try {
+        await cancelarPedidosDeliveryExpirados();
         const p = await buscarPedidoDelivery(id);
         if (cancelado) return;
         setPedido(p);
@@ -113,6 +114,12 @@ export function DeliveryPedido() {
         return p;
       } catch (e) {
         console.error(e);
+        if (!cancelado) {
+          toast.message(
+            "Este pedido expirou ou não está mais disponível. Monte um novo quando quiser.",
+          );
+          navigate(urlDelivery("/pedidos"), { replace: true });
+        }
         return null;
       } finally {
         if (!cancelado) setCarregando(false);

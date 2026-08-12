@@ -36,6 +36,7 @@ interface Cupom {
   ativo: boolean | null;
   cliente_id: string | null;
   pedido_origem_id?: string | null;
+  acumulativo: boolean;
   clientes: { nome: string; celular: string } | null;
 }
 
@@ -55,6 +56,7 @@ export function GerenciamentoCupons() {
   const [limiteUso, setLimiteUso] = useState("");
   const [limitePorCliente, setLimitePorCliente] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [acumulativo, setAcumulativo] = useState(false);
   const [cupomExcluir, setCupomExcluir] = useState<{
     id: string;
     codigo: string;
@@ -103,6 +105,7 @@ export function GerenciamentoCupons() {
     setLimiteUso("");
     setLimitePorCliente("");
     setClienteId("");
+    setAcumulativo(false);
   };
 
   const iniciarEdicao = (cupom: Cupom) => {
@@ -123,6 +126,7 @@ export function GerenciamentoCupons() {
       cupom.limite_por_cliente != null ? String(cupom.limite_por_cliente) : "",
     );
     setClienteId(cupom.cliente_id || "");
+    setAcumulativo(Boolean(cupom.acumulativo));
   };
 
   const salvarCupom = async (e: React.FormEvent) => {
@@ -145,6 +149,7 @@ export function GerenciamentoCupons() {
         ? parseInt(limitePorCliente, 10)
         : null,
       cliente_id: clienteId || null,
+      acumulativo,
     };
 
     try {
@@ -421,6 +426,18 @@ export function GerenciamentoCupons() {
             “Cliente” acima restringe quem pode aplicar o código (cupom
             exclusivo). É diferente do limite por cliente.
           </p>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 lg:col-span-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                Acumulativo
+              </p>
+              <p className="text-[11px] text-zinc-500">
+                Desligado (padrão): só 1 cupom por pedido. Ligado: pode combinar
+                com outros cupons também acumulativos.
+              </p>
+            </div>
+            <Switch checked={acumulativo} onCheckedChange={setAcumulativo} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={salvando}>
@@ -459,6 +476,7 @@ export function GerenciamentoCupons() {
                 <TableHead>Valor</TableHead>
                 <TableHead>Usos (geral)</TableHead>
                 <TableHead>Por cliente</TableHead>
+                <TableHead>Acumul.</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead>Ativo</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -467,7 +485,7 @@ export function GerenciamentoCupons() {
             <TableBody>
               {cuponsFiltrados.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-10 text-gray-500">
+                  <TableCell colSpan={10} className="text-center py-10 text-gray-500">
                     Nenhum cupom cadastrado.
                   </TableCell>
                 </TableRow>
@@ -509,6 +527,15 @@ export function GerenciamentoCupons() {
                           ? "1 vez"
                           : `${cupom.limite_por_cliente}×`
                         : "Ilimitado"}
+                    </TableCell>
+                    <TableCell>
+                      {cupom.acumulativo ? (
+                        <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-xs">
+                          Sim
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400 text-xs">Não</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {cupom.validade

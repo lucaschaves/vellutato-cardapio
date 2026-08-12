@@ -126,6 +126,14 @@ Deno.serve(async (req) => {
     if (updErr) throw updErr;
 
     try {
+      await supabase.rpc("registrar_uso_cupom_ao_confirmar_pagamento", {
+        p_pedido_id: pedido.id,
+      });
+    } catch (e) {
+      console.error("[ASAAS SYNC] cupom", e);
+    }
+
+    try {
       await supabase.rpc("creditar_pontos_pedido", { p_pedido_id: pedido.id });
     } catch (e) {
       console.error("[ASAAS SYNC] pontos", e);

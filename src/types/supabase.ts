@@ -172,6 +172,7 @@ export type Database = {
           validade: string | null
           valor: number
           valor_minimo: number | null
+          acumulativo: boolean
         }
         Insert: {
           ativo?: boolean | null
@@ -186,6 +187,7 @@ export type Database = {
           validade?: string | null
           valor: number
           valor_minimo?: number | null
+          acumulativo?: boolean
         }
         Update: {
           ativo?: boolean | null
@@ -200,6 +202,7 @@ export type Database = {
           validade?: string | null
           valor?: number
           valor_minimo?: number | null
+          acumulativo?: boolean
         }
         Relationships: [
           {
@@ -307,6 +310,7 @@ export type Database = {
           criado_em: string
           cupom_id: string | null
           desconto_aplicado: number | null
+          cupom_uso_registrado: boolean
           id: string
           identificador: string
           impresso: boolean
@@ -330,6 +334,7 @@ export type Database = {
           criado_em?: string
           cupom_id?: string | null
           desconto_aplicado?: number | null
+          cupom_uso_registrado?: boolean
           id?: string
           identificador: string
           impresso?: boolean
@@ -353,6 +358,7 @@ export type Database = {
           criado_em?: string
           cupom_id?: string | null
           desconto_aplicado?: number | null
+          cupom_uso_registrado?: boolean
           id?: string
           identificador?: string
           impresso?: boolean
@@ -987,6 +993,14 @@ export type Database = {
       }
       incrementar_uso_cupom: {
         Args: { p_cupom_id: string }
+        Returns: undefined
+      }
+      registrar_uso_cupom_ao_confirmar_pagamento: {
+        Args: { p_pedido_id: string }
+        Returns: undefined
+      }
+      anexar_cupons_pedido: {
+        Args: { p_pedido_id: string; p_cupons: Json }
         Returns: undefined
       }
       baixar_estoque_pedido: {

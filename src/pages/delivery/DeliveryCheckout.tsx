@@ -1,4 +1,4 @@
-import { Clock, Minus, Plus, Trash2 } from "lucide-react";
+import { Clock, Copy, Minus, Plus, Ticket, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -6,7 +6,12 @@ import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
-import { validarCupom } from "../../lib/cupons";
+import {
+  buscarCuponsDoCliente,
+  rotuloCupomResumo,
+  type CupomCliente,
+} from "../../lib/clientes";
+import { anexarCuponsPedido, validarCupom } from "../../lib/cupons";
 import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
@@ -96,6 +101,7 @@ export function DeliveryCheckout() {
   const { cliente, usuario, carregando: authLoading } = useDeliveryCliente();
   const itens = useCartStore((s) => s.itens);
   const cupomAplicado = useCartStore((s) => s.cupomAplicado);
+  const cuponsAplicados = useCartStore((s) => s.cuponsAplicados);
   const aplicarCupom = useCartStore((s) => s.aplicarCupom);
   const removerCupom = useCartStore((s) => s.removerCupom);
   const limparCarrinho = useCartStore((s) => s.limparCarrinho);
@@ -169,6 +175,9 @@ export function DeliveryCheckout() {
   const [telefoneConsultado, setTelefoneConsultado] = useState(false);
   const buscaTelRef = useRef(0);
   const [codigoCupom, setCodigoCupom] = useState("");
+  const [cuponsCliente, setCuponsCliente] = useState<CupomCliente[]>([]);
+  const [mostrarCuponsCliente, setMostrarCuponsCliente] = useState(false);
+  const [carregandoCuponsCliente, setCarregandoCuponsCliente] = useState(false);
   const [pagarNaLoja, setPagarNaLoja] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
@@ -305,6 +314,29 @@ export function DeliveryCheckout() {
   useEffect(() => {
     if (cliente?.id) carregarEnderecosCliente(cliente.id);
   }, [cliente?.id]);
+
+  useEffect(() => {
+    const clienteIdCupons = cliente?.id || guestClienteId;
+    if (!clienteIdCupons) {
+      setCuponsCliente([]);
+      return;
+    }
+    let ativo = true;
+    setCarregandoCuponsCliente(true);
+    void buscarCuponsDoCliente(clienteIdCupons)
+      .then((lista) => {
+        if (ativo) setCuponsCliente(lista);
+      })
+      .catch(() => {
+        if (ativo) setCuponsCliente([]);
+      })
+      .finally(() => {
+        if (ativo) setCarregandoCuponsCliente(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [cliente?.id, guestClienteId]);
 
   /** Identifica cliente só pelo telefone (sem SMS/Google). */
   useEffect(() => {
@@ -776,10 +808,10 @@ export function DeliveryCheckout() {
   const podePagar =
     !enviando && enderecoEntregaOk && dadosClienteOk && agendamentoOk;
 
-  const aplicarCupomHandler = async () => {
+  const aplicarCupomHandler = async (codigo?: string) => {
     try {
       const r = await validarCupom(
-        codigoCupom,
+        codigo ?? codigoCupom,
         subtotal,
         guestClienteId || cliente?.id,
       );
@@ -787,10 +819,34 @@ export function DeliveryCheckout() {
         toast.error(r.erro);
         return;
       }
-      aplicarCupom(r.cupom);
-      toast.success("Cupom aplicado");
+      const aplicado = aplicarCupom(r.cupom);
+      if (!aplicado.ok) {
+        toast.error(aplicado.erro);
+        return;
+      }
+      if (aplicado.modo === "substituido") {
+        toast.success(
+          `Cupom ${r.cupom.codigo} aplicado (substituiu o anterior).`,
+        );
+      } else if (aplicado.modo === "empilhado") {
+        toast.success(`Cupom ${r.cupom.codigo} combinado!`);
+      } else {
+        toast.success("Cupom aplicado");
+      }
+      setCodigoCupom("");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro no cupom");
+    }
+  };
+
+  const copiarCodigoCupom = async (codigo: string) => {
+    try {
+      await navigator.clipboard.writeText(codigo);
+      setCodigoCupom(codigo);
+      toast.success(`Código ${codigo} copiado`);
+    } catch {
+      setCodigoCupom(codigo);
+      toast.message("Código preenchido no campo");
     }
   };
 
@@ -973,7 +1029,7 @@ export function DeliveryCheckout() {
         cliente_nome: clienteNome,
         cliente_celular: clienteCelular,
         cliente_id: clienteId,
-        cupom_id: cupomAplicado?.id || null,
+        cupom_id: cuponsAplicados[0]?.id || cupomAplicado?.id || null,
         desconto,
         identificador: modalidade === "entrega" ? "DELIVERY" : "RETIRADA",
         total: totalFinal,
@@ -1021,6 +1077,8 @@ export function DeliveryCheckout() {
         distancia_km: distanciaFinal,
         agendado_para: agendadoPara,
       });
+
+      await anexarCuponsPedido(resultado.pedido_id, cuponsAplicados);
 
       lembrarClienteAnalytics(clienteId);
       track("order_created", {
@@ -1273,19 +1331,107 @@ export function DeliveryCheckout() {
           )}
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
-            <h2 className="font-bold">Cupom</h2>
-            {cupomAplicado ? (
-              <div className="flex justify-between text-sm">
-                <span className="font-mono font-bold">
-                  {cupomAplicado.codigo}
-                </span>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-bold">Cupom</h2>
+              {(cliente?.id || guestClienteId) && (
                 <button
                   type="button"
-                  className="text-cookie-primary font-semibold"
-                  onClick={() => removerCupom()}
+                  onClick={() => setMostrarCuponsCliente((v) => !v)}
+                  className="text-xs font-bold text-cookie-primary inline-flex items-center gap-1"
                 >
-                  Remover
+                  <Ticket size={14} />
+                  {carregandoCuponsCliente
+                    ? "Carregando…"
+                    : cuponsCliente.length > 0
+                      ? `Tem ${cuponsCliente.length} cupom${cuponsCliente.length === 1 ? "" : "s"}`
+                      : "Sem cupons"}
                 </button>
+              )}
+            </div>
+
+            {mostrarCuponsCliente && (
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-2">
+                {cuponsCliente.length === 0 ? (
+                  <p className="text-xs text-zinc-500">
+                    Nenhum cupom exclusivo disponível nesta conta.
+                  </p>
+                ) : (
+                  cuponsCliente.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between gap-2 rounded-lg bg-white border border-zinc-200 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-mono font-black text-sm tracking-wide">
+                          {c.codigo}
+                        </p>
+                        <p className="text-[11px] text-zinc-500 truncate">
+                          {rotuloCupomResumo(c)}
+                          {c.acumulativo ? " · acumulativo" : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2"
+                          onClick={() => void copiarCodigoCupom(c.codigo)}
+                          title="Copiar código"
+                        >
+                          <Copy size={14} />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 px-2 bg-cookie-primary hover:bg-cookie-primary-hover"
+                          onClick={() => void aplicarCupomHandler(c.codigo)}
+                        >
+                          Usar
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {cuponsAplicados.length > 0 ? (
+              <div className="space-y-2">
+                {cuponsAplicados.map((c) => (
+                  <div key={c.id} className="flex justify-between text-sm gap-2">
+                    <span className="font-mono font-bold">
+                      {c.codigo}
+                      {c.acumulativo ? (
+                        <span className="ml-1 text-[10px] font-semibold uppercase text-zinc-400">
+                          acumulativo
+                        </span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-cookie-primary font-semibold"
+                      onClick={() => removerCupom(c.id)}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ))}
+                {cuponsAplicados.every((c) => c.acumulativo) && (
+                  <div className="flex gap-2 pt-1">
+                    <Input
+                      value={codigoCupom}
+                      onChange={(e) => setCodigoCupom(e.target.value)}
+                      placeholder="Outro cupom acumulativo"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => void aplicarCupomHandler()}
+                    >
+                      Aplicar
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex gap-2">
@@ -1302,6 +1448,10 @@ export function DeliveryCheckout() {
                 </Button>
               </div>
             )}
+            <p className="text-[11px] text-zinc-400">
+              Por padrão vale 1 cupom por pedido. Só combina se o cupom for
+              marcado como acumulativo.
+            </p>
           </section>
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-1 text-sm">

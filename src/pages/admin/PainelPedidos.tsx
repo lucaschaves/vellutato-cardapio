@@ -27,6 +27,7 @@ import {
   type DadosMensagemPedido,
   type MensagemWhatsapp,
 } from "../../lib/mensagensWhatsapp";
+import { MINUTOS_EXPIRA_PAGAMENTO_DELIVERY } from "../../lib/deliveryPedido";
 import { dispararNotificacaoStatusPedido } from "../../lib/notificacoesPedido";
 import {
   compararPedidosKds,
@@ -257,7 +258,7 @@ export function PainelPedidos() {
   const expirarPedidosSemPagamento = useCallback(async () => {
     const { data, error } = await supabase.rpc(
       "cancelar_pedidos_delivery_sem_pagamento",
-      { p_minutos: 30 },
+      { p_minutos: MINUTOS_EXPIRA_PAGAMENTO_DELIVERY },
     );
     if (error) {
       console.warn("[KDS] Falha ao expirar pedidos:", error.message);
@@ -808,9 +809,13 @@ export function PainelPedidos() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 overflow-hidden">
           {/* Coluna PENDENTE */}
           <div className="flex flex-col bg-gray-100 dark:bg-[#1a1815] rounded-xl p-4 overflow-y-auto hide-scrollbar">
-            <h2 className="font-bold text-lg mb-4 flex items-center gap-2 text-red-600">
+            <h2 className="font-bold text-lg mb-1 flex items-center gap-2 text-red-600">
               <Clock size={20} /> Novos ({pendentes.length})
             </h2>
+            <p className="text-[11px] text-gray-500 mb-4 leading-snug">
+              Agendados ficam aqui até 30 min antes (aí preparam e imprimem).
+              Demais: impressão na entrada; sobem sozinhos em 1 min sem Preparar.
+            </p>
             <div className="flex flex-col gap-4">
               <AnimatePresence>
                 {pendentes.map((p) => (

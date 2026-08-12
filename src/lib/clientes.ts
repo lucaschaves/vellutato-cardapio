@@ -19,6 +19,7 @@ export interface CupomCliente {
   limite_uso: number | null;
   usos: number;
   validade: string | null;
+  acumulativo: boolean;
 }
 
 export async function upsertCliente(
@@ -94,7 +95,7 @@ export async function buscarCuponsDoCliente(
   const { data, error } = await supabase
     .from("cupons")
     .select(
-      "id, codigo, tipo, valor, valor_minimo, limite_uso, usos, validade, ativo",
+      "id, codigo, tipo, valor, valor_minimo, limite_uso, usos, validade, ativo, acumulativo",
     )
     .eq("cliente_id", clienteId)
     .eq("ativo", true)
@@ -120,6 +121,9 @@ export async function buscarCuponsDoCliente(
       limite_uso: c.limite_uso,
       usos: Number(c.usos ?? 0),
       validade: c.validade,
+      acumulativo: Boolean(
+        (c as { acumulativo?: boolean | null }).acumulativo,
+      ),
     }));
 }
 
