@@ -51,6 +51,10 @@ const PEDIDO_EXEMPLO = {
   cliente_nome: "Maria Silva",
   cliente_celular: "(11) 99999-8888",
   criado_em: new Date().toISOString(),
+  /** Exemplo agendado — aparece como faixa “AGENDADO ENTREGA HH:MM” no cupom */
+  agendado_para: new Date(
+    Date.now() + 2 * 60 * 60 * 1000,
+  ).toISOString(),
   total: 86.5,
   desconto_aplicado: 5,
   taxa_entrega: 8,
@@ -566,7 +570,12 @@ export function GerenciamentoImpressao() {
                   <Input
                     value={config.loja.endereco}
                     onChange={(e) => setLoja({ endereco: e.target.value })}
+                    placeholder="Rua, 123 — Bairro, Cidade/UF, 88000-000"
                   />
+                  <p className="text-[11px] text-zinc-500">
+                    Inclua o CEP. Em retirada com Pix/cartão, o Asaas usa este
+                    endereço da loja quando o cliente não informou o dele.
+                  </p>
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs font-semibold text-gray-500">

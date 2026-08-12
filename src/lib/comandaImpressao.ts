@@ -7,6 +7,7 @@ import type {
   ImpressaoConfig,
   ViaImpressaoConfig,
 } from "./impressaoConfig";
+import { rotuloHoraAgendada } from "./pedidoAgendado";
 
 export const COLUNAS_COMANDA = 48;
 
@@ -73,6 +74,7 @@ export interface ComandaImpressao {
   origem_rotulo: string;
   modalidade: string | null;
   modalidade_rotulo: string | null;
+  agendamento_rotulo: string | null;
   status_pagamento: string | null;
   pagamento_rotulo: string;
   pagamento_destaque: string;
@@ -117,6 +119,7 @@ type PedidoBrutoImpressao = {
   valor_total?: number | null;
   desconto_aplicado?: number | null;
   taxa_entrega?: number | null;
+  agendado_para?: string | null;
   endereco_json?: {
     cep?: string | null;
     rua?: string | null;
@@ -265,6 +268,20 @@ export function rotuloModalidadeComanda(
   return "DELIVERY";
 }
 
+/** Horário agendado em destaque no cupom (só se houver). */
+export function rotuloAgendamentoComanda(
+  agendadoPara: string | null | undefined,
+  modalidade?: string | null,
+): string | null {
+  if (!agendadoPara) return null;
+  const t = new Date(agendadoPara).getTime();
+  if (!Number.isFinite(t)) return null;
+  const hora = rotuloHoraAgendada(agendadoPara);
+  if (modalidade === "retirada") return `AGENDADO RETIRADA ${hora}`;
+  if (modalidade === "entrega") return `AGENDADO ENTREGA ${hora}`;
+  return `AGENDADO PARA ${hora}`;
+}
+
 export function rotuloPagamentoComanda(
   statusPagamento: string | null | undefined,
 ): { rotulo: string; destaque: string; pago: boolean } {
@@ -340,6 +357,7 @@ function cabecalhoComum(opts: {
   local: string;
   origemRotulo: string;
   modalidadeRotulo: string | null;
+  agendamentoRotulo: string | null;
   pagamentoDestaque: string;
   rotuloResumo: string;
   temLevar: boolean;
@@ -361,6 +379,9 @@ function cabecalhoComum(opts: {
   linhas.push(...faixaDestaque(`ORIGEM: ${opts.origemRotulo}`));
   if (opts.modalidadeRotulo) {
     linhas.push(...faixaDestaque(opts.modalidadeRotulo));
+  }
+  if (opts.agendamentoRotulo) {
+    linhas.push(...faixaDestaque(opts.agendamentoRotulo));
   }
   linhas.push(...faixaDestaque(opts.pagamentoDestaque));
 
@@ -492,6 +513,7 @@ interface DadosComanda {
   telefone: string | null;
   origemRotulo: string;
   modalidadeRotulo: string | null;
+  agendamentoRotulo: string | null;
   pagamento: ReturnType<typeof rotuloPagamentoComanda>;
   ehEntrega: boolean;
   endereco: PedidoBrutoImpressao["endereco_json"];
@@ -561,6 +583,10 @@ function derivarDadosComanda(pedido: PedidoBrutoImpressao): DadosComanda {
     telefone: pedido.cliente_celular?.trim() || null,
     origemRotulo: rotuloOrigemComanda(pedido.origem),
     modalidadeRotulo: rotuloModalidadeComanda(pedido.origem, pedido.modalidade),
+    agendamentoRotulo: rotuloAgendamentoComanda(
+      pedido.agendado_para,
+      pedido.modalidade,
+    ),
     pagamento: rotuloPagamentoComanda(pedido.status_pagamento),
     ehEntrega: pedido.origem === "delivery" && pedido.modalidade === "entrega",
     endereco: pedido.endereco_json ?? null,
@@ -588,6 +614,7 @@ function finalizarComanda(
     origem_rotulo: dados.origemRotulo,
     modalidade: pedido.modalidade ?? null,
     modalidade_rotulo: dados.modalidadeRotulo,
+    agendamento_rotulo: dados.agendamentoRotulo,
     status_pagamento: pedido.status_pagamento ?? null,
     pagamento_rotulo: dados.pagamento.rotulo,
     pagamento_destaque: dados.pagamento.destaque,
@@ -626,6 +653,7 @@ function montarComandaPadrao(
     local: dados.local,
     origemRotulo: dados.origemRotulo,
     modalidadeRotulo: dados.modalidadeRotulo,
+    agendamentoRotulo: dados.agendamentoRotulo,
     pagamentoDestaque: pagamento.destaque,
     rotuloResumo: dados.rotuloResumo,
     temLevar,
@@ -809,6 +837,8 @@ function conteudoCampo(id: CampoImpressaoId, ctx: CtxConfig): string[] {
       return [`ORIGEM: ${dados.origemRotulo}`];
     case "modalidade":
       return dados.modalidadeRotulo ? [dados.modalidadeRotulo] : [];
+    case "agendamento":
+      return dados.agendamentoRotulo ? [dados.agendamentoRotulo] : [];
     case "pagamento_destaque":
       return [dados.pagamento.destaque];
     case "cliente_nome":

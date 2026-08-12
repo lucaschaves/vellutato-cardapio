@@ -7,6 +7,7 @@ export type CampoImpressaoId =
   | "data_hora"
   | "origem"
   | "modalidade"
+  | "agendamento"
   | "pagamento_destaque"
   | "cliente_nome"
   | "cliente_telefone"
@@ -95,6 +96,7 @@ export const CAMPO_LABEL: Record<CampoImpressaoId, string> = {
   data_hora: "Data e hora",
   origem: "Origem",
   modalidade: "Entrega / Retirada",
+  agendamento: "Horário agendado (retirada/entrega)",
   pagamento_destaque: "Status de pagamento",
   cliente_nome: "Nome do cliente",
   cliente_telefone: "Telefone do cliente",
@@ -195,6 +197,7 @@ function blocosPadrao(tipo: "cozinha" | "cliente"): BlocoImpressao[] {
     sep(),
     campo("origem", "faixa"),
     campo("modalidade", "faixa"),
+    campo("agendamento", "faixa"),
     campo("pagamento_destaque", "invertido"),
     sep(),
     campo("cliente_nome"),
@@ -307,6 +310,30 @@ function sanearBloco(bruto: unknown): BlocoImpressao | null {
   return bloco;
 }
 
+function garantirCampoAgendamento(blocos: BlocoImpressao[]): BlocoImpressao[] {
+  if (blocos.some((b) => b.tipo === "campo" && b.campo === "agendamento")) {
+    return blocos;
+  }
+  const bloco = campo("agendamento", "faixa");
+  const idxModalidade = blocos.findIndex(
+    (b) => b.tipo === "campo" && b.campo === "modalidade",
+  );
+  if (idxModalidade >= 0) {
+    const copia = [...blocos];
+    copia.splice(idxModalidade + 1, 0, bloco);
+    return copia;
+  }
+  const idxOrigem = blocos.findIndex(
+    (b) => b.tipo === "campo" && b.campo === "origem",
+  );
+  if (idxOrigem >= 0) {
+    const copia = [...blocos];
+    copia.splice(idxOrigem + 1, 0, bloco);
+    return copia;
+  }
+  return [bloco, ...blocos];
+}
+
 function mesclarVia(
   salva: Partial<ViaImpressaoConfig> | undefined,
   padrao: ViaImpressaoConfig,
@@ -317,6 +344,9 @@ function mesclarVia(
         .map(sanearBloco)
         .filter((b): b is BlocoImpressao => b != null)
     : padrao.blocos;
+  const blocosFinais = garantirCampoAgendamento(
+    blocos.length ? blocos : padrao.blocos,
+  );
   return {
     ativa: typeof salva.ativa === "boolean" ? salva.ativa : padrao.ativa,
     copias:
@@ -324,7 +354,7 @@ function mesclarVia(
         ? Math.min(Math.floor(salva.copias), 5)
         : padrao.copias,
     titulo: salva.titulo ?? padrao.titulo,
-    blocos: blocos.length ? blocos : padrao.blocos,
+    blocos: blocosFinais,
   };
 }
 

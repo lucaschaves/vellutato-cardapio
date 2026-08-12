@@ -26,6 +26,123 @@ function somenteDigitos(valor: unknown): string {
   return typeof valor === "string" ? valor.replace(/\D/g, "") : "";
 }
 
+function enderecoAsaasCompleto(e: EnderecoSnap | null | undefined): boolean {
+  if (!e) return false;
+  const cep = somenteDigitos(e.cep);
+  return Boolean(
+    e.rua?.toString().trim() &&
+      e.numero != null &&
+      String(e.numero).trim() &&
+      cep.length === 8 &&
+      e.bairro?.toString().trim(),
+  );
+}
+
+function extrairCepDeTexto(texto: string): string | null {
+  const m = String(texto || "")
+    .replace(/\s/g, "")
+    .match(/(\d{5})-?(\d{3})/);
+  return m ? `${m[1]}${m[2]}` : null;
+}
+
+function extrairNumeroDeTexto(texto: string): string {
+  const t = String(texto || "");
+  const m =
+    t.match(/,\s*n[ºo°.]?\s*(\d+[A-Za-z\-/]*)/i) ||
+    t.match(/\bn[ºo°.]?\s*(\d+[A-Za-z\-/]*)/i) ||
+    t.match(/,\s*(\d+[A-Za-z\-/]*)\b/);
+  return m?.[1]?.trim() || "S/N";
+}
+
+type ViaCepResultado = {
+  cep: string;
+  rua: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  ibge: number | null;
+};
+
+async function consultarViaCep(cep: string): Promise<ViaCepResultado | null> {
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.erro) return null;
+    const ibge = Number(data?.ibge);
+    return {
+      cep,
+      rua: String(data?.logradouro || "").trim(),
+      bairro: String(data?.bairro || "").trim(),
+      cidade: String(data?.localidade || "").trim(),
+      uf: String(data?.uf || "").trim(),
+      ibge: Number.isFinite(ibge) ? ibge : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function codigoIbgePorCep(cep: string): Promise<number | null> {
+  const via = await consultarViaCep(cep);
+  return via?.ibge ?? null;
+}
+
+/** Endereço da loja (impressão) para preencher Asaas em retirada. */
+async function enderecoLojaParaAsaas(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+): Promise<EnderecoSnap | null> {
+  const { data, error } = await supabase
+    .from("impressao_config")
+    .select("config")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (error || !data?.config) return null;
+
+  const loja = (data.config as { loja?: Record<string, unknown> }).loja;
+  if (!loja || typeof loja !== "object") return null;
+
+  // Campos estruturados opcionais (se existirem no JSON).
+  const cepEstruturado = somenteDigitos(loja.cep);
+  if (
+    cepEstruturado.length === 8 &&
+    String(loja.rua || "").trim() &&
+    String(loja.numero || "").trim() &&
+    String(loja.bairro || "").trim()
+  ) {
+    return {
+      cep: cepEstruturado,
+      rua: String(loja.rua).trim(),
+      numero: String(loja.numero).trim(),
+      bairro: String(loja.bairro).trim(),
+      cidade: String(loja.cidade || "").trim() || undefined,
+      uf: String(loja.uf || "").trim() || undefined,
+      complemento: "Retirada na loja",
+    };
+  }
+
+  const texto = String(loja.endereco || "").trim();
+  if (!texto) return null;
+
+  const cep = extrairCepDeTexto(texto);
+  if (!cep) return null;
+
+  const via = await consultarViaCep(cep);
+  if (!via) return null;
+
+  return {
+    cep: via.cep,
+    rua: via.rua || texto.split(",")[0]?.trim() || "Loja",
+    numero: extrairNumeroDeTexto(texto),
+    bairro: via.bairro || "Centro",
+    cidade: via.cidade || undefined,
+    uf: via.uf || undefined,
+    complemento: "Retirada na loja",
+  };
+}
+
 function cpfValido(cpf: string): boolean {
   if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
   let soma = 0;
@@ -84,19 +201,6 @@ function mensagemAmigavelAsaas(mensagens: string[], status?: number): string {
     return "Os dados do cliente estão incompletos ou inválidos.";
   }
   return mensagens[0] || "O Asaas recusou os dados do pagamento.";
-}
-
-async function codigoIbgePorCep(cep: string): Promise<number | null> {
-  try {
-    const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data?.erro) return null;
-    const ibge = Number(data?.ibge);
-    return Number.isFinite(ibge) ? ibge : null;
-  } catch {
-    return null;
-  }
 }
 
 Deno.serve(async (req) => {
@@ -251,20 +355,45 @@ Deno.serve(async (req) => {
       endereco = bodyIn.endereco as EnderecoSnap;
     }
 
-    if (!endereco?.rua || !endereco?.numero || !endereco?.cep || !endereco?.bairro) {
+    const modalidade = String(pedido.modalidade || "");
+    const ehRetirada = modalidade === "retirada";
+
+    // Retirada: se o cliente não tem endereço, usa o da loja (Asaas exige endereço).
+    if (!enderecoAsaasCompleto(endereco) && ehRetirada) {
+      const enderecoLoja = await enderecoLojaParaAsaas(supabase);
+      if (enderecoLoja) {
+        console.info(
+          "[ASAAS] Retirada sem endereço do cliente — usando endereço da loja",
+          pedido.id,
+        );
+        endereco = enderecoLoja;
+      }
+    }
+
+    if (!enderecoAsaasCompleto(endereco)) {
       return json(
         {
-          erro:
-            "Endereço incompleto para o pagamento. Informe CEP, rua, número e bairro.",
+          erro: ehRetirada
+            ? "Endereço da loja incompleto para o pagamento. Em Admin → Cupom de impressão, informe o endereço com CEP (ex.: Rua X, 123 — Bairro, Cidade/UF, 88000-000)."
+            : "Endereço incompleto para o pagamento. Informe CEP, rua, número e bairro.",
         },
         400,
       );
     }
 
-    const cepLimpo = String(endereco.cep).replace(/\D/g, "");
+    const cepLimpo = somenteDigitos(endereco!.cep);
     const telefone =
       (pedido.cliente_celular || "").replace(/\D/g, "") || undefined;
-    const addressNumber = Number.parseInt(String(endereco.numero).replace(/\D/g, ""), 10);
+    const addressNumberRaw = String(endereco!.numero ?? "").trim();
+    const addressNumberParsed = Number.parseInt(
+      addressNumberRaw.replace(/\D/g, ""),
+      10,
+    );
+    const addressNumber = Number.isFinite(addressNumberParsed)
+      ? addressNumberParsed
+      : /s\/?n/i.test(addressNumberRaw)
+        ? 0
+        : NaN;
     if (!Number.isFinite(addressNumber)) {
       return json({ erro: "Número do endereço inválido" }, 400);
     }
@@ -274,8 +403,9 @@ Deno.serve(async (req) => {
     if (!cityIbge) {
       return json(
         {
-          erro:
-            "Não foi possível obter a cidade (IBGE) pelo CEP. Verifique o endereço.",
+          erro: ehRetirada
+            ? "Não foi possível localizar o CEP da loja (IBGE). Verifique o endereço em Admin → Cupom de impressão."
+            : "Não foi possível obter a cidade (IBGE) pelo CEP. Verifique o endereço.",
         },
         400,
       );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   montarComandaImpressao,
+  rotuloAgendamentoComanda,
   rotuloModalidadeComanda,
   rotuloOrigemComanda,
   rotuloPagamentoComanda,
@@ -24,6 +25,17 @@ describe("rótulos da comanda", () => {
     expect(rotuloPagamentoComanda("nao_aplicavel").destaque).toContain(
       "PAGAR NO CAIXA",
     );
+  });
+
+  it("agendamento retirada/entrega", () => {
+    const iso = "2026-08-12T21:30:00.000Z"; // 18:30 America/Sao_Paulo (UTC-3)
+    expect(rotuloAgendamentoComanda(iso, "retirada")).toBe(
+      "AGENDADO RETIRADA 18:30",
+    );
+    expect(rotuloAgendamentoComanda(iso, "entrega")).toBe(
+      "AGENDADO ENTREGA 18:30",
+    );
+    expect(rotuloAgendamentoComanda(null)).toBeNull();
   });
 });
 
@@ -84,5 +96,32 @@ describe("montarComandaImpressao — destaques", () => {
     expect(comanda.texto_comanda).toContain("ORIGEM: MESA");
     expect(comanda.texto_comanda).toContain("PAGAR NO CAIXA");
     expect(comanda.texto_comanda).not.toContain("RETIRADA");
+    expect(comanda.texto_comanda).not.toContain("AGENDADO");
+  });
+
+  it("pedido agendado impresso com horário de retirada", () => {
+    const comanda = montarComandaImpressao({
+      id: "p3",
+      sequencia_pedido: 99,
+      origem: "delivery",
+      modalidade: "retirada",
+      status_pagamento: "pago",
+      identificador: "Retirada",
+      cliente_nome: "Bia",
+      criado_em: "2026-08-12T15:00:00.000Z",
+      agendado_para: "2026-08-12T21:30:00.000Z",
+      total: 30,
+      pedido_itens: [
+        {
+          quantidade: 1,
+          preco_unitario: 30,
+          modo_consumo: "levar",
+          produtos: { nome: "Sorvete" },
+        },
+      ],
+    });
+
+    expect(comanda.texto_comanda).toContain("AGENDADO RETIRADA 18:30");
+    expect(comanda.agendamento_rotulo).toBe("AGENDADO RETIRADA 18:30");
   });
 });
