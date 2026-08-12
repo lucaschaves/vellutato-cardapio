@@ -1,8 +1,10 @@
 import {
   AlertTriangle,
   ImagePlus,
+  List,
   Loader2,
   Minus,
+  PackagePlus,
   Pencil,
   Plus,
   PlusCircle,
@@ -22,6 +24,12 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Switch } from "../../components/ui/switch";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs";
 import {
   formatarEquivalenteBase,
   formatarEstoqueInsumo,
@@ -93,7 +101,12 @@ export function GerenciamentoInsumos() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
-  const [aba, setAba] = useState<"ativos" | "desativados">("ativos");
+  const [abaPrincipal, setAbaPrincipal] = useState<"cadastrar" | "lista">(
+    "lista",
+  );
+  const [filtroStatus, setFiltroStatus] = useState<"ativos" | "desativados">(
+    "ativos",
+  );
   const [processandoId, setProcessandoId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [insumoExcluir, setInsumoExcluir] = useState<Insumo | null>(null);
@@ -271,6 +284,7 @@ export function GerenciamentoInsumos() {
     setImagemPreview(null);
     setMarcas(item.marcas);
     setMarcaInput("");
+    setAbaPrincipal("cadastrar");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -430,6 +444,7 @@ export function GerenciamentoInsumos() {
 
       limparFormulario();
       await carregar();
+      setAbaPrincipal("lista");
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - INSUMOS] salvar:", mensagem);
@@ -559,12 +574,17 @@ export function GerenciamentoInsumos() {
   const filtrados = useMemo(() => {
     const termo = termoBusca.trim().toLowerCase();
     return insumos.filter((i) => {
-      if (aba === "ativos" ? !i.ativo : i.ativo) return false;
+      if (filtroStatus === "ativos" ? !i.ativo : i.ativo) return false;
       if (!termo) return true;
       if (i.nome.toLowerCase().includes(termo)) return true;
       return i.marcas.some((m) => m.toLowerCase().includes(termo));
     });
-  }, [insumos, termoBusca, aba]);
+  }, [insumos, termoBusca, filtroStatus]);
+
+  const qtdAtivos = useMemo(
+    () => insumos.filter((i) => i.ativo).length,
+    [insumos],
+  );
 
   const unidadesConteudo =
     tipo === "volume" ? UNIDADES_CONTEUDO_VOLUME : UNIDADES_CONTEUDO_PESO;
@@ -586,446 +606,528 @@ export function GerenciamentoInsumos() {
           </Link>
         </Button>
       }
+      contentClassName="flex flex-col gap-4"
     >
-      <form
-        onSubmit={salvar}
-        className="mb-6 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-surface-dark"
+      <Tabs
+        value={abaPrincipal}
+        onValueChange={(v) => {
+          const prox = v as "cadastrar" | "lista";
+          if (prox === "lista") limparFormulario();
+          setAbaPrincipal(prox);
+        }}
+        className="gap-4"
       >
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-            {editandoId ? "Editar insumo" : "Novo insumo"}
-          </h2>
-          {editandoId && (
-            <Button type="button" variant="ghost" size="sm" onClick={limparFormulario}>
-              <X className="h-4 w-4" />
-              Cancelar
-            </Button>
-          )}
-        </div>
+        <TabsList
+          variant="line"
+          className="w-full h-auto max-w-full justify-start overflow-x-auto flex-nowrap rounded-none border-b border-gray-200 dark:border-gray-800 bg-transparent p-0 gap-0"
+        >
+          <TabsTrigger
+            value="lista"
+            className="shrink-0 rounded-none px-3 py-2.5 data-active:shadow-none gap-1.5"
+          >
+            <List className="h-4 w-4" />
+            Produtos
+            {qtdAtivos > 0 && (
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-[10px]">
+                {qtdAtivos}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="cadastrar"
+            className="shrink-0 rounded-none px-3 py-2.5 data-active:shadow-none gap-1.5"
+          >
+            <PackagePlus className="h-4 w-4" />
+            {editandoId ? "Editar" : "Cadastrar"}
+          </TabsTrigger>
+        </TabsList>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-            <Label htmlFor="insumo-nome">Nome</Label>
-            <Input
-              id="insumo-nome"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex.: Manteiga"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="insumo-tipo">Tipo</Label>
-            <select
-              id="insumo-tipo"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={tipo}
-              onChange={(e) => aplicarTipo(e.target.value as TipoInsumo)}
-            >
-              {TIPOS_INSUMO.map((t) => (
-                <option key={t} value={t}>
-                  {rotuloTipoInsumo(t)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="insumo-unidade">Unidade de compra</Label>
-            <select
-              id="insumo-unidade"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={unidade}
-              onChange={(e) => setUnidade(e.target.value as UnidadeInsumo)}
-            >
-              {UNIDADES_INSUMO.map((u) => (
-                <option key={u} value={u}>
-                  {u}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {tipo !== "contagem" && (
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
-              <Label>Conteúdo de 1 {rotuloUnidade(unidade, 1)}</Label>
-              <div className="flex max-w-md gap-2">
-                <Input
-                  inputMode="decimal"
-                  value={conteudoValor}
-                  onChange={(e) => setConteudoValor(e.target.value)}
-                  placeholder="200"
-                />
-                <select
-                  className="flex h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
-                  value={conteudoUnidade}
-                  onChange={(e) =>
-                    setConteudoUnidade(e.target.value as UnidadeConteudo)
-                  }
+        <TabsContent value="cadastrar" className="mt-0">
+          <form
+            onSubmit={salvar}
+            className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-surface-dark"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                {editandoId ? "Editar insumo" : "Novo insumo"}
+              </h2>
+              {editandoId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    limparFormulario();
+                    setAbaPrincipal("lista");
+                  }}
                 >
-                  {unidadesConteudo.map((u) => (
+                  <X className="h-4 w-4" />
+                  Cancelar
+                </Button>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                <Label htmlFor="insumo-nome">Nome</Label>
+                <Input
+                  id="insumo-nome"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Ex.: Manteiga"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="insumo-tipo">Tipo</Label>
+                <select
+                  id="insumo-tipo"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={tipo}
+                  onChange={(e) => aplicarTipo(e.target.value as TipoInsumo)}
+                >
+                  {TIPOS_INSUMO.map((t) => (
+                    <option key={t} value={t}>
+                      {rotuloTipoInsumo(t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="insumo-unidade">Unidade de compra</Label>
+                <select
+                  id="insumo-unidade"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={unidade}
+                  onChange={(e) => setUnidade(e.target.value as UnidadeInsumo)}
+                >
+                  {UNIDADES_INSUMO.map((u) => (
                     <option key={u} value={u}>
                       {u}
                     </option>
                   ))}
                 </select>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Ex.: tablete de manteiga = 200 g; saco de farinha = 5 kg; leite = 1 L.
-              </p>
-            </div>
-          )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="insumo-qtd">
-              Estoque ({rotuloUnidade(unidade, 2)})
-            </Label>
-            <Input
-              id="insumo-qtd"
-              inputMode="decimal"
-              value={quantidade}
-              onChange={(e) => {
-                setQuantidade(e.target.value);
-                syncBaseFromCompra(e.target.value, "qtd");
-              }}
-            />
-          </div>
-
-          {tipo !== "contagem" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="insumo-qtd-base">
-                Estoque ({conteudoUnidade})
-              </Label>
-              <Input
-                id="insumo-qtd-base"
-                inputMode="decimal"
-                value={quantidadeBase}
-                onChange={(e) => {
-                  setQuantidadeBase(e.target.value);
-                  syncCompraFromBase(e.target.value, "qtd");
-                }}
-                placeholder="0"
-              />
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="insumo-min">
-              Mínimo ({rotuloUnidade(unidade, 2)})
-            </Label>
-            <Input
-              id="insumo-min"
-              inputMode="decimal"
-              value={estoqueMinimo}
-              onChange={(e) => {
-                setEstoqueMinimo(e.target.value);
-                syncBaseFromCompra(e.target.value, "min");
-              }}
-            />
-          </div>
-
-          {tipo !== "contagem" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="insumo-min-base">
-                Mínimo ({conteudoUnidade})
-              </Label>
-              <Input
-                id="insumo-min-base"
-                inputMode="decimal"
-                value={estoqueMinimoBase}
-                onChange={(e) => {
-                  setEstoqueMinimoBase(e.target.value);
-                  syncCompraFromBase(e.target.value, "min");
-                }}
-                placeholder="0"
-              />
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="insumo-preco">Preço da embalagem (opcional)</Label>
-            <Input
-              id="insumo-preco"
-              inputMode="decimal"
-              placeholder="0,00"
-              value={precoEmbalagem}
-              onChange={(e) => setPrecoEmbalagem(e.target.value)}
-            />
-            {precoBasePreview != null && (
-              <p className="text-xs text-muted-foreground">
-                = {formatarPrecoMoeda(precoBasePreview)} /{" "}
-                {unidadePrecoBase(tipo)}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="insumo-obs">Observação</Label>
-            <Input
-              id="insumo-obs"
-              value={observacao}
-              onChange={(e) => setObservacao(e.target.value)}
-              placeholder="Preferir tablete, evitar com sal…"
-            />
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
-            <Label>Marcas possíveis</Label>
-            {marcas.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-2">
-                {marcas.map((m) => (
-                  <Badge key={m} variant="secondary" className="gap-1 pr-1">
-                    {m}
-                    <button
-                      type="button"
-                      className="rounded p-0.5 hover:bg-black/10"
-                      onClick={() =>
-                        setMarcas((prev) => prev.filter((x) => x !== m))
+              {tipo !== "contagem" && (
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                  <Label>Conteúdo de 1 {rotuloUnidade(unidade, 1)}</Label>
+                  <div className="flex max-w-md gap-2">
+                    <Input
+                      inputMode="decimal"
+                      value={conteudoValor}
+                      onChange={(e) => setConteudoValor(e.target.value)}
+                      placeholder="200"
+                    />
+                    <select
+                      className="flex h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
+                      value={conteudoUnidade}
+                      onChange={(e) =>
+                        setConteudoUnidade(e.target.value as UnidadeConteudo)
                       }
                     >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <Input
-              value={marcaInput}
-              onChange={(e) => setMarcaInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === ",") {
-                  e.preventDefault();
-                  adicionarMarca(marcaInput.replace(/,/g, ""));
-                }
-              }}
-              onBlur={() => {
-                if (marcaInput.trim()) adicionarMarca(marcaInput);
-              }}
-              placeholder="Batavo, Tirol… (Enter para adicionar)"
-              className="max-w-md"
-            />
-            <p className="text-xs text-muted-foreground">
-              Só uma lista para facilitar a compra. Não cria estoque separado.
-            </p>
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
-            <Label>Foto da embalagem</Label>
-            <div className="flex flex-wrap items-center gap-3">
-              {(imagemPreview || imagemUrlAtual) && (
-                <img
-                  src={imagemPreview || imagemUrlAtual || ""}
-                  alt=""
-                  className="h-20 w-20 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
-                />
+                      {unidadesConteudo.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Ex.: tablete de manteiga = 200 g; saco de farinha = 5 kg; leite = 1 L.
+                  </p>
+                </div>
               )}
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-900">
-                <ImagePlus className="h-4 w-4" />
-                {imagemArquivo ? "Trocar foto" : "Enviar foto"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
+
+              <div className="space-y-1.5">
+                <Label htmlFor="insumo-qtd">
+                  Estoque ({rotuloUnidade(unidade, 2)})
+                </Label>
+                <Input
+                  id="insumo-qtd"
+                  inputMode="decimal"
+                  value={quantidade}
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (imagemPreview) URL.revokeObjectURL(imagemPreview);
-                    setImagemArquivo(file);
-                    setImagemPreview(URL.createObjectURL(file));
+                    setQuantidade(e.target.value);
+                    syncBaseFromCompra(e.target.value, "qtd");
                   }}
                 />
-              </label>
+              </div>
+
+              {tipo !== "contagem" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="insumo-qtd-base">
+                    Estoque ({conteudoUnidade})
+                  </Label>
+                  <Input
+                    id="insumo-qtd-base"
+                    inputMode="decimal"
+                    value={quantidadeBase}
+                    onChange={(e) => {
+                      setQuantidadeBase(e.target.value);
+                      syncCompraFromBase(e.target.value, "qtd");
+                    }}
+                    placeholder="0"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="insumo-min">
+                  Mínimo ({rotuloUnidade(unidade, 2)})
+                </Label>
+                <Input
+                  id="insumo-min"
+                  inputMode="decimal"
+                  value={estoqueMinimo}
+                  onChange={(e) => {
+                    setEstoqueMinimo(e.target.value);
+                    syncBaseFromCompra(e.target.value, "min");
+                  }}
+                />
+              </div>
+
+              {tipo !== "contagem" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="insumo-min-base">
+                    Mínimo ({conteudoUnidade})
+                  </Label>
+                  <Input
+                    id="insumo-min-base"
+                    inputMode="decimal"
+                    value={estoqueMinimoBase}
+                    onChange={(e) => {
+                      setEstoqueMinimoBase(e.target.value);
+                      syncCompraFromBase(e.target.value, "min");
+                    }}
+                    placeholder="0"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="insumo-preco">Preço da embalagem (opcional)</Label>
+                <Input
+                  id="insumo-preco"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={precoEmbalagem}
+                  onChange={(e) => setPrecoEmbalagem(e.target.value)}
+                />
+                {precoBasePreview != null && (
+                  <p className="text-xs text-muted-foreground">
+                    = {formatarPrecoMoeda(precoBasePreview)} /{" "}
+                    {unidadePrecoBase(tipo)}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="insumo-obs">Observação</Label>
+                <Input
+                  id="insumo-obs"
+                  value={observacao}
+                  onChange={(e) => setObservacao(e.target.value)}
+                  placeholder="Preferir tablete, evitar com sal…"
+                />
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                <Label>Marcas possíveis</Label>
+                {marcas.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {marcas.map((m) => (
+                      <Badge key={m} variant="secondary" className="gap-1 pr-1">
+                        {m}
+                        <button
+                          type="button"
+                          className="rounded p-0.5 hover:bg-black/10"
+                          onClick={() =>
+                            setMarcas((prev) => prev.filter((x) => x !== m))
+                          }
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <Input
+                  value={marcaInput}
+                  onChange={(e) => setMarcaInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      adicionarMarca(marcaInput.replace(/,/g, ""));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (marcaInput.trim()) adicionarMarca(marcaInput);
+                  }}
+                  placeholder="Batavo, Tirol… (Enter para adicionar)"
+                  className="max-w-md"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Só uma lista para facilitar a compra. Não cria estoque separado.
+                </p>
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                <Label>Foto da embalagem</Label>
+                <div className="flex flex-wrap items-center gap-3">
+                  {(imagemPreview || imagemUrlAtual) && (
+                    <img
+                      src={imagemPreview || imagemUrlAtual || ""}
+                      alt=""
+                      className="h-20 w-20 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
+                    />
+                  )}
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-900">
+                    <ImagePlus className="h-4 w-4" />
+                    {imagemArquivo ? "Trocar foto" : "Enviar foto"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (imagemPreview) URL.revokeObjectURL(imagemPreview);
+                        setImagemArquivo(file);
+                        setImagemPreview(URL.createObjectURL(file));
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="submit" disabled={salvando}>
+                {salvando ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <PlusCircle className="h-4 w-4" />
+                )}
+                {editandoId ? "Salvar alterações" : "Cadastrar"}
+              </Button>
+              {!editandoId && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAbaPrincipal("lista")}
+                >
+                  Ver produtos
+                </Button>
+              )}
+            </div>
+          </form>
+        </TabsContent>
+
+        <TabsContent value="lista" className="mt-0 space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={filtroStatus === "ativos" ? "default" : "outline"}
+                onClick={() => setFiltroStatus("ativos")}
+              >
+                Ativos
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={filtroStatus === "desativados" ? "default" : "outline"}
+                onClick={() => setFiltroStatus("desativados")}
+              >
+                Desativados
+              </Button>
+            </div>
+            <div className="relative max-w-sm flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar insumo ou marca…"
+                value={termoBusca}
+                onChange={(e) => setTermoBusca(e.target.value)}
+              />
             </div>
           </div>
-        </div>
 
-        <div className="mt-4">
-          <Button type="submit" disabled={salvando}>
-            {salvando ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <PlusCircle className="h-4 w-4" />
-            )}
-            {editandoId ? "Salvar alterações" : "Cadastrar"}
-          </Button>
-        </div>
-      </form>
-
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={aba === "ativos" ? "default" : "outline"}
-            onClick={() => setAba("ativos")}
-          >
-            Ativos
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={aba === "desativados" ? "default" : "outline"}
-            onClick={() => setAba("desativados")}
-          >
-            Desativados
-          </Button>
-        </div>
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Buscar insumo ou marca…"
-            value={termoBusca}
-            onChange={(e) => setTermoBusca(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {carregando ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="h-8 w-8 animate-spin text-cookie-primary" />
-        </div>
-      ) : filtrados.length === 0 ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">
-          Nenhum insumo encontrado.
-        </p>
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filtrados.map((insumo) => {
-            const baixo = insumoAbaixoDoMinimo(insumo);
-            const busy = processandoId === insumo.id;
-            const deltaMenos =
-              insumo.quantidade_atual <= 0
-                ? 0
-                : -Math.min(1, insumo.quantidade_atual);
-            const conteudo = rotuloConteudoEmbalagem(insumo);
-            const eqMin = formatarEquivalenteBase(insumo.estoque_minimo, insumo);
-
-            return (
-              <li
-                key={insumo.id}
-                className="flex gap-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-surface-dark"
+          {carregando ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-cookie-primary" />
+            </div>
+          ) : filtrados.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-200 py-12 text-center dark:border-gray-800">
+              <p className="text-sm text-muted-foreground">
+                Nenhum insumo encontrado.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => {
+                  limparFormulario();
+                  setAbaPrincipal("cadastrar");
+                }}
               >
-                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-900">
-                  {insumo.imagem_url ? (
-                    <img
-                      src={insumo.imagem_url}
-                      alt={insumo.nome}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-gray-400">
-                      <Warehouse className="h-6 w-6" />
+                <PackagePlus className="h-4 w-4" />
+                Cadastrar primeiro
+              </Button>
+            </div>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {filtrados.map((insumo) => {
+                const baixo = insumoAbaixoDoMinimo(insumo);
+                const busy = processandoId === insumo.id;
+                const deltaMenos =
+                  insumo.quantidade_atual <= 0
+                    ? 0
+                    : -Math.min(1, insumo.quantidade_atual);
+                const conteudo = rotuloConteudoEmbalagem(insumo);
+                const eqMin = formatarEquivalenteBase(
+                  insumo.estoque_minimo,
+                  insumo,
+                );
+
+                return (
+                  <li
+                    key={insumo.id}
+                    className="flex gap-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-surface-dark"
+                  >
+                    <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-900">
+                      {insumo.imagem_url ? (
+                        <img
+                          src={insumo.imagem_url}
+                          alt={insumo.nome}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-gray-400">
+                          <Warehouse className="h-6 w-6" />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-gray-900 dark:text-white">
-                        {insumo.nome}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-gray-900 dark:text-white">
+                            {insumo.nome}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {rotuloTipoInsumo(insumo.tipo)}
+                            {conteudo ? ` · ${conteudo}` : ""}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatarPrecoBaseInsumo(insumo)}
+                          </p>
+                        </div>
+                        {baixo && insumo.ativo && (
+                          <Badge
+                            variant="destructive"
+                            className="shrink-0 gap-1"
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            Baixo
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-8 w-8"
+                          disabled={busy || deltaMenos === 0}
+                          onClick={() => void ajustarQtd(insumo, deltaMenos)}
+                          title="Registrar uso (−1)"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="min-w-16 text-center text-sm font-semibold tabular-nums leading-tight">
+                          {formatarEstoqueInsumo(insumo)}
+                        </span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-8 w-8"
+                          disabled={busy}
+                          onClick={() => void ajustarQtd(insumo, 1)}
+                          title="Ajuste (+1)"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        mín. {formatarQtd(insumo.estoque_minimo)}{" "}
+                        {rotuloUnidade(insumo.unidade, insumo.estoque_minimo)}
+                        {eqMin ? ` (${eqMin})` : ""}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {rotuloTipoInsumo(insumo.tipo)}
-                        {conteudo ? ` · ${conteudo}` : ""}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatarPrecoBaseInsumo(insumo)}
-                      </p>
+
+                      {insumo.marcas.length > 0 && (
+                        <p className="mt-1.5 truncate text-xs text-muted-foreground">
+                          Marcas: {insumo.marcas.join(", ")}
+                        </p>
+                      )}
+
+                      <div className="mt-2 flex flex-wrap items-center gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2"
+                          onClick={() => iniciarEdicao(insumo)}
+                          title="Editar"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span className="ml-1 text-xs">Editar</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2"
+                          disabled={busy}
+                          onClick={() => void adicionarALista(insumo)}
+                          title="Adicionar à lista"
+                        >
+                          <ShoppingCart className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2 text-destructive"
+                          onClick={() => setInsumoExcluir(insumo)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <div className="ml-auto flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">
+                            Ativo
+                          </span>
+                          <Switch
+                            checked={insumo.ativo}
+                            disabled={busy}
+                            onCheckedChange={() => void alternarAtivo(insumo)}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    {baixo && insumo.ativo && (
-                      <Badge variant="destructive" className="shrink-0 gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        Baixo
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="mt-2 flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8"
-                      disabled={busy || deltaMenos === 0}
-                      onClick={() => void ajustarQtd(insumo, deltaMenos)}
-                      title="Registrar uso (−1)"
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                    <span className="min-w-16 text-center text-sm font-semibold tabular-nums leading-tight">
-                      {formatarEstoqueInsumo(insumo)}
-                    </span>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8"
-                      disabled={busy}
-                      onClick={() => void ajustarQtd(insumo, 1)}
-                      title="Ajuste (+1)"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    mín. {formatarQtd(insumo.estoque_minimo)}{" "}
-                    {rotuloUnidade(insumo.unidade, insumo.estoque_minimo)}
-                    {eqMin ? ` (${eqMin})` : ""}
-                  </p>
-
-                  {insumo.marcas.length > 0 && (
-                    <p className="mt-1.5 truncate text-xs text-muted-foreground">
-                      Marcas: {insumo.marcas.join(", ")}
-                    </p>
-                  )}
-
-                  <div className="mt-2 flex flex-wrap items-center gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 px-2"
-                      onClick={() => iniciarEdicao(insumo)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 px-2"
-                      disabled={busy}
-                      onClick={() => void adicionarALista(insumo)}
-                      title="Adicionar à lista"
-                    >
-                      <ShoppingCart className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 px-2 text-destructive"
-                      onClick={() => setInsumoExcluir(insumo)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <span className="text-xs text-muted-foreground">Ativo</span>
-                      <Switch
-                        checked={insumo.ativo}
-                        disabled={busy}
-                        onCheckedChange={() => void alternarAtivo(insumo)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <ModalConfirmacao
         aberto={insumoExcluir != null}

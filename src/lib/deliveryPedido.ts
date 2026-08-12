@@ -97,7 +97,8 @@ export async function cancelarPedidoDeliveryAguardando(
 }
 
 /** Prazo padrão para abandonar checkout Asaas sem pagamento (minutos). */
-export const MINUTOS_EXPIRA_PAGAMENTO_DELIVERY = 5;
+/** Alinhado ao mínimo do Asaas (`minutesToExpire` ≥ 10). */
+export const MINUTOS_EXPIRA_PAGAMENTO_DELIVERY = 10;
 
 export async function cancelarPedidosDeliveryExpirados(
   minutos = MINUTOS_EXPIRA_PAGAMENTO_DELIVERY,
