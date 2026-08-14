@@ -20,6 +20,15 @@ import {
   maxAdicionaisProduto,
   rotuloAdicionaisProduto,
 } from "../../lib/adicionaisProduto";
+import {
+  buscarEstruturaCombo,
+  calcularDeltaOpcao,
+  rotuloEscolhasGrupo,
+  somarDeltasCombo,
+  validarEscolhasCombo,
+  type ComboGrupo,
+  type EscolhaCombo,
+} from "../../lib/combos";
 
 interface Adicional {
   id: string;
@@ -42,6 +51,7 @@ interface ProdutoItem {
   disponibilidade?: string | null;
   medida_valor?: number | null;
   medida_unidade?: string | null;
+  tipo?: "simples" | "combo" | null;
 }
 
 function precosOferta(oferta: OfertaVendaCruzada) {
@@ -74,6 +84,9 @@ export function DeliveryItem() {
   const [ofertasSelecionadas, setOfertasSelecionadas] = useState<string[]>([]);
   const [qtd, setQtd] = useState(1);
   const [carregando, setCarregando] = useState(true);
+  const [gruposCombo, setGruposCombo] = useState<ComboGrupo[]>([]);
+  const [escolhasCombo, setEscolhasCombo] = useState<EscolhaCombo[]>([]);
+  const [carregandoCombo, setCarregandoCombo] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -86,7 +99,7 @@ export function DeliveryItem() {
           supabase
             .from("produtos")
             .select(
-              "id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url, adicional_obrigatorio, adicional_maximo, disponibilidade, medida_valor, medida_unidade",
+              "id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url, adicional_obrigatorio, adicional_maximo, disponibilidade, medida_valor, medida_unidade, tipo",
             )
             .eq("id", id)
             .single(),
@@ -137,6 +150,39 @@ export function DeliveryItem() {
         setSelecionados([]);
         setOfertasSelecionadas([]);
         setQtd(1);
+        setGruposCombo([]);
+        setEscolhasCombo([]);
+        setCarregandoCombo(false);
+
+        if (prod.tipo === "combo") {
+          setCarregandoCombo(true);
+          try {
+            const grupos = await buscarEstruturaCombo(prod.id);
+            if (cancelado) return;
+            setGruposCombo(grupos);
+            const iniciais: EscolhaCombo[] = [];
+            for (const grupo of grupos) {
+              if (grupo.max_escolhas !== 1 || grupo.min_escolhas < 1) continue;
+              if (grupo.opcoes.length === 0) continue;
+              const opcao = grupo.opcoes[0];
+              iniciais.push({
+                grupoId: grupo.id,
+                grupoNome: grupo.nome,
+                opcaoId: opcao.id,
+                produtoId: opcao.produto_id,
+                produtoNome: opcao.produto.nome,
+                deltaPreco: calcularDeltaOpcao(opcao, grupo.preco_referencia),
+              });
+            }
+            setEscolhasCombo(iniciais);
+          } catch (erroCombo: unknown) {
+            if (cancelado) return;
+            console.error("[COMBO] Falha ao carregar estrutura:", erroCombo);
+            toast.error("Não foi possível carregar as opções do combo.");
+          } finally {
+            if (!cancelado) setCarregandoCombo(false);
+          }
+        }
       } catch (e) {
         console.error(e);
         toast.error("Produto não encontrado");
@@ -172,11 +218,13 @@ export function DeliveryItem() {
     ? Number(produto.preco_promocional)
     : Number(produto.preco);
   const precoAdicionais = selecionados.reduce((s, a) => s + a.preco, 0);
+  const precoCombo = somarDeltasCombo(escolhasCombo);
   const precoCruzadas = ofertasAtivas.reduce(
     (s, o) => s + precosOferta(o).oferta,
     0,
   );
-  const total = (precoBase + precoAdicionais) * qtd + precoCruzadas;
+  const total = (precoBase + precoAdicionais + precoCombo) * qtd + precoCruzadas;
+  const ehCombo = produto.tipo === "combo";
 
   const alternarAdicional = (adc: Adicional) => {
     const max = maxAdicionaisProduto(produto?.adicional_maximo);
@@ -206,9 +254,65 @@ export function DeliveryItem() {
     );
   };
 
+  const selecionarOpcaoCombo = (grupo: ComboGrupo, opcaoId: string) => {
+    const opcao = grupo.opcoes.find((o) => o.id === opcaoId);
+    if (!opcao) return;
+
+    const escolha: EscolhaCombo = {
+      grupoId: grupo.id,
+      grupoNome: grupo.nome,
+      opcaoId: opcao.id,
+      produtoId: opcao.produto_id,
+      produtoNome: opcao.produto.nome,
+      deltaPreco: calcularDeltaOpcao(opcao, grupo.preco_referencia),
+    };
+
+    setEscolhasCombo((prev) => {
+      const doGrupo = prev.filter((e) => e.grupoId === grupo.id);
+      const qtdDesta = doGrupo.filter((e) => e.opcaoId === opcao.id).length;
+      const foraDoGrupo = prev.filter((e) => e.grupoId !== grupo.id);
+
+      if (grupo.max_escolhas <= 1) {
+        if (qtdDesta > 0) {
+          if (grupo.min_escolhas >= 1) return prev;
+          return foraDoGrupo;
+        }
+        return [...foraDoGrupo, escolha];
+      }
+
+      if (doGrupo.length >= grupo.max_escolhas && qtdDesta === 0) {
+        return [...foraDoGrupo, ...doGrupo.slice(0, -1), escolha];
+      }
+
+      if (qtdDesta > 0 && doGrupo.length < grupo.max_escolhas) {
+        return [...prev, escolha];
+      }
+
+      if (qtdDesta > 0 && doGrupo.length >= grupo.max_escolhas) {
+        let removida = false;
+        return prev.filter((e) => {
+          if (!removida && e.grupoId === grupo.id && e.opcaoId === opcao.id) {
+            removida = true;
+            return false;
+          }
+          return true;
+        });
+      }
+
+      return [...prev, escolha];
+    });
+  };
+
   const voltar = () => navigate("/");
 
   const adicionar = () => {
+    if (ehCombo) {
+      const erroCombo = validarEscolhasCombo(gruposCombo, escolhasCombo);
+      if (erroCombo) {
+        toast.error(erroCombo);
+        return;
+      }
+    }
     if (
       produto.adicional_obrigatorio &&
       adicionais.length > 0 &&
@@ -231,6 +335,7 @@ export function DeliveryItem() {
       originalPrice: Number(produto.preco),
       quantidade: qtd,
       adicionais: selecionados,
+      escolhasCombo: ehCombo ? escolhasCombo : undefined,
       imagem: produto.imagem_url || undefined,
       disponibilidade: "levar",
       modoConsumo: "levar",
@@ -292,6 +397,123 @@ export function DeliveryItem() {
           R$ {precoBase.toFixed(2).replace(".", ",")}
         </p>
       </div>
+
+      {carregandoCombo && (
+        <section className="mt-6 space-y-2 animate-pulse">
+          <div className="h-4 bg-zinc-200 rounded w-28" />
+          <div className="h-16 rounded-2xl bg-zinc-100 border border-zinc-200" />
+          <div className="h-16 rounded-2xl bg-zinc-100 border border-zinc-200" />
+        </section>
+      )}
+
+      {!carregandoCombo && gruposCombo.length > 0 && (
+        <div className="mt-6 space-y-6">
+          {gruposCombo.map((grupo) => {
+            const selecionadas = escolhasCombo.filter(
+              (e) => e.grupoId === grupo.id,
+            ).length;
+            const meta =
+              grupo.min_escolhas === grupo.max_escolhas
+                ? grupo.min_escolhas
+                : grupo.max_escolhas;
+            const completo = selecionadas >= grupo.min_escolhas;
+
+            return (
+              <section key={grupo.id} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">
+                        {grupo.nome}
+                      </h2>
+                      <span
+                        className={`text-[11px] font-bold ${
+                          completo ? "text-emerald-600" : "text-cookie-primary"
+                        }`}
+                      >
+                        {rotuloEscolhasGrupo(grupo)}
+                        {meta > 0 ? ` · ${selecionadas}/${meta}` : ""}
+                      </span>
+                    </div>
+                    {grupo.max_escolhas > 1 && (
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Pode repetir a mesma opção. Com o limite cheio, toque em
+                        outra para trocar.
+                      </p>
+                    )}
+                    {grupo.descricao && (
+                      <p className="text-xs text-zinc-500 mt-0.5">
+                        {grupo.descricao}
+                      </p>
+                    )}
+                  </div>
+                  <div className="h-px flex-1 bg-zinc-200" />
+                </div>
+                {grupo.opcoes.length === 0 ? (
+                  <p className="text-sm text-red-600 font-medium">
+                    Nenhuma opção disponível neste grupo no momento.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {grupo.opcoes.map((opcao) => {
+                      const qtdOpcao = escolhasCombo.filter(
+                        (e) =>
+                          e.grupoId === grupo.id && e.opcaoId === opcao.id,
+                      ).length;
+                      const ativo = qtdOpcao > 0;
+                      const delta = calcularDeltaOpcao(
+                        opcao,
+                        grupo.preco_referencia,
+                      );
+                      return (
+                        <button
+                          key={opcao.id}
+                          type="button"
+                          onClick={() => selecionarOpcaoCombo(grupo, opcao.id)}
+                          className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl border-2 text-left transition active:scale-[0.99] ${
+                            ativo
+                              ? "border-cookie-primary bg-cookie-primary/10"
+                              : "border-zinc-200 bg-white"
+                          }`}
+                        >
+                          <span className="flex items-center gap-3 min-w-0 font-semibold text-sm">
+                            {opcao.produto.imagem_url ? (
+                              <span className="h-12 w-12 shrink-0 rounded-xl overflow-hidden bg-zinc-100">
+                                <img
+                                  src={opcao.produto.imagem_url}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                />
+                              </span>
+                            ) : null}
+                            <span className="truncate">
+                              {opcao.produto.nome}
+                              {qtdOpcao > 0 && grupo.max_escolhas > 1
+                                ? ` ×${qtdOpcao}`
+                                : ""}
+                            </span>
+                          </span>
+                          <span
+                            className={`text-sm font-bold shrink-0 ${
+                              ativo || delta > 0
+                                ? "text-cookie-primary"
+                                : "text-zinc-500"
+                            }`}
+                          >
+                            {delta > 0
+                              ? `+ R$ ${delta.toFixed(2).replace(".", ",")}`
+                              : "Incluso"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       {adicionais.length > 0 && (
         <section className="mt-6 space-y-3">

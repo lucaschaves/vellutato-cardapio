@@ -56,6 +56,7 @@ import {
 } from "../../lib/lojaAgendamento";
 import type { StatusLoja } from "../../lib/lojaStatus";
 import { ErroNegocioCheckout } from "../../lib/pedidos";
+import { somarDeltasCombo, type EscolhaCombo } from "../../lib/combos";
 import {
   lembrarClienteAnalytics,
   track,
@@ -89,10 +90,12 @@ interface SugestaoCheckout {
 function custoItem(item: {
   precoBase: number;
   adicionais: Array<{ preco: number }>;
+  escolhasCombo?: EscolhaCombo[];
   quantidade: number;
 }) {
   const extras = item.adicionais.reduce((s, a) => s + a.preco, 0);
-  return (item.precoBase + extras) * item.quantidade;
+  const combos = somarDeltasCombo(item.escolhasCombo || []);
+  return (item.precoBase + extras + combos) * item.quantidade;
 }
 
 export function DeliveryCheckout() {
@@ -1242,6 +1245,13 @@ export function DeliveryCheckout() {
                   {i.adicionais.length > 0 && (
                     <p className="text-xs text-zinc-500 mt-0.5">
                       {i.adicionais.map((a) => a.nome).join(", ")}
+                    </p>
+                  )}
+                  {i.escolhasCombo && i.escolhasCombo.length > 0 && (
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {i.escolhasCombo
+                        .map((e) => `${e.grupoNome}: ${e.produtoNome}`)
+                        .join(" · ")}
                     </p>
                   )}
                   <p className="text-sm font-bold text-cookie-primary mt-1">
