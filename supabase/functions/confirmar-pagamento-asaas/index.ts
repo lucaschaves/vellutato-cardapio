@@ -5,18 +5,14 @@
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
+import { ehAnonOuAdmin, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
-function json(body: unknown, status = 200) {
+function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsBrowser(req), "Content-Type": "application/json" },
   });
 }
 
@@ -28,13 +24,18 @@ const STATUS_PAGO_ASAAS = new Set([
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return respostaOpcoes(req);
   }
 
   try {
+    if (!ehAnonOuAdmin(req)) {
+      return json(req, { erro: "Não autorizado" }, 401);
+    }
     const bodyIn = await req.json();
-    const pedidoId = String(bodyIn?.pedido_id || "");
-    if (!pedidoId) return json({ erro: "pedido_id obrigatório" }, 400);
+    const pedidoId = bodyIn?.pedido_id;
+    if (!uuidValido(pedidoId)) {
+      return json(req, { erro: "pedido_id inválido" }, 400);
+    }
 
     const segredos = await lerSegredos([
       "ASAAS_API_KEY",
@@ -49,7 +50,7 @@ Deno.serve(async (req) => {
         ? "https://api.asaas.com/v3"
         : "https://api-sandbox.asaas.com/v3");
 
-    if (!asaasKey) return json({ erro: "ASAAS_API_KEY não configurada" }, 500);
+    if (!asaasKey) return json(req, { erro: "ASAAS_API_KEY não configurada" }, 500);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -62,14 +63,14 @@ Deno.serve(async (req) => {
       .eq("id", pedidoId)
       .single();
 
-    if (error || !pedido) return json({ erro: "Pedido não encontrado" }, 404);
+    if (error || !pedido) return json(req, { erro: "Pedido não encontrado" }, 404);
 
     if (pedido.status_pagamento === "pago") {
-      return json({ ok: true, status_pagamento: "pago", ja_pago: true });
+      return json(req, { ok: true, status_pagamento: "pago", ja_pago: true });
     }
 
     if (pedido.status_pagamento !== "aguardando") {
-      return json({
+      return json(req, {
         ok: true,
         status_pagamento: pedido.status_pagamento,
         sincronizado: false,
@@ -91,6 +92,7 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       console.error("[ASAAS SYNC]", data);
       return json(
+        req,
         { erro: data?.errors?.[0]?.description || "Falha ao consultar Asaas" },
         502,
       );
@@ -105,7 +107,7 @@ Deno.serve(async (req) => {
     );
 
     if (!paga) {
-      return json({
+      return json(req, {
         ok: true,
         status_pagamento: "aguardando",
         sincronizado: false,
@@ -139,7 +141,7 @@ Deno.serve(async (req) => {
       console.error("[ASAAS SYNC] pontos", e);
     }
 
-    return json({
+    return json(req, {
       ok: true,
       status_pagamento: "pago",
       sincronizado: true,
@@ -148,6 +150,6 @@ Deno.serve(async (req) => {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[ASAAS SYNC]", msg);
-    return json({ erro: msg }, 500);
+    return json(req, { erro: msg }, 500);
   }
 });

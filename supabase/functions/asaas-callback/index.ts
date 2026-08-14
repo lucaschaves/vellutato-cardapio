@@ -32,12 +32,16 @@ Deno.serve((req) => {
 
     const host = destino.hostname.toLowerCase();
     const permitido =
-      destino.protocol === "https:" ||
+      host === "vellutatocookies.com.br" ||
+      host === "www.vellutatocookies.com.br" ||
       host === "localhost" ||
       host === "127.0.0.1" ||
       host.endsWith(".localhost");
 
     if (!permitido) {
+      return new Response("Destino não permitido", { status: 400 });
+    }
+    if (destino.protocol !== "https:" && host !== "localhost" && host !== "127.0.0.1") {
       return new Response("Destino não permitido", { status: 400 });
     }
 

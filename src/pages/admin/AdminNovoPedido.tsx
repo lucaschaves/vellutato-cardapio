@@ -1,4 +1,5 @@
 import {
+  Clock,
   Loader2,
   Minus,
   Plus,
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { maxAdicionaisProduto } from "../../lib/adicionaisProduto";
 import { upsertCliente } from "../../lib/clientes";
 import {
@@ -35,6 +37,7 @@ import { avaliarEntregaDelivery } from "../../lib/deliveryBairros";
 import {
   criarPedidoDelivery,
   type EnderecoSnapshot,
+  type StatusPagamentoDelivery,
 } from "../../lib/deliveryPedido";
 import {
   formatarDistanciaEntrega,
@@ -46,6 +49,11 @@ import {
   type ModoConsumoItem,
 } from "../../lib/disponibilidadeProduto";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import {
+  listarSlotsAgendamentoHoje,
+  rotuloSlot,
+} from "../../lib/lojaAgendamento";
+import type { StatusLoja } from "../../lib/lojaStatus";
 import {
   criarPedidoCompleto,
   ErroNegocioCheckout,
@@ -160,6 +168,15 @@ export function AdminNovoPedido() {
   const [itens, setItens] = useState<ItemRascunho[]>([]);
   const [enviando, setEnviando] = useState(false);
 
+  /** Delivery/retirada: null = o quanto antes. */
+  const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
+  const [slotsHoje, setSlotsHoje] = useState<string[]>([]);
+  const [abreHoje, setAbreHoje] = useState(true);
+  const [motivoSemSlots, setMotivoSemSlots] = useState<string | null>(null);
+  const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
+  const [statusPagamento, setStatusPagamento] =
+    useState<StatusPagamentoDelivery>("pago");
+
   const [modalProduto, setModalProduto] = useState<ProdutoCat | null>(null);
   const [adicionaisDisp, setAdicionaisDisp] = useState<AdicionalOpt[]>([]);
   const [adicionaisSel, setAdicionaisSel] = useState<AdicionalOpt[]>([]);
@@ -179,6 +196,16 @@ export function AdminNovoPedido() {
       .eq("ativo", true)
       .order("numero")
       .then(({ data }) => setMesas((data as MesaOpt[]) || []));
+    void (async () => {
+      const r = await listarSlotsAgendamentoHoje();
+      setStatusLoja(r.status);
+      setSlotsHoje(r.slots);
+      setMotivoSemSlots(r.motivoSemSlots);
+      setAbreHoje(r.abreHoje);
+      if (r.status?.aberta) setAgendadoPara(null);
+      else if (r.slots[0]) setAgendadoPara(r.slots[0]);
+      else setAgendadoPara(null);
+    })();
   }, []);
 
   useEffect(() => {
@@ -204,7 +231,23 @@ export function AdminNovoPedido() {
     setTaxaFrete(0);
     setDistanciaKm(null);
     setBairroFreteNome(null);
+    setStatusPagamento("pago");
+    if (statusLoja?.aberta) setAgendadoPara(null);
+    else if (slotsHoje[0]) setAgendadoPara(slotsHoje[0]);
+    else setAgendadoPara(null);
+    // Só ao trocar canal — slots/status já carregados no mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intencional
   }, [canal]);
+
+  const ehDeliveryCanal = canal === "entrega" || canal === "retirada";
+  const lojaAberta = Boolean(statusLoja?.aberta);
+  const agendamentoOk =
+    !ehDeliveryCanal ||
+    (abreHoje
+      ? lojaAberta
+        ? true
+        : Boolean(agendadoPara) && slotsHoje.length > 0
+      : false);
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -540,7 +583,26 @@ export function AdminNovoPedido() {
       toast.warning("Informe o nome do cliente");
       return;
     }
-    if (telefone && !telefoneCelularValido(telefone)) {
+    if (ehDeliveryCanal) {
+      if (!telefone.trim()) {
+        toast.warning("Informe o celular do cliente");
+        return;
+      }
+      if (!telefoneCelularValido(telefone)) {
+        toast.warning(mensagemTelefoneInvalido(telefone) || "Telefone inválido");
+        return;
+      }
+      if (!agendamentoOk) {
+        toast.warning(
+          motivoSemSlots || "Não há horários disponíveis para agendar hoje.",
+        );
+        return;
+      }
+      if (!lojaAberta && !agendadoPara) {
+        toast.warning("Escolha um horário de entrega/retirada.");
+        return;
+      }
+    } else if (telefone && !telefoneCelularValido(telefone)) {
       toast.warning(mensagemTelefoneInvalido(telefone) || "Telefone inválido");
       return;
     }
@@ -603,6 +665,10 @@ export function AdminNovoPedido() {
       }
 
       if (canal === "entrega" || canal === "retirada") {
+        const pag =
+          canal === "retirada" && statusPagamento === "na_loja"
+            ? "na_loja"
+            : "pago";
         const resultado = await criarPedidoDelivery({
           cliente_nome: nome.trim(),
           cliente_celular: celular,
@@ -614,7 +680,7 @@ export function AdminNovoPedido() {
           valor_total: totalFinal,
           itens: mapearItens(),
           modalidade: canal,
-          status_pagamento: "pago",
+          status_pagamento: pag,
           taxa_entrega: taxaEntregaFinal,
           desconto_frete: descontoFreteFinal,
           acrescimo_clima: acrescimoClimaFinal,
@@ -622,8 +688,14 @@ export function AdminNovoPedido() {
           cpf_nota: null,
           endereco: canal === "entrega" ? enderecoAtivo : null,
           distancia_km: distanciaFinal,
+          agendado_para: agendadoPara,
         });
-        toast.success(`Pedido #${resultado.sequencia_pedido} criado (pago)`);
+        const horaTxt = agendadoPara
+          ? ` · ${canal === "retirada" ? "retirada" : "entrega"} ${rotuloSlot(agendadoPara)}`
+          : "";
+        toast.success(
+          `Pedido #${resultado.sequencia_pedido} criado${horaTxt}`,
+        );
         navigate("/admin/pedidos");
         return;
       }
@@ -666,7 +738,7 @@ export function AdminNovoPedido() {
   return (
     <AdminPageShell
       title="Novo pedido"
-      description="Crie pedidos de delivery, retirada, balcão ou mesa (já pagos)."
+      description="Delivery, retirada, balcão ou mesa — com os mesmos campos do pedido (cliente, endereço, horário, pagamento)."
       footer={
         <>
           <Button
@@ -678,7 +750,7 @@ export function AdminNovoPedido() {
           </Button>
           <Button
             className="h-11 bg-cookie-primary hover:bg-cookie-primary-hover font-bold"
-            disabled={enviando}
+            disabled={enviando || (ehDeliveryCanal && !agendamentoOk)}
             onClick={() => void finalizar()}
           >
             {enviando ? (
@@ -698,7 +770,7 @@ export function AdminNovoPedido() {
     >
       <section className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-4 space-y-3">
         <h2 className="font-bold text-sm uppercase tracking-wider text-gray-500">
-          Canal
+          Modalidade
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {(
@@ -742,19 +814,23 @@ export function AdminNovoPedido() {
           </div>
         )}
         {canal === "mesa" && (
-          <select
-            className="w-full h-11 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3"
-            value={mesaId}
-            onChange={(e) => setMesaId(e.target.value)}
-          >
-            <option value="">Selecione a mesa</option>
-            {mesas.map((m) => (
-              <option key={m.id} value={m.id}>
-                Mesa {m.numero}
-                {m.apelido ? ` — ${m.apelido}` : ""}
-              </option>
-            ))}
-          </select>
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-mesa">Mesa</Label>
+            <select
+              id="admin-mesa"
+              className="w-full h-11 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3"
+              value={mesaId}
+              onChange={(e) => setMesaId(e.target.value)}
+            >
+              <option value="">Selecione a mesa</option>
+              {mesas.map((m) => (
+                <option key={m.id} value={m.id}>
+                  Mesa {m.numero}
+                  {m.apelido ? ` — ${m.apelido}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
       </section>
 
@@ -762,28 +838,141 @@ export function AdminNovoPedido() {
         <h2 className="font-bold text-sm uppercase tracking-wider text-gray-500">
           Cliente
         </h2>
-        <div className="grid md:grid-cols-[1fr_auto] gap-2">
-          <Input
-            placeholder="Celular com DDD"
-            value={telefone}
-            onChange={(e) => setTelefone(formatarTelefoneBr(e.target.value))}
-            inputMode="tel"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={buscandoCliente}
-            onClick={() => void buscarCliente()}
-          >
-            {buscandoCliente ? "Buscando…" : "Buscar"}
-          </Button>
+        <div className="space-y-1.5">
+          <Label htmlFor="admin-tel">
+            Celular{ehDeliveryCanal ? " *" : ""}
+          </Label>
+          <div className="grid md:grid-cols-[1fr_auto] gap-2">
+            <Input
+              id="admin-tel"
+              placeholder="(48) 99999-9999"
+              value={telefone}
+              onChange={(e) => setTelefone(formatarTelefoneBr(e.target.value))}
+              inputMode="tel"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={buscandoCliente}
+              onClick={() => void buscarCliente()}
+            >
+              {buscandoCliente ? "Buscando…" : "Buscar"}
+            </Button>
+          </div>
         </div>
-        <Input
-          placeholder="Nome do cliente"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-        />
+        <div className="space-y-1.5">
+          <Label htmlFor="admin-nome">Nome *</Label>
+          <Input
+            id="admin-nome"
+            placeholder="Nome do cliente"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+          />
+        </div>
       </section>
+
+      {ehDeliveryCanal && (
+        <section className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <Clock
+              size={18}
+              className="mt-0.5 shrink-0 text-cookie-primary"
+            />
+            <div className="min-w-0 flex-1">
+              <h2 className="font-bold text-sm uppercase tracking-wider text-gray-500">
+                {canal === "retirada"
+                  ? "Horário de retirada"
+                  : "Horário de entrega"}
+              </h2>
+              {!lojaAberta ? (
+                <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                  {statusLoja?.motivo || "Loja fechada no momento."} Escolha um
+                  horário de hoje.
+                </p>
+              ) : (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  O quanto antes, ou escolha um horário (agendado fica em Novos
+                  até 30 min antes).
+                </p>
+              )}
+            </div>
+          </div>
+
+          {!abreHoje || slotsHoje.length === 0 ? (
+            <p className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">
+              {motivoSemSlots || "Não há horários disponíveis para hoje."}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {lojaAberta && (
+                <button
+                  type="button"
+                  onClick={() => setAgendadoPara(null)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                    agendadoPara == null
+                      ? "border-cookie-primary bg-cookie-primary text-white"
+                      : "border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  O quanto antes
+                </button>
+              )}
+              {slotsHoje.map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => setAgendadoPara(slot)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                    agendadoPara === slot
+                      ? "border-cookie-primary bg-cookie-primary text-white"
+                      : "border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  {rotuloSlot(slot)}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {ehDeliveryCanal && (
+        <section className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-4 space-y-3">
+          <h2 className="font-bold text-sm uppercase tracking-wider text-gray-500">
+            Pagamento
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setStatusPagamento("pago")}
+              className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+                statusPagamento === "pago"
+                  ? "border-cookie-primary bg-cookie-primary/10 text-cookie-primary"
+                  : "border-gray-200 dark:border-gray-700"
+              }`}
+            >
+              Já pago
+            </button>
+            {canal === "retirada" && (
+              <button
+                type="button"
+                onClick={() => setStatusPagamento("na_loja")}
+                className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+                  statusPagamento === "na_loja"
+                    ? "border-cookie-primary bg-cookie-primary/10 text-cookie-primary"
+                    : "border-gray-200 dark:border-gray-700"
+                }`}
+              >
+                Pagar na loja
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Pedidos do admin entram no KDS já liberados para impressão (sem
+            checkout online).
+          </p>
+        </section>
+      )}
 
       {canal === "entrega" && (
         <section className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-4 space-y-3">
@@ -879,6 +1068,13 @@ export function AdminNovoPedido() {
                 value={formEnd.complemento}
                 onChange={(e) =>
                   setFormEnd((f) => ({ ...f, complemento: e.target.value }))
+                }
+              />
+              <Input
+                placeholder="Ponto de referência"
+                value={formEnd.referencia}
+                onChange={(e) =>
+                  setFormEnd((f) => ({ ...f, referencia: e.target.value }))
                 }
               />
               <Button
@@ -1050,8 +1246,32 @@ export function AdminNovoPedido() {
                 <span>R$ {taxaFrete.toFixed(2).replace(".", ",")}</span>
               </div>
             )}
+            {ehDeliveryCanal && (
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>
+                  {canal === "retirada" ? "Retirada" : "Entrega"}
+                </span>
+                <span>
+                  {agendadoPara
+                    ? rotuloSlot(agendadoPara)
+                    : lojaAberta
+                      ? "O quanto antes"
+                      : "—"}
+                </span>
+              </div>
+            )}
+            {ehDeliveryCanal && (
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Pagamento</span>
+                <span>
+                  {canal === "retirada" && statusPagamento === "na_loja"
+                    ? "Na loja"
+                    : "Já pago"}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between font-black text-base">
-              <span>Total (pago)</span>
+              <span>Total</span>
               <span>R$ {total.toFixed(2).replace(".", ",")}</span>
             </div>
           </div>

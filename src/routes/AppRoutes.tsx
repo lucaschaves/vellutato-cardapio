@@ -83,7 +83,7 @@ function RedirecionarDeliveryLegado() {
 }
 
 const RotaProtegida = () => {
-  const { sessao, carregando } = useAuth();
+  const { sessao, carregando, ehAdmin } = useAuth();
 
   if (carregando) {
     return (
@@ -98,6 +98,10 @@ const RotaProtegida = () => {
       "[AVISO DE SEGURANÇA] Tentativa de acesso bloqueada. Redirecionando para login.",
     );
     return <Navigate to="/login" replace />;
+  }
+
+  if (!ehAdmin) {
+    return <Navigate to="/" replace />;
   }
 
   return <AdminLayout />;

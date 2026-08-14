@@ -1,12 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
+import { ehAnonOuAdmin, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 /** 1x1 PNG — OpenAPI do Asaas marca imageBase64 como required nos items */
 const ITEM_IMAGE_B64 =
@@ -205,10 +201,20 @@ function mensagemAmigavelAsaas(mensagens: string[], status?: number): string {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return respostaOpcoes(req);
   }
 
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsBrowser(req), "Content-Type": "application/json" },
+    });
+
   try {
+    if (!ehAnonOuAdmin(req)) {
+      return json({ erro: "Não autorizado" }, 401);
+    }
+
     const bodyIn = await req.json();
     const segredos = await lerSegredos([
       "ASAAS_API_KEY",
@@ -223,10 +229,21 @@ Deno.serve(async (req) => {
       (asaasEnv === "production"
         ? "https://api.asaas.com/v3"
         : "https://api-sandbox.asaas.com/v3");
+    const siteUrlEnv =
+      (segredos.SITE_URL || "https://vellutatocookies.com.br").replace(
+        /\/$/,
+        "",
+      );
+    const originReq = (req.headers.get("Origin") || "").replace(/\/$/, "");
+    const bodySite =
+      typeof bodyIn?.site_url === "string"
+        ? bodyIn.site_url.replace(/\/$/, "")
+        : "";
     const siteUrlRaw =
-      (typeof bodyIn?.site_url === "string" && bodyIn.site_url) ||
-      segredos.SITE_URL ||
-      "http://localhost:5173";
+      originReq.startsWith("http://localhost") ||
+      originReq.startsWith("http://127.0.0.1")
+        ? bodySite || originReq || siteUrlEnv
+        : siteUrlEnv;
     const siteUrl = String(siteUrlRaw).replace(/\/$/, "");
     const isSandbox = asaasBase.includes("sandbox");
     const bridgeBase = `${Deno.env.get("SUPABASE_URL")}/functions/v1/asaas-callback`;
@@ -246,7 +263,9 @@ Deno.serve(async (req) => {
     }
 
     const pedido_id = bodyIn?.pedido_id;
-    if (!pedido_id) return json({ erro: "pedido_id obrigatório" }, 400);
+    if (!uuidValido(pedido_id)) {
+      return json({ erro: "pedido_id inválido" }, 400);
+    }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -257,7 +276,7 @@ Deno.serve(async (req) => {
       .from("pedidos")
       .select(
         `
-        id, sequencia_pedido, total, valor_total, status_pagamento,
+        id, sequencia_pedido, total, valor_total, status_pagamento, origem,
         cliente_nome, cliente_celular, cpf_nota, asaas_checkout_id, cliente_id,
         endereco_json, modalidade,
         clientes ( email )
@@ -272,6 +291,15 @@ Deno.serve(async (req) => {
 
     if (pedido.status_pagamento !== "aguardando") {
       return json({ erro: "Pedido não está aguardando pagamento" }, 400);
+    }
+    if (pedido.origem && pedido.origem !== "delivery") {
+      return json({ erro: "Checkout só é permitido para pedidos delivery" }, 400);
+    }
+    const clienteBody = bodyIn?.cliente_id;
+    if (clienteBody && uuidValido(clienteBody) && pedido.cliente_id) {
+      if (String(clienteBody) !== String(pedido.cliente_id)) {
+        return json({ erro: "Pedido não pertence a este cliente" }, 403);
+      }
     }
 
     const hostCheckout = isSandbox ? "https://sandbox.asaas.com" : "https://asaas.com";
@@ -528,10 +556,3 @@ Deno.serve(async (req) => {
     return json({ erro: String(e) }, 500);
   }
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}

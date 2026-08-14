@@ -3,6 +3,7 @@ import { Loader2, Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogoMarca } from "../components/LogoMarca";
+import { usuarioEhAdmin } from "../lib/adminAuth";
 import { supabase } from "../lib/supabase";
 
 // Componentes do Shadcn/ui (Sem o use-toast antigo)
@@ -39,12 +40,17 @@ export function Login() {
 
     try {
       setCarregando(true);
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password: senha,
       });
 
       if (error) throw new Error(error.message);
+
+      if (!usuarioEhAdmin(data.user)) {
+        await supabase.auth.signOut();
+        throw new Error("Esta conta não tem acesso ao painel.");
+      }
 
       console.info(
         "[SUCESSO] Autenticação validada. Iniciando sessão administrativa.",

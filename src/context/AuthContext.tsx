@@ -1,5 +1,6 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useState } from "react";
+import { sessaoEhAdmin } from "../lib/adminAuth";
 import { supabase } from "../lib/supabase";
 import {
   telefoneDigitosCompleto,
@@ -10,6 +11,7 @@ interface AuthContextType {
   sessao: Session | null;
   usuario: User | null;
   carregando: boolean;
+  ehAdmin: boolean;
   sair: () => Promise<void>;
   entrarComGoogle: (redirectTo?: string) => Promise<void>;
   enviarOtpSms: (telefoneBr: string) => Promise<void>;
@@ -23,14 +25,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (error) {
         console.error(
           "[ERRO - AUTENTICAÇÃO] Falha ao recuperar sessão ativa:",
           error.message,
         );
       }
-      setSessao(session);
+      let atual = session;
+      if (atual?.user && !sessaoEhAdmin(atual)) {
+        const { data } = await supabase.auth.refreshSession();
+        if (data.session) atual = data.session;
+      }
+      setSessao(atual);
       setCarregando(false);
     });
 
@@ -111,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         sessao,
         usuario: sessao?.user ?? null,
         carregando,
+        ehAdmin: sessaoEhAdmin(sessao),
         sair,
         entrarComGoogle,
         enviarOtpSms,

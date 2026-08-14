@@ -124,22 +124,13 @@ export async function ativarPushPedido(opts: {
     return { ok: false, motivo: "Falha ao obter dados da subscription." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { error } = await supabase.from("push_subscriptions").upsert(
-    {
-      endpoint: json.endpoint,
-      p256dh: json.keys.p256dh,
-      auth: json.keys.auth,
-      pedido_id: opts.pedidoId || null,
-      cliente_id: opts.clienteId || null,
-      user_id: user?.id || null,
-      atualizado_em: new Date().toISOString(),
-    },
-    { onConflict: "endpoint" },
-  );
+  const { error } = await supabase.rpc("salvar_push_subscription", {
+    p_endpoint: json.endpoint,
+    p_p256dh: json.keys.p256dh,
+    p_auth: json.keys.auth,
+    p_pedido_id: opts.pedidoId || null,
+    p_cliente_id: opts.clienteId || null,
+  });
 
   if (error) {
     console.error("[PUSH] salvar subscription:", error.message);

@@ -100,12 +100,9 @@ export async function cancelarPedidoDeliveryAguardando(
 /** Alinhado ao mínimo do Asaas (`minutesToExpire` ≥ 10). */
 export const MINUTOS_EXPIRA_PAGAMENTO_DELIVERY = 10;
 
-export async function cancelarPedidosDeliveryExpirados(
-  minutos = MINUTOS_EXPIRA_PAGAMENTO_DELIVERY,
-): Promise<number> {
+export async function cancelarPedidosDeliveryExpirados(): Promise<number> {
   const { data, error } = await supabase.rpc(
-    "cancelar_pedidos_delivery_sem_pagamento",
-    { p_minutos: minutos },
+    "expirar_pedidos_delivery_padrao",
   );
   if (error) {
     console.error("[DELIVERY] expirar pedidos", error.message);
@@ -116,7 +113,12 @@ export async function cancelarPedidosDeliveryExpirados(
 
 export async function iniciarCheckoutAsaas(
   pedidoId: string,
-  opts?: { email?: string | null; cpf?: string | null; forcarNovo?: boolean },
+  opts?: {
+    email?: string | null;
+    cpf?: string | null;
+    forcarNovo?: boolean;
+    clienteId?: string | null;
+  },
 ): Promise<{
   checkout_id: string;
   checkout_url: string;
@@ -126,6 +128,7 @@ export async function iniciarCheckoutAsaas(
     {
       body: {
         pedido_id: pedidoId,
+        cliente_id: opts?.clienteId || undefined,
         site_url: window.location.origin,
         email: opts?.email || undefined,
         cpf: opts?.cpf?.replace(/\D/g, "") || undefined,

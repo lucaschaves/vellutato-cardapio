@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Gift, Minus, Plus } from "lucide-react";
+import { Check, Gift, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -275,14 +275,6 @@ export function DeliveryItem() {
           tamanho="md"
           className="absolute top-3 right-3 z-10"
         />
-        <button
-          type="button"
-          onClick={voltar}
-          className="absolute top-3 left-3 h-10 w-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-zinc-800 active:scale-95"
-          aria-label="Voltar"
-        >
-          <ArrowLeft size={20} />
-        </button>
       </div>
 
       <div className="mt-4 space-y-1">

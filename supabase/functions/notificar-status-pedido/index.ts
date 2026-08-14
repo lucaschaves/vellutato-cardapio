@@ -5,13 +5,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
+import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
+import { ehAdminRequest, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 const FRASE_STATUS: Record<string, string> = {
   pendente: "Recebemos o seu pedido e já vamos preparar! 🍪",
@@ -31,10 +27,10 @@ const LABEL: Record<string, string> = {
   cancelado: "Cancelado",
 };
 
-function json(body: unknown, status = 200) {
+function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsBrowser(req), "Content-Type": "application/json" },
   });
 }
 
@@ -46,13 +42,18 @@ function telefoneDigitos(celular: string | null | undefined): string | null {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return respostaOpcoes(req);
   }
 
   try {
+    if (!ehAdminRequest(req)) {
+      return json(req, { erro: "Não autorizado" }, 401);
+    }
     const body = await req.json();
-    const pedidoId = String(body?.pedido_id || "");
-    if (!pedidoId) return json({ erro: "pedido_id obrigatório" }, 400);
+    const pedidoId = body?.pedido_id;
+    if (!uuidValido(pedidoId)) {
+      return json(req, { erro: "pedido_id inválido" }, 400);
+    }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -68,7 +69,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (error || !pedido) {
-      return json({ erro: "Pedido não encontrado" }, 404);
+      return json(req, { erro: "Pedido não encontrado" }, 404);
     }
 
     const status = String(body?.status || pedido.status);
@@ -206,10 +207,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, ...resultados });
+    return json(req, { ok: true, ...resultados });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[NOTIFICAR]", msg);
-    return json({ erro: msg }, 500);
+    return json(req, { erro: msg }, 500);
   }
 });

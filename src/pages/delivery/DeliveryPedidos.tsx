@@ -33,6 +33,7 @@ interface PedidoLista {
   total: number | null;
   criado_em: string;
   tracking_url: string | null;
+  cliente_id?: string | null;
   pedido_itens: ItemPedidoDelivery[];
 }
 
@@ -80,7 +81,8 @@ function CardPedido({
     if (pagando) return;
     setPagando(true);
     try {
-      const email = lerGuestDeliveryLocal()?.email?.trim() || null;
+      const guest = lerGuestDeliveryLocal();
+      const email = guest?.email?.trim();
       if (!email || !email.includes("@")) {
         toast.error(
           "Abra o pedido e use Pagar agora — precisamos do e-mail do checkout.",
@@ -92,6 +94,7 @@ function CardPedido({
       const checkout = await iniciarCheckoutAsaas(p.id, {
         email,
         forcarNovo: true,
+        clienteId: guest?.clienteId || p.cliente_id,
       });
       window.location.assign(checkout.checkout_url);
     } catch (e: unknown) {
@@ -304,7 +307,7 @@ export function DeliveryPedidos() {
           .select(
             `
             id, sequencia_pedido, status, modalidade, total, criado_em, tracking_url,
-            status_pagamento,
+            status_pagamento, cliente_id,
             pedido_itens (
               id, produto_id, quantidade, preco_unitario, observacoes, modo_consumo,
               produtos (

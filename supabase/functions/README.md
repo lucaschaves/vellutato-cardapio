@@ -22,7 +22,7 @@ npx supabase secrets set --project-ref uhaapfxdxivmwhvnuyie \
 | `ASAAS_API_URL` | `https://api-sandbox.asaas.com/v3` |
 | `ASAAS_ENV` | `sandbox` (ou `production`) |
 | `ASAAS_WEBHOOK_TOKEN` | Token que você define; mesmo valor no header do webhook |
-| `SITE_URL` | URL pública do front em **https** (produção). Em localhost o checkout usa o bridge `asaas-callback`. |
+| `SITE_URL` | Produção: `https://vellutatocookies.com.br` (sem barra no fim). Em localhost o checkout usa o bridge `asaas-callback`. |
 
 **Nunca** use `VITE_ASAAS_*` — a chave iria para o browser.
 
@@ -32,6 +32,8 @@ npx supabase secrets set --project-ref uhaapfxdxivmwhvnuyie \
 - **Token de autenticação** no Asaas: o mesmo valor de `ASAAS_WEBHOOK_TOKEN` (vai no header `asaas-access-token`)
 - Eventos: `CHECKOUT_PAID`, `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`
 - A function `webhook-asaas` está com `verify_jwt = false` (obrigatório — Asaas não manda JWT do Supabase)
+- Sem `ASAAS_WEBHOOK_TOKEN` configurado a function responde **401** (fail-closed)
+- Browser: CORS só para o site e localhost. Functions `criar-checkout-asaas`, `confirmar-pagamento-asaas`, `notificar-status-pedido` e `voa-enviar-pedido` usam `verify_jwt = true` (admin ou anon, conforme o caso)
 
 Se a situação ficar **Interrompido**:
 1. Confira se o token do painel = `ASAAS_WEBHOOK_TOKEN`

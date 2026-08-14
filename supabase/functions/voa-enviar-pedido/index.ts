@@ -1,19 +1,24 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
+import { ehAdminRequest, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return respostaOpcoes(req);
   }
 
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsBrowser(req), "Content-Type": "application/json" },
+    });
+
   try {
+    if (!ehAdminRequest(req)) {
+      return json({ erro: "Não autorizado" }, 401);
+    }
     const segredos = await lerSegredos(["VOA_KEY", "VOA_TOKEN", "VOA_API_URL"]);
     const voaKey = segredos.VOA_KEY;
     const voaToken = segredos.VOA_TOKEN;
@@ -23,11 +28,8 @@ Deno.serve(async (req) => {
       return json({ erro: "VOA_KEY/VOA_TOKEN não configurados" }, 500);
     }
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ erro: "Não autorizado" }, 401);
-
     const { pedido_id } = await req.json();
-    if (!pedido_id) return json({ erro: "pedido_id obrigatório" }, 400);
+    if (!uuidValido(pedido_id)) return json({ erro: "pedido_id inválido" }, 400);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -208,10 +210,3 @@ Deno.serve(async (req) => {
     return json({ erro: String(e) }, 500);
   }
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}

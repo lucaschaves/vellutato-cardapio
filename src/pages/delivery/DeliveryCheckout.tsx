@@ -270,7 +270,7 @@ export function DeliveryCheckout() {
       searchParams.delete("pedido");
       setSearchParams(searchParams, { replace: true });
     }
-    void cancelarPedidosDeliveryExpirados(30);
+    void cancelarPedidosDeliveryExpirados();
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {
@@ -1121,6 +1121,7 @@ export function DeliveryCheckout() {
       const checkout = await iniciarCheckoutAsaas(resultado.pedido_id, {
         email: emailPagamento,
         cpf: cpfNota,
+        clienteId,
       });
 
       // Sacola só limpa após pagamento confirmado (página do pedido / webhook).

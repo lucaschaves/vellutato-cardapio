@@ -74,7 +74,7 @@ export function DeliveryPedido() {
   const syncFeitoRef = useRef(false);
 
   useEffect(() => {
-    void cancelarPedidosDeliveryExpirados(30);
+    void cancelarPedidosDeliveryExpirados();
     void buscarDeliveryConfig().then((cfg) => {
       setWhatsappNumero(cfg.whatsapp_numero);
       setTempoEstimadoMin(cfg.tempo_estimado_min ?? null);
@@ -270,6 +270,7 @@ export function DeliveryPedido() {
       const checkout = await iniciarCheckoutAsaas(pedido.id, {
         email,
         forcarNovo: true,
+        clienteId: pedido.cliente_id,
       });
       window.location.assign(checkout.checkout_url);
     } catch (e: unknown) {

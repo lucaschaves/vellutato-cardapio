@@ -2,15 +2,16 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { lerSegredo } from "../_shared/segredos.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, asaas-access-token",
-};
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { status: 200 });
   }
 
   try {
@@ -19,7 +20,7 @@ Deno.serve(async (req) => {
       req.headers.get("asaas-access-token") ||
       new URL(req.url).searchParams.get("token");
 
-    if (tokenEsperado && tokenRecebido !== tokenEsperado) {
+    if (!tokenEsperado || tokenRecebido !== tokenEsperado) {
       return json({ erro: "Não autorizado" }, 401);
     }
 
@@ -101,10 +102,3 @@ Deno.serve(async (req) => {
     return json({ erro: String(e) }, 500);
   }
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}

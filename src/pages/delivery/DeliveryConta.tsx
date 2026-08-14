@@ -1,6 +1,5 @@
 import { Copy, MapPin, Ticket, Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -40,8 +39,9 @@ import {
   telefoneCelularValido,
 } from "../../lib/telefone";
 
+const EXTRATO_INICIAL = 5;
+
 export function DeliveryConta() {
-  const navigate = useNavigate();
   const { cliente: clienteAuth, carregando: authLoading, sair } =
     useDeliveryCliente();
 
@@ -65,6 +65,7 @@ export function DeliveryConta() {
   const [cupons, setCupons] = useState<CupomCliente[]>([]);
   const [resgateCfg, setResgateCfg] = useState({ pontos: 100, valor: 5 });
   const [resgatando, setResgatando] = useState(false);
+  const [extratoLimite, setExtratoLimite] = useState(EXTRATO_INICIAL);
   const [formEnd, setFormEnd] = useState({
     cep: "",
     rua: "",
@@ -135,6 +136,7 @@ export function DeliveryConta() {
       setEnderecos(e);
       setSaldo(s);
       setExtrato(x as typeof extrato);
+      setExtratoLimite(EXTRATO_INICIAL);
       setResgateCfg({
         pontos: cfg.resgate_pontos,
         valor: cfg.resgate_valor_reais,
@@ -301,7 +303,7 @@ export function DeliveryConta() {
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-black">Minha conta</h1>
           <p className="text-sm text-zinc-500">
-            Informe seu telefone para ver endereços, pontos e pedidos.
+            Informe seu telefone para ver endereços e pontos.
           </p>
         </div>
 
@@ -723,32 +725,53 @@ export function DeliveryConta() {
             {extrato.length === 0 ? (
               <p className="text-sm text-zinc-500">Sem movimentos ainda.</p>
             ) : (
-              extrato.slice(0, 20).map((x) => (
-                <div
-                  key={x.id}
-                  className="flex justify-between text-sm border-b border-zinc-50 py-1"
-                >
-                  <span className="text-zinc-600">
-                    {x.descricao || x.tipo}
-                  </span>
-                  <span
-                    className={
-                      x.pontos >= 0 ? "text-emerald-600" : "text-cookie-primary"
+              <>
+                {extrato.slice(0, extratoLimite).map((x) => (
+                  <div
+                    key={x.id}
+                    className="flex justify-between text-sm border-b border-zinc-50 py-1"
+                  >
+                    <span className="text-zinc-600">
+                      {x.descricao || x.tipo}
+                    </span>
+                    <span
+                      className={
+                        x.pontos >= 0
+                          ? "text-emerald-600"
+                          : "text-cookie-primary"
+                      }
+                    >
+                      {x.pontos >= 0 ? "+" : ""}
+                      {x.pontos}
+                    </span>
+                  </div>
+                ))}
+                {extrato.length > extratoLimite && (
+                  <button
+                    type="button"
+                    className="w-full pt-1 text-center text-sm font-semibold text-cookie-primary"
+                    onClick={() =>
+                      setExtratoLimite((n) => n + EXTRATO_INICIAL)
                     }
                   >
-                    {x.pontos >= 0 ? "+" : ""}
-                    {x.pontos}
-                  </span>
-                </div>
-              ))
+                    Ler mais
+                  </button>
+                )}
+                {extratoLimite > EXTRATO_INICIAL &&
+                  extratoLimite >= extrato.length && (
+                    <button
+                      type="button"
+                      className="w-full pt-1 text-center text-sm font-semibold text-zinc-500"
+                      onClick={() => setExtratoLimite(EXTRATO_INICIAL)}
+                    >
+                      Ver menos
+                    </button>
+                  )}
+              </>
             )}
           </div>
         </div>
       )}
-
-      <Button variant="outline" className="w-full" onClick={() => navigate("/pedidos")}>
-        Meus pedidos
-      </Button>
     </div>
   );
 }
