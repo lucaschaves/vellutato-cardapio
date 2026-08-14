@@ -4,6 +4,7 @@ import {
   Bike,
   Calculator,
   ChefHat,
+  ClipboardList,
   Clock,
   FolderTree,
   GitBranch,
@@ -91,6 +92,11 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
     icone: Warehouse,
     itens: [
       { to: "/admin/insumos", rotulo: "Insumos", icone: Warehouse },
+      {
+        to: "/admin/fichas-tecnicas",
+        rotulo: "Fichas técnicas",
+        icone: ClipboardList,
+      },
       {
         to: "/admin/lista-compras",
         rotulo: "Lista de compras",

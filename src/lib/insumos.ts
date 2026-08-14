@@ -217,6 +217,46 @@ export function formatarPrecoMoeda(valor: number | null | undefined): string {
 /** @deprecated use formatarPrecoMoeda */
 export const formatarPrecoInsumo = formatarPrecoMoeda;
 
+/** Quantidade em estoque base (kg/L/un) equivalente a N embalagens. */
+export function compraParaEstoqueBase(
+  qtdCompra: number,
+  insumo: Pick<InsumoConversao, "tipo" | "conteudo_valor" | "conteudo_unidade">,
+): number | null {
+  if (insumo.tipo === "contagem") {
+    return Number.isFinite(qtdCompra) ? Math.round(qtdCompra * 10000) / 10000 : null;
+  }
+  const porUn = basePrecoPorUnidade(insumo);
+  if (porUn == null) return null;
+  return Math.round(qtdCompra * porUn * 10000) / 10000;
+}
+
+/** Embalagens equivalentes a uma quantidade em estoque base. */
+export function estoqueBaseParaCompra(
+  qtdBase: number,
+  insumo: Pick<InsumoConversao, "tipo" | "conteudo_valor" | "conteudo_unidade">,
+): number | null {
+  if (insumo.tipo === "contagem") {
+    return Number.isFinite(qtdBase) ? Math.round(qtdBase * 10000) / 10000 : null;
+  }
+  const porUn = basePrecoPorUnidade(insumo);
+  if (porUn == null || porUn <= 0) return null;
+  return Math.round((qtdBase / porUn) * 10000) / 10000;
+}
+
+export function formatarQtdEstoqueBase(qtd: number, tipo: TipoInsumo): string {
+  if (tipo === "contagem") return `${formatarQtd(qtd)} un`;
+  if (tipo === "peso") {
+    if (Math.abs(qtd) > 0 && Math.abs(qtd) < 1) {
+      return `${formatarQtd(qtd * 1000)} g`;
+    }
+    return `${formatarQtd(qtd)} kg`;
+  }
+  if (Math.abs(qtd) > 0 && Math.abs(qtd) < 1) {
+    return `${formatarQtd(qtd * 1000)} ml`;
+  }
+  return `${formatarQtd(qtd)} L`;
+}
+
 export function formatarPrecoBaseInsumo(
   insumo: Pick<Insumo, "tipo" | "preco_atual">,
 ): string {
@@ -224,6 +264,7 @@ export function formatarPrecoBaseInsumo(
   return `${formatarPrecoMoeda(insumo.preco_atual)} / ${unidadePrecoBase(insumo.tipo)}`;
 }
 
+/** Estoque em kg/L/un, com equivalente em embalagens de compra. */
 export function formatarEstoqueInsumo(
   insumo: Pick<
     Insumo,
@@ -234,12 +275,10 @@ export function formatarEstoqueInsumo(
     | "conteudo_unidade"
   >,
 ): string {
-  const un = `${formatarQtd(insumo.quantidade_atual)} ${rotuloUnidade(
-    insumo.unidade,
-    insumo.quantidade_atual,
-  )}`;
-  const eq = formatarEquivalenteBase(insumo.quantidade_atual, insumo);
-  return eq ? `${un} (${eq})` : un;
+  const base = formatarQtdEstoqueBase(insumo.quantidade_atual, insumo.tipo);
+  const compra = estoqueBaseParaCompra(insumo.quantidade_atual, insumo);
+  if (insumo.tipo === "contagem" || compra == null) return base;
+  return `${base} (≈ ${formatarQtd(compra)} ${rotuloUnidade(insumo.unidade, compra)})`;
 }
 
 export function insumoAbaixoDoMinimo(insumo: {

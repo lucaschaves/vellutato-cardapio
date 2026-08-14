@@ -34,6 +34,8 @@ import { BemVindo } from "@/pages/client/BemVindo";
 import { AdminLayout } from "../components/AdminLayout";
 import { GerenciamentoCatalogo } from "../pages/admin/GerenciamentoCatalogo";
 import { GerenciamentoEstoque } from "../pages/admin/GerenciamentoEstoque";
+import { GerenciamentoFichasTecnicas } from "../pages/admin/GerenciamentoFichasTecnicas";
+import { EditorFichaTecnica } from "../pages/admin/EditorFichaTecnica";
 import { GerenciamentoInsumos } from "../pages/admin/GerenciamentoInsumos";
 import { ListaCompras } from "../pages/admin/ListaCompras";
 import { PainelPedidos } from "../pages/admin/PainelPedidos";
@@ -171,6 +173,9 @@ const router = createBrowserRouter([
       { path: "/admin/mesas", element: <GerenciamentoMesas /> },
       { path: "/admin/estoque", element: <GerenciamentoEstoque /> },
       { path: "/admin/insumos", element: <GerenciamentoInsumos /> },
+      { path: "/admin/fichas-tecnicas", element: <GerenciamentoFichasTecnicas /> },
+      { path: "/admin/fichas-tecnicas/nova", element: <EditorFichaTecnica /> },
+      { path: "/admin/fichas-tecnicas/:id", element: <EditorFichaTecnica /> },
       { path: "/admin/lista-compras", element: <ListaCompras /> },
       { path: "/admin/adicionais", element: <GerenciamentoAdicionais /> },
       { path: "/admin/combos", element: <GerenciamentoCombos /> },

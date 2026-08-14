@@ -1,14 +1,14 @@
 {
   "name": "cardapio-digital",
   "private": true,
-  "version": "1.0.29",
+  "version": "1.0.30",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "gen-types": "npx supabase gen types typescript --schema public > src/types/supabase.ts --project-id ",
+    "gen-types": "node -e \"require('fs').writeFileSync('src/types/supabase.ts', require('child_process').execSync('npx supabase gen types typescript --project-id uhaapfxdxivmwhvnuyie --schema public',{encoding:'utf8',maxBuffer:2e7}))\"",
     "test": "vitest run",
     "test:watch": "vitest"
   },

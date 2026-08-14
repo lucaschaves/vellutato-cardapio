@@ -34,6 +34,7 @@ import {
   type UnidadeInsumo,
 } from "../../lib/insumos";
 import { supabase } from "../../lib/supabase";
+import { recalcularCustosFichas } from "../../lib/fichasCusto";
 import { cn } from "../../lib/utils";
 
 type InsumoResumo = Pick<
@@ -322,6 +323,12 @@ export function ListaCompras() {
       toast.success(
         `${data ?? itens.filter((i) => i.marcado).length} item(ns) entraram no estoque.`,
       );
+      try {
+        const n = await recalcularCustosFichas();
+        if (n > 0) toast.message(`${n} ficha(s) com custo recalculado.`);
+      } catch {
+        /* lista já finalizada */
+      }
       await carregar();
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);

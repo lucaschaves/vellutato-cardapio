@@ -4,175 +4,83 @@ globs:
 alwaysApply: false
 ---
 
-# Fichas técnicas (planejado — implementar depois)
+# Fichas técnicas (em implementação)
 
-**Status:** só planejamento; nada implementado ainda.  
 **Nome na UI:** Fichas técnicas (evitar “receita” = faturamento do Dashboard).
 
-## Contexto atual (já existe)
-
-- **Insumos** (`insumos`, preços R$/kg|L|un, conversões em `src/lib/insumos.ts`, movimentos, lista de compras).
-- **Estoque de cardápio** (`produtos.controlar_estoque` / `quantidade_estoque`) — independente dos insumos.
-- **Vendas** (`pedidos` + `pedido_itens` + `pedido_item_adicionais`); status venda concluída em `pedidosAdmin.ts`.
-- **Modos:** `modo_consumo` loja|levar; `origem` mesa|balcao|totem|delivery; `modalidade` entrega|retirada.
-- **Não existe** ficha técnica, vínculo produto↔insumo, CMV/margem, nem baixa de insumos no pedido.
-
-## Decisões fechadas
+## Decisões fechadas (13/08/2026)
 
 1. Fichas **compartilháveis** (N produtos / N adicionais usam a mesma ficha).
 2. **Produto final** = composição única no cardápio (referencia fichas; não duplica itens).
-3. Três tipos de ficha: **produto** (comida/base) | **adicional** | **embalagem**.
-4. Baixa de insumos **no pedido** (quando o pedido compromete produção/pagamento — alinhar ao estoque de cardápio; não baixar em `aguardando_pagamento`).
-5. Unidades na ficha: **g/kg/ml/L/un** (canônicas), convertendo para estoque do insumo via helpers existentes.
+3. Três tipos de ficha: **produto** | **adicional** | **embalagem**.
+4. Baixa de insumos **no mesmo instante do estoque de cardápio** (entra no KDS; não em `aguardando_pagamento`).
+5. Unidades na ficha: **g/kg/ml/L/un**, convertidas para estoque **base** do insumo (kg/L/un).
 6. Sem ficha → **vende normal**; só não baixa / não calcula CMV daquela camada (aviso no admin).
 7. Mesa / `modo_consumo = loja` → **sem embalagem**.
-8. Mesmo produto + mesmos adicionais podem ter **3 embalagens de item**: viagem | delivery | levar-comer-logo.
-9. Embalagem de pedido (sacola/caixa): escala por **N itens** — `ceil(qtd_itens_embaláveis / N)`.
+8. Mesmo produto + mesmos adicionais: **3 embalagens de item** (viagem | delivery | levar_rapido).
+9. Embalagem de pedido (sacola/caixa): `ceil(qtd_itens_embaláveis / N)`.
+10. Insumo insuficiente → **estoque negativo permitido**; aviso no admin (não bloqueia venda).
+11. **Sub-ficha:** 1 nível (pai → filho; filho só tem insumos). Quantidade do filho = **porções**.
+12. **Combo:** só fichas dos produtos escolhidos (combo em si sem ficha de comida).
+13. **Rendimento:** quantidades = lote; `rendimento` = porções que o lote rende. Custo/baixa = lote ÷ rendimento × qtd vendida.
+14. **Snapshot** do consumo no pedido; cancelamento estorna exatamente o snapshot.
+15. Ficha **teste** pode vincular (custo no admin); **só `ativa` baixa estoque**. Rascunho/arquivada não baixam.
+16. Estoque de insumo em **unidade base** (kg/L/un). Lista de compras continua em **embalagens**; a entrada converte.
+17. 1ª entrega: CRUD + custo/margem + embalagem de pedido + baixa/estorno + projeção + alertas.
 
 ## Modelo conceitual
 
 ```
-Ficha produto (compartilhada)
-Fichas adicionais (via adicional, N:N produto_adicionais)
-Fichas embalagem item: viagem | delivery | levar_rapido (compartilháveis)
-Ficha embalagem pedido: sacola/caixa + capacidade N (config canal)
+Ficha produto (compartilhada; pode incluir 1 nível de sub-ficha em porções)
+Fichas adicionais (via adicional)
+Fichas embalagem item: viagem | delivery | levar_rapido
+Ficha embalagem pedido: sacola/caixa + capacidade N
         ↓
-Produto final (1 por produto do cardápio) = união dessas referências
+Produto final = união dessas referências
 ```
-
-### Custo / “produto final” no admin
-
-- Custo comida = ficha produto.
-- Custo adicional = ficha do adicional (cenários com/sem extras).
-- 3 cenários de embalagem item (viagem / delivery / comer logo).
-- Sacola/caixa = custo de pedido (a cada N itens), não embutir cegamente na margem do item.
-- Margem vs `produtos.preco` (+ adicionais cobrados quando couber).
 
 ### Baixa no pedido
 
 Por cada `pedido_item` × quantidade:
 
-1. Explode ficha **produto** (se houver).
-2. Explode ficha de cada **adicional** do item (se houver).
-3. Resolve perfil de embalagem item e explode (se houver):
+1. Se produto **simples**: explode ficha **produto** (se `ativa`).
+2. Se **combo**: explode ficha produto de cada `pedido_item_combo_escolhas` (não a do combo).
+3. Explode ficha de cada **adicional** do item (se `ativa`).
+4. Perfil de embalagem item (ficha do produto simples **ou** de cada escolha do combo):
    - `modo_consumo = loja` → nenhuma
    - delivery + `modalidade = entrega` → **delivery**
-   - delivery + `modalidade = retirada` → **levar comer logo** (padrão MVP)
+   - delivery + `modalidade = retirada` → **levar_rapido**
    - balcão/totem + `modo_consumo = levar` → **viagem**
-4. Uma vez no pedido: `ceil(soma qtd itens que embalam / N)` × ficha embalagem `escopo = pedido`.
-5. Agregar por `insumo_id` → baixa (`origem = uso`, ref. `pedido_id`).
-6. Cancelamento → estorno espelhado.
+5. Uma vez no pedido: `ceil(soma qtd itens embaláveis / N)` × ficha embalagem `escopo = pedido` (canal delivery/retirada).
+6. Agregar por `insumo_id` → snapshot + baixa (`origem = uso`, `pedido_id`).
+7. Cancelamento → estorno pelo snapshot.
 
-Combos: cada opção escolhida dispara a composição daquele produto.
+## Schema
 
-**MVP balcão:** se precisar distinguir viagem vs comer-logo no balcão, seletor extra depois; regras da tabela bastam no início.
+Ver migration `supabase/migrations/20260814010000_fichas_tecnicas.sql`.
 
-## Schema proposto
+## Fases
 
-### `fichas_tecnicas`
-
-- `id`, `nome`, `descricao?`, `observacao?`
-- `tipo`: `produto` | `adicional` | `embalagem`
-- `status`: `rascunho` | `teste` | `ativa` | `arquivada`
-- `rendimento` numeric default 1
-- Para embalagem: `escopo` `item` | `pedido` (null se não embalagem)
-- `custo_calculado?`, `custo_atualizado_em?`
-- timestamps
-
-Receitas **teste** = `status = teste` / `rascunho`, sem vínculo obrigatório; depois publicar e vincular.
-
-### `ficha_tecnica_itens`
-
-- `ficha_id`, `insumo_id`
-- `quantidade` numeric, `unidade` in (`g`,`kg`,`ml`,`L`,`un`) coerente com `insumos.tipo`
-- `observacao?`
-- unique `(ficha_id, insumo_id)` no MVP
-
-### Vínculos — produto final (`produtos` ou tabela 1:1 `produto_composicao`)
-
-- `ficha_produto_id` → ficha tipo produto (nullable, compartilhada)
-- `ficha_embalagem_viagem_id`
-- `ficha_embalagem_delivery_id`
-- `ficha_embalagem_levar_rapido_id`
-- Validar tipo da ficha no app/trigger
-
-### Adicional
-
-- `adicionais.ficha_id` → ficha tipo adicional (nullable)
-
-### Embalagem de pedido (config)
-
-- Ex.: config loja/canal: `ficha_embalagem_pedido_delivery_id`, `ficha_embalagem_pedido_retirada_id?`
-- `capacidade_por_unidade` = N (itens ou “caixas”)
-- Só aplica quando há embalagem (não mesa / não loja)
-
-### Movimentos
-
-- Estender `insumo_estoque_movimentos` com `pedido_id` nullable (auditoria + estorno).
-- RPC tipo `baixar_insumos_pedido` / integrar nas RPCs `criar_pedido_*` e cancelamento.
-
-## Cálculo de custo (reusar `src/lib/insumos.ts`)
-
-- peso: g/kg → kg × `preco_atual`
-- volume: ml/L → L × `preco_atual`
-- contagem: un × `preco_atual`
-- custo porção = soma / rendimento
-- `preco_atual` null → custo incompleto (alertar)
-
-## Projeção de estoque (fase posterior)
-
-1. Demanda produtos: média diária de `pedido_itens` (pago/entregue), janelas 7/14/30.
-2. Demanda adicionais: taxa real via `pedido_item_adicionais` (não assumir 100%).
-3. Embalagem item conforme mix de canais; embalagem pedido via N.
-4. Explosão → consumo/dia por insumo → dias restantes vs `estoque_minimo` → sugerir **lista de compras**.
-
-## UI admin
-
-Nav grupo **Estoque** → **Fichas técnicas**
-
-| Tela | Função |
-|------|--------|
-| `/admin/fichas-tecnicas` | Biblioteca: filtro tipo/status; “usada por N…” |
-| Editor | Itens + unidade + custo ao vivo; tipo; teste/ativa |
-| Catálogo / produto | Produto final: ficha base + 3 slots embalagem + resumo custo/margem |
-| Adicional | Select ficha adicional |
-| Config | Sacola/caixa: ficha + N por canal |
-| Insumos / projeção | Dias restantes + sugestão compra (fase 3) |
-
-Sem ficha: badge/aviso, venda liberada.
-
-## Fases de entrega
-
-### Fase 1 — Fundação
-- Migration: `fichas_tecnicas`, `ficha_tecnica_itens`, FKs em produtos/adicionais, config N embalagem pedido
-- CRUD admin + fichas teste
-- Custo + margem no produto final
-- Validação unidades vs tipo do insumo
-
-### Fase 2 — Operação no pedido
-- Explosão + baixa/estorno insumos
-- Regras de perfil embalagem + ceil(N)
-- `pedido_id` nos movimentos
+### Fase 1+2 (agora)
+- Estoque insumo em kg/L/un; negativo ok na baixa de pedido
+- CRUD fichas + sub-ficha 1 nível
+- Custo + margem no produto
+- Vínculos produto/adicional + sacola N
+- Baixa/estorno com snapshot
 
 ### Fase 3 — Projeção
-- Consumo histórico + taxa de adicionais
-- Dias de estoque + lista de compras
+- Consumo histórico + taxa de adicionais + dias de estoque + sugestão na lista
 
 ### Fase 4 — Refino
-- Alertas margem / preço desatualizado
-- Seletor viagem vs comer-logo no balcão (se necessário)
-- Produção em lote (baixa insumos ↑ estoque cardápio)
-- Versões de ficha / custo médio ponderado
-- Embalagem pedido com fichas distintas por canal
+- Alertas margem / preço desatualizado (feito)
+- Badge sem ficha / margem baixa no estoque (feito)
+- Excluir ficha (feito)
+- Recálculo de custo ao mudar preço (feito)
+- Seletor viagem vs comer-logo no balcão
+- Produção em lote
+- Versões de ficha / CMV médio
+- Mais de 1 nível de sub-ficha
 
-## Arquivos / pontos de encaixe (quando for implementar)
+## Ao concluir a entrega atual
 
-- Insumos: `src/lib/insumos.ts`, `GerenciamentoInsumos.tsx`, `ListaCompras.tsx`
-- Nav: `src/lib/adminNavegacao.ts`
-- Pedidos: RPCs `criar_pedido_completo` / `criar_pedido_delivery`, `cancelar_pedido_com_estoque`
-- Modos: `src/lib/disponibilidadeProduto.ts`
-- Migrations base: `20260808120000_insumos_lista_compras.sql`, `20260811220000_insumos_generico_conteudo.sql`
-
-## Ao concluir
-
-Remover esta rule `.cursor/rules/handoff-fichas-tecnicas.mdc`.
+Não remover esta rule até a fase 3/4 ou até o módulo estar estável em produção.

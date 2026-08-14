@@ -44,6 +44,16 @@ export function GerenciamentoCatalogo() {
   const [emPromocao, setEmPromocao] = useState(false);
   const [ativo, setAtivo] = useState(true);
   const [tipo, setTipo] = useState<"simples" | "combo">("simples");
+  const [fichaProdutoId, setFichaProdutoId] = useState("");
+  const [fichaEmbViagem, setFichaEmbViagem] = useState("");
+  const [fichaEmbDelivery, setFichaEmbDelivery] = useState("");
+  const [fichaEmbLevar, setFichaEmbLevar] = useState("");
+  const [fichasProduto, setFichasProduto] = useState<
+    Array<{ id: string; nome: string; status: string; custo_calculado: number | null }>
+  >([]);
+  const [fichasEmb, setFichasEmb] = useState<
+    Array<{ id: string; nome: string; status: string; custo_calculado: number | null }>
+  >([]);
   const [disponibilidade, setDisponibilidade] = useState<
     "loja" | "levar" | "ambos"
   >("ambos");
@@ -79,6 +89,29 @@ export function GerenciamentoCatalogo() {
     }
     carregarCategorias();
   }, [produtoEditandoId]);
+
+  useEffect(() => {
+    async function carregarFichas() {
+      const { data } = await supabase
+        .from("fichas_tecnicas")
+        .select("id, nome, tipo, escopo, status, custo_calculado")
+        .neq("status", "arquivada")
+        .order("nome");
+      const rows = (data ?? []) as Array<{
+        id: string;
+        nome: string;
+        tipo: string;
+        escopo: string | null;
+        status: string;
+        custo_calculado: number | null;
+      }>;
+      setFichasProduto(rows.filter((r) => r.tipo === "produto"));
+      setFichasEmb(
+        rows.filter((r) => r.tipo === "embalagem" && r.escopo === "item"),
+      );
+    }
+    void carregarFichas();
+  }, []);
 
   useEffect(() => {
     if (!produtoEditandoId) {
@@ -125,6 +158,10 @@ export function GerenciamentoCatalogo() {
         setVideoUrlAtual(data.video_url);
         setImagemFila(null);
         setVideoFila(null);
+        setFichaProdutoId(data.ficha_produto_id ?? "");
+        setFichaEmbViagem(data.ficha_embalagem_viagem_id ?? "");
+        setFichaEmbDelivery(data.ficha_embalagem_delivery_id ?? "");
+        setFichaEmbLevar(data.ficha_embalagem_levar_rapido_id ?? "");
       } catch (erro: unknown) {
         const mensagem = erro instanceof Error ? erro.message : String(erro);
         console.error("[ERRO - CATÁLOGO] Falha ao carregar produto:", mensagem);
@@ -148,6 +185,10 @@ export function GerenciamentoCatalogo() {
     setEmPromocao(false);
     setAtivo(true);
     setTipo("simples");
+    setFichaProdutoId("");
+    setFichaEmbViagem("");
+    setFichaEmbDelivery("");
+    setFichaEmbLevar("");
     setDisponibilidade("ambos");
     setMedidaValor("");
     setMedidaUnidade("");
@@ -270,6 +311,10 @@ export function GerenciamentoCatalogo() {
         disponibilidade,
         medida_valor: medidaValorNum,
         medida_unidade: medidaUnidadeDb,
+        ficha_produto_id: tipo === "combo" ? null : fichaProdutoId || null,
+        ficha_embalagem_viagem_id: fichaEmbViagem || null,
+        ficha_embalagem_delivery_id: fichaEmbDelivery || null,
+        ficha_embalagem_levar_rapido_id: fichaEmbLevar || null,
       };
 
       if (modoEdicao && produtoEditandoId) {
@@ -512,6 +557,78 @@ export function GerenciamentoCatalogo() {
               quiser exibir.
             </p>
           </div>
+
+          {tipo !== "combo" && (
+            <div className="space-y-3 rounded-lg border border-gray-100 p-4 dark:border-gray-800">
+              <p className="font-medium dark:text-gray-300">Ficha técnica</p>
+              <p className="text-xs text-gray-500">
+                Sem ficha o produto vende normalmente; só não baixa insumo nem
+                calcula CMV.
+              </p>
+              <select
+                className="w-full rounded-lg border px-4 py-3 dark:border-gray-700 dark:bg-[#1a1815]"
+                value={fichaProdutoId}
+                onChange={(e) => setFichaProdutoId(e.target.value)}
+              >
+                <option value="">Sem ficha de produto</option>
+                {fichasProduto.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}
+                    {f.status !== "ativa" ? ` (${f.status})` : ""}
+                    {f.custo_calculado != null
+                      ? ` · R$ ${Number(f.custo_calculado).toFixed(2)}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+              {(() => {
+                const f = fichasProduto.find((x) => x.id === fichaProdutoId);
+                const precoN = parseFloat(preco.replace(",", "."));
+                if (!f || f.custo_calculado == null || !Number.isFinite(precoN) || precoN <= 0) {
+                  return null;
+                }
+                const m = ((precoN - f.custo_calculado) / precoN) * 100;
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Margem vs preço: {m.toFixed(1)}% (sem embalagem de pedido)
+                  </p>
+                );
+              })()}
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["Viagem", fichaEmbViagem, setFichaEmbViagem],
+                    ["Delivery", fichaEmbDelivery, setFichaEmbDelivery],
+                    ["Levar (comer logo)", fichaEmbLevar, setFichaEmbLevar],
+                  ] as const
+                ).map(([label, val, set]) => (
+                  <div key={label}>
+                    <label className="mb-1 block text-xs text-gray-500">
+                      Embalagem {label}
+                    </label>
+                    <select
+                      className="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-[#1a1815]"
+                      value={val}
+                      onChange={(e) => set(e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {fichasEmb.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {tipo === "combo" && (
+            <p className="text-xs text-gray-500">
+              Combo não tem ficha própria: a baixa usa as fichas dos produtos
+              escolhidos.
+            </p>
+          )}
 
           <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 space-y-4">
             <div className="flex items-center justify-between">

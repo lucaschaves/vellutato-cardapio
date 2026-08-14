@@ -36,6 +36,7 @@ interface Adicional {
   preco: number;
   disponivel: boolean;
   disponibilidade: DisponibilidadeProduto;
+  ficha_id: string | null;
 }
 
 function ehAdicionalGratis(preco: number) {
@@ -54,6 +55,10 @@ export function GerenciamentoAdicionais() {
   const [novoPreco, setNovoPreco] = useState("");
   const [novaDisponibilidade, setNovaDisponibilidade] =
     useState<DisponibilidadeProduto>("ambos");
+  const [fichaId, setFichaId] = useState("");
+  const [fichasAdicional, setFichasAdicional] = useState<
+    Array<{ id: string; nome: string; status: string }>
+  >([]);
   const [salvando, setSalvando] = useState(false);
   const [adicionalExcluir, setAdicionalExcluir] = useState<{
     id: string;
@@ -62,6 +67,7 @@ export function GerenciamentoAdicionais() {
 
   useEffect(() => {
     void carregarAdicionais();
+    void carregarFichas();
   }, []);
 
   const carregarAdicionais = async () => {
@@ -88,11 +94,22 @@ export function GerenciamentoAdicionais() {
     }
   };
 
+  const carregarFichas = async () => {
+    const { data } = await supabase
+      .from("fichas_tecnicas")
+      .select("id, nome, status")
+      .eq("tipo", "adicional")
+      .neq("status", "arquivada")
+      .order("nome");
+    setFichasAdicional((data ?? []) as Array<{ id: string; nome: string; status: string }>);
+  };
+
   const limparFormulario = () => {
     setEditandoId(null);
     setNovoNome("");
     setNovoPreco("");
     setNovaDisponibilidade("ambos");
+    setFichaId("");
   };
 
   const iniciarEdicao = (item: Adicional) => {
@@ -100,6 +117,7 @@ export function GerenciamentoAdicionais() {
     setNovoNome(item.nome);
     setNovoPreco(item.preco.toFixed(2));
     setNovaDisponibilidade(normalizarDisponibilidade(item.disponibilidade));
+    setFichaId(item.ficha_id ?? "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -203,6 +221,7 @@ export function GerenciamentoAdicionais() {
             nome: novoNome.trim(),
             preco: precoNumerico,
             disponibilidade: novaDisponibilidade,
+            ficha_id: fichaId || null,
           })
           .eq("id", editandoId)
           .select()
@@ -234,6 +253,7 @@ export function GerenciamentoAdicionais() {
               preco: precoNumerico,
               disponivel: true,
               disponibilidade: novaDisponibilidade,
+              ficha_id: fichaId || null,
             },
           ])
           .select()
@@ -394,6 +414,23 @@ export function GerenciamentoAdicionais() {
               <p className="text-xs text-gray-500">
                 Filtrado pelo modo que o cliente escolheu.
               </p>
+            </div>
+            <div className="w-full space-y-2">
+              <Label htmlFor="adicional-ficha">Ficha técnica</Label>
+              <select
+                id="adicional-ficha"
+                value={fichaId}
+                onChange={(e) => setFichaId(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-[#1a1815] text-sm"
+              >
+                <option value="">Sem ficha</option>
+                {fichasAdicional.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}
+                    {f.status !== "ativa" ? ` (${f.status})` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </form>

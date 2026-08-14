@@ -31,7 +31,6 @@ import {
   TabsTrigger,
 } from "../../components/ui/tabs";
 import {
-  formatarEquivalenteBase,
   formatarEstoqueInsumo,
   formatarPrecoBaseInsumo,
   formatarPrecoMoeda,
@@ -50,14 +49,17 @@ import {
   UNIDADES_CONTEUDO_VOLUME,
   UNIDADES_INSUMO,
   unidadePrecoBase,
-  compraParaUnidadeConteudo,
-  unidadeConteudoParaCompra,
+  compraParaEstoqueBase,
+  estoqueBaseParaCompra,
+  formatarQtdEstoqueBase,
   type Insumo,
   type TipoInsumo,
   type UnidadeConteudo,
   type UnidadeInsumo,
 } from "../../lib/insumos";
 import { supabase } from "../../lib/supabase";
+import { recalcularCustosFichas } from "../../lib/fichasCusto";
+import { insumoPrecoDesatualizado } from "../../lib/fichasTecnicas";
 
 function asInsumo(row: Record<string, unknown>): Insumo {
   const tipo = TIPOS_INSUMO.includes(row.tipo as TipoInsumo)
@@ -156,8 +158,8 @@ export function GerenciamentoInsumos() {
       setEstoqueMinimoBase("");
       return;
     }
-    syncBaseFromCompra(quantidade, "qtd");
-    syncBaseFromCompra(estoqueMinimo, "min");
+    syncEmbalagemFromBase(quantidade, "qtd");
+    syncEmbalagemFromBase(estoqueMinimo, "min");
     // Recalcula equivalente quando muda o conteúdo da embalagem.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só conteúdo/tipo
   }, [tipo, conteudoValor, conteudoUnidade]);
@@ -201,33 +203,32 @@ export function GerenciamentoInsumos() {
     }
   };
 
-  const syncBaseFromCompra = (qtdCompraStr: string, qual: "qtd" | "min") => {
-    const n = parseDecimalBr(qtdCompraStr);
+  const conv = () => ({
+    tipo,
+    conteudo_valor: parseDecimalBr(conteudoValor),
+    conteudo_unidade: conteudoUnidade,
+  });
+
+  /** quantidade = estoque base (kg/L/un); quantidadeBase = embalagens. */
+  const syncEmbalagemFromBase = (qtdBaseStr: string, qual: "qtd" | "min") => {
+    const n = parseDecimalBr(qtdBaseStr);
     if (n == null || tipo === "contagem") {
       if (qual === "qtd") setQuantidadeBase("");
       else setEstoqueMinimoBase("");
       return;
     }
-    const base = compraParaUnidadeConteudo(n, {
-      tipo,
-      conteudo_valor: parseDecimalBr(conteudoValor),
-      conteudo_unidade: conteudoUnidade,
-    });
-    const txt = base == null ? "" : formatarQtdInput(base);
+    const compra = estoqueBaseParaCompra(n, conv());
+    const txt = compra == null ? "" : formatarQtdInput(compra);
     if (qual === "qtd") setQuantidadeBase(txt);
     else setEstoqueMinimoBase(txt);
   };
 
-  const syncCompraFromBase = (qtdBaseStr: string, qual: "qtd" | "min") => {
-    const n = parseDecimalBr(qtdBaseStr);
+  const syncBaseFromEmbalagem = (qtdCompraStr: string, qual: "qtd" | "min") => {
+    const n = parseDecimalBr(qtdCompraStr);
     if (n == null || tipo === "contagem") return;
-    const compra = unidadeConteudoParaCompra(n, {
-      tipo,
-      conteudo_valor: parseDecimalBr(conteudoValor),
-      conteudo_unidade: conteudoUnidade,
-    });
-    if (compra == null) return;
-    const txt = formatarQtdInput(compra);
+    const base = compraParaEstoqueBase(n, conv());
+    if (base == null) return;
+    const txt = formatarQtdInput(base);
     if (qual === "qtd") setQuantidade(txt);
     else setEstoqueMinimo(txt);
   };
@@ -266,10 +267,10 @@ export function GerenciamentoInsumos() {
     );
     setQuantidade(formatarQtdInput(item.quantidade_atual));
     setEstoqueMinimo(formatarQtdInput(item.estoque_minimo));
-    const baseQtd = compraParaUnidadeConteudo(item.quantidade_atual, item);
-    const baseMin = compraParaUnidadeConteudo(item.estoque_minimo, item);
-    setQuantidadeBase(baseQtd == null ? "" : formatarQtdInput(baseQtd));
-    setEstoqueMinimoBase(baseMin == null ? "" : formatarQtdInput(baseMin));
+    const embQtd = estoqueBaseParaCompra(item.quantidade_atual, item);
+    const embMin = estoqueBaseParaCompra(item.estoque_minimo, item);
+    setQuantidadeBase(embQtd == null ? "" : formatarQtdInput(embQtd));
+    setEstoqueMinimoBase(embMin == null ? "" : formatarQtdInput(embMin));
     setObservacao(item.observacao || "");
     const embalagem =
       item.preco_atual != null
@@ -330,8 +331,8 @@ export function GerenciamentoInsumos() {
 
     const qtd = parseDecimalBr(quantidade);
     const min = parseDecimalBr(estoqueMinimo);
-    if (qtd == null || qtd < 0 || min == null || min < 0) {
-      toast.warning("Quantidade e estoque mínimo devem ser números ≥ 0.");
+    if (qtd == null || min == null || min < 0) {
+      toast.warning("Informe estoque (número) e mínimo ≥ 0.");
       return;
     }
 
@@ -423,6 +424,14 @@ export function GerenciamentoInsumos() {
         }
 
         toast.success("Insumo atualizado.");
+        if (precoBase != null && atual && Number(atual.preco_atual) !== precoBase) {
+          try {
+            const n = await recalcularCustosFichas(editandoId);
+            if (n > 0) toast.message(`${n} ficha(s) com custo recalculado.`);
+          } catch {
+            toast.warning("Insumo salvo, mas o recálculo das fichas falhou.");
+          }
+        }
       } else {
         const { data, error } = await supabase
           .from("insumos")
@@ -742,7 +751,7 @@ export function GerenciamentoInsumos() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="insumo-qtd">
-                  Estoque ({rotuloUnidade(unidade, 2)})
+                  Estoque ({unidadePrecoBase(tipo)})
                 </Label>
                 <Input
                   id="insumo-qtd"
@@ -750,7 +759,7 @@ export function GerenciamentoInsumos() {
                   value={quantidade}
                   onChange={(e) => {
                     setQuantidade(e.target.value);
-                    syncBaseFromCompra(e.target.value, "qtd");
+                    syncEmbalagemFromBase(e.target.value, "qtd");
                   }}
                 />
               </div>
@@ -758,7 +767,7 @@ export function GerenciamentoInsumos() {
               {tipo !== "contagem" && (
                 <div className="space-y-1.5">
                   <Label htmlFor="insumo-qtd-base">
-                    Estoque ({conteudoUnidade})
+                    Equiv. {rotuloUnidade(unidade, 2)}
                   </Label>
                   <Input
                     id="insumo-qtd-base"
@@ -766,7 +775,7 @@ export function GerenciamentoInsumos() {
                     value={quantidadeBase}
                     onChange={(e) => {
                       setQuantidadeBase(e.target.value);
-                      syncCompraFromBase(e.target.value, "qtd");
+                      syncBaseFromEmbalagem(e.target.value, "qtd");
                     }}
                     placeholder="0"
                   />
@@ -775,7 +784,7 @@ export function GerenciamentoInsumos() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="insumo-min">
-                  Mínimo ({rotuloUnidade(unidade, 2)})
+                  Mínimo ({unidadePrecoBase(tipo)})
                 </Label>
                 <Input
                   id="insumo-min"
@@ -783,7 +792,7 @@ export function GerenciamentoInsumos() {
                   value={estoqueMinimo}
                   onChange={(e) => {
                     setEstoqueMinimo(e.target.value);
-                    syncBaseFromCompra(e.target.value, "min");
+                    syncEmbalagemFromBase(e.target.value, "min");
                   }}
                 />
               </div>
@@ -791,7 +800,7 @@ export function GerenciamentoInsumos() {
               {tipo !== "contagem" && (
                 <div className="space-y-1.5">
                   <Label htmlFor="insumo-min-base">
-                    Mínimo ({conteudoUnidade})
+                    Mínimo ({rotuloUnidade(unidade, 2)})
                   </Label>
                   <Input
                     id="insumo-min-base"
@@ -799,7 +808,7 @@ export function GerenciamentoInsumos() {
                     value={estoqueMinimoBase}
                     onChange={(e) => {
                       setEstoqueMinimoBase(e.target.value);
-                      syncCompraFromBase(e.target.value, "min");
+                      syncBaseFromEmbalagem(e.target.value, "min");
                     }}
                     placeholder="0"
                   />
@@ -984,14 +993,15 @@ export function GerenciamentoInsumos() {
               {filtrados.map((insumo) => {
                 const baixo = insumoAbaixoDoMinimo(insumo);
                 const busy = processandoId === insumo.id;
+                const passo = compraParaEstoqueBase(1, insumo) ?? 1;
                 const deltaMenos =
                   insumo.quantidade_atual <= 0
                     ? 0
-                    : -Math.min(1, insumo.quantidade_atual);
+                    : -Math.min(passo, insumo.quantidade_atual);
                 const conteudo = rotuloConteudoEmbalagem(insumo);
-                const eqMin = formatarEquivalenteBase(
+                const eqMin = formatarQtdEstoqueBase(
                   insumo.estoque_minimo,
-                  insumo,
+                  insumo.tipo,
                 );
 
                 return (
@@ -1027,7 +1037,24 @@ export function GerenciamentoInsumos() {
                             {formatarPrecoBaseInsumo(insumo)}
                           </p>
                         </div>
-                        {baixo && insumo.ativo && (
+                        {insumo.quantidade_atual < 0 && insumo.ativo && (
+                          <Badge
+                            variant="destructive"
+                            className="shrink-0 gap-1"
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            Negativo
+                          </Badge>
+                        )}
+                        {insumoPrecoDesatualizado(insumo) && insumo.ativo && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 gap-1 text-[0.625rem] text-amber-700 border-amber-400"
+                          >
+                            Preço velho
+                          </Badge>
+                        )}
+                        {baixo && insumo.quantidade_atual >= 0 && insumo.ativo && (
                           <Badge
                             variant="destructive"
                             className="shrink-0 gap-1"
@@ -1046,7 +1073,7 @@ export function GerenciamentoInsumos() {
                           className="h-8 w-8"
                           disabled={busy || deltaMenos === 0}
                           onClick={() => void ajustarQtd(insumo, deltaMenos)}
-                          title="Registrar uso (−1)"
+                          title="Registrar uso (−1 embalagem)"
                         >
                           <Minus className="h-3.5 w-3.5" />
                         </Button>
@@ -1059,8 +1086,8 @@ export function GerenciamentoInsumos() {
                           variant="outline"
                           className="h-8 w-8"
                           disabled={busy}
-                          onClick={() => void ajustarQtd(insumo, 1)}
-                          title="Ajuste (+1)"
+                          onClick={() => void ajustarQtd(insumo, passo)}
+                          title="Ajuste (+1 embalagem)"
                         >
                           <Plus className="h-3.5 w-3.5" />
                         </Button>

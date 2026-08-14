@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { alertaMargemBaixa } from "../../lib/fichasTecnicas";
 
 // Shadcn/ui
 import { toast } from "sonner";
@@ -52,6 +53,8 @@ interface ProdutoEstoque {
   adicional_obrigatorio: boolean;
   adicional_maximo: number | null;
   ordem?: number | null;
+  tipo?: string;
+  ficha_produto_id?: string | null;
   categorias: { nome: string; ordem: number } | null;
 }
 
@@ -64,6 +67,9 @@ interface AdicionalGlobal {
 export function GerenciamentoEstoque() {
   const navigate = useNavigate();
   const [produtos, setProdutos] = useState<ProdutoEstoque[]>([]);
+  const [custoFichaPorId, setCustoFichaPorId] = useState<Record<string, number | null>>(
+    {},
+  );
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
   const [processandoId, setProcessandoId] = useState<string | null>(null);
@@ -94,7 +100,7 @@ export function GerenciamentoEstoque() {
           `
           id, nome, descricao, imagem_url, preco, preco_promocional, em_promocao,
           ativo, controlar_estoque, quantidade_estoque, categoria_id, video_url,
-          adicional_obrigatorio, adicional_maximo, ordem,
+          adicional_obrigatorio, adicional_maximo, ordem, tipo, ficha_produto_id,
           categorias ( nome, ordem )
         `,
         )
@@ -103,6 +109,15 @@ export function GerenciamentoEstoque() {
 
       if (error) throw new Error(error.message);
       setProdutos((data as unknown as ProdutoEstoque[]) || []);
+      const { data: fichas } = await supabase
+        .from("fichas_tecnicas")
+        .select("id, custo_calculado");
+      const map: Record<string, number | null> = {};
+      for (const f of fichas ?? []) {
+        const row = f as { id: string; custo_calculado: number | null };
+        map[row.id] = row.custo_calculado;
+      }
+      setCustoFichaPorId(map);
     } catch (erro: any) {
       console.error(
         "[ERRO - ESTOQUE] Falha ao carregar produtos:",
@@ -587,6 +602,26 @@ export function GerenciamentoEstoque() {
                             {produto.em_promocao && (
                               <Badge className="bg-[#6b1d2a] hover:bg-[#6b1d2a] text-white text-[0.625rem]">
                                 PROMO
+                              </Badge>
+                            )}
+                            {produto.tipo !== "combo" && !produto.ficha_produto_id && (
+                              <Badge
+                                variant="outline"
+                                className="text-[0.625rem] text-amber-700 border-amber-400"
+                              >
+                                Sem ficha
+                              </Badge>
+                            )}
+                            {produto.ficha_produto_id &&
+                              alertaMargemBaixa(
+                                produto.preco,
+                                custoFichaPorId[produto.ficha_produto_id] ?? null,
+                              ) && (
+                              <Badge
+                                variant="destructive"
+                                className="text-[0.625rem]"
+                              >
+                                Margem baixa
                               </Badge>
                             )}
                             {produto.video_url && (
