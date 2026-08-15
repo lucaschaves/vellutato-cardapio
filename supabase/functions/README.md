@@ -33,7 +33,7 @@ npx supabase secrets set --project-ref uhaapfxdxivmwhvnuyie \
 - Eventos: `CHECKOUT_PAID`, `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`
 - A function `webhook-asaas` está com `verify_jwt = false` (obrigatório — Asaas não manda JWT do Supabase)
 - Sem `ASAAS_WEBHOOK_TOKEN` configurado a function responde **401** (fail-closed)
-- Browser: CORS só para o site e localhost. Functions `criar-checkout-asaas`, `confirmar-pagamento-asaas`, `notificar-status-pedido` e `voa-enviar-pedido` usam `verify_jwt = true` (admin ou anon, conforme o caso)
+- Browser: CORS só para o site e localhost. Functions `criar-checkout-asaas` e `confirmar-pagamento-asaas` aceitam JWT anon (visitante) ou authenticated (cliente/admin). `notificar-status-pedido` e `voa-enviar-pedido` exigem admin.
 
 Se a situação ficar **Interrompido**:
 1. Confira se o token do painel = `ASAAS_WEBHOOK_TOKEN`

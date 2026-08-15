@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
-import { ehAnonOuAdmin, uuidValido } from "../_shared/jwt.ts";
+import { ehAnonOuAutenticado, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
 
 /** 1x1 PNG — OpenAPI do Asaas marca imageBase64 como required nos items */
@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
     });
 
   try {
-    if (!ehAnonOuAdmin(req)) {
+    if (!ehAnonOuAutenticado(req)) {
       return json({ erro: "Não autorizado" }, 401);
     }
 

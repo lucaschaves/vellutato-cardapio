@@ -24,10 +24,11 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.confirmar-pagamento-asaas]
-# Anon JWT (guest) ou admin — a function valida o JWT e o pedido_id
+# Anon (guest) ou authenticated (cliente/admin) — a function valida o JWT e o pedido_id
 verify_jwt = true
 
 [functions.criar-checkout-asaas]
+# Mesma regra de confirmar-pagamento-asaas (cliente logado precisa pagar)
 verify_jwt = true
 
 [functions.voa-enviar-pedido]

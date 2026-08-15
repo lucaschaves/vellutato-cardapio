@@ -36,12 +36,11 @@ export function ehAdminRequest(req: Request): boolean {
   return j?.role === "authenticated" && j.appRole === "admin";
 }
 
-/** Anon key (cardápio guest) ou admin logado. */
-export function ehAnonOuAdmin(req: Request): boolean {
+/** Anon key (visitante) ou qualquer usuário autenticado (cliente ou admin). */
+export function ehAnonOuAutenticado(req: Request): boolean {
   const j = lerJwt(req);
   if (!j) return false;
-  if (j.role === "anon") return true;
-  return ehAdminRequest(req);
+  return j.role === "anon" || j.role === "authenticated";
 }
 
 const UUID_RE =
