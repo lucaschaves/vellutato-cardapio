@@ -43,6 +43,24 @@ export function ehAnonOuAutenticado(req: Request): boolean {
   return j.role === "anon" || j.role === "authenticated";
 }
 
+/**
+ * Chamada do cardápio (browser). O gateway com verify_jwt rejeita JWT
+ * expirado do cliente antes da function — pagamento usa apikey anon.
+ */
+export function ehChamadaDoApp(req: Request): boolean {
+  const anon = (Deno.env.get("SUPABASE_ANON_KEY") ?? "").trim();
+  const apikey = (req.headers.get("apikey") ?? "").trim();
+  if (anon && apikey && apikey === anon) return true;
+
+  const auth = req.headers.get("Authorization") ?? "";
+  const bearer = auth.toLowerCase().startsWith("bearer ")
+    ? auth.slice(7).trim()
+    : "";
+  if (anon && bearer && bearer === anon) return true;
+
+  return ehAnonOuAutenticado(req);
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

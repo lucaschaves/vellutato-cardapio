@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
-import { ehAnonOuAutenticado, uuidValido } from "../_shared/jwt.ts";
+import { ehChamadaDoApp, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
 
 /** 1x1 PNG — OpenAPI do Asaas marca imageBase64 como required nos items */
@@ -211,7 +211,8 @@ Deno.serve(async (req) => {
     });
 
   try {
-    if (!ehAnonOuAutenticado(req)) {
+    if (!ehChamadaDoApp(req)) {
+      console.warn("[ASAAS] chamada recusada: apikey/JWT ausente ou inválido");
       return json({ erro: "Não autorizado" }, 401);
     }
 
@@ -305,14 +306,23 @@ Deno.serve(async (req) => {
     const hostCheckout = isSandbox ? "https://sandbox.asaas.com" : "https://asaas.com";
     const forcarNovo = Boolean(bodyIn?.forcar_novo);
 
-    // Reusa o checkout existente só se ainda for válido e não pediram um novo.
-    if (pedido.asaas_checkout_id && !forcarNovo) {
-      const link =
-        `${hostCheckout}/checkoutSession/show/${pedido.asaas_checkout_id}`;
-      return json({
-        checkout_id: pedido.asaas_checkout_id,
-        checkout_url: link,
-      });
+    // Sessão Asaas expirada/cancelada abre "Não autorizado" antes de Pix/cartão.
+    // Sempre gera checkout novo; cancela o anterior quando existir.
+    if (pedido.asaas_checkout_id) {
+      try {
+        await fetch(
+          `${asaasBase}/checkouts/${pedido.asaas_checkout_id}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              accept: "application/json",
+              access_token: asaasKey,
+            },
+          },
+        );
+      } catch (erroCancel) {
+        console.warn("[ASAAS] Falha ao cancelar checkout anterior:", erroCancel);
+      }
     }
 
     const valor = Number(pedido.valor_total ?? pedido.total ?? 0);

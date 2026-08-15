@@ -6,7 +6,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsBrowser, respostaOpcoes } from "../_shared/cors.ts";
-import { ehAnonOuAutenticado, uuidValido } from "../_shared/jwt.ts";
+import { ehChamadaDoApp, uuidValido } from "../_shared/jwt.ts";
 import { lerSegredos } from "../_shared/segredos.ts";
 
 function json(req: Request, body: unknown, status = 200) {
@@ -28,7 +28,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (!ehAnonOuAutenticado(req)) {
+    if (!ehChamadaDoApp(req)) {
+      console.warn("[ASAAS] confirmação recusada: apikey/JWT ausente ou inválido");
       return json(req, { erro: "Não autorizado" }, 401);
     }
     const bodyIn = await req.json();

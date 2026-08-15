@@ -111,6 +111,43 @@ export async function cancelarPedidosDeliveryExpirados(): Promise<number> {
   return Number(data ?? 0);
 }
 
+function mensagemCorpoFunction(corpo: unknown): string | null {
+  if (!corpo || typeof corpo !== "object") return null;
+  const obj = corpo as Record<string, unknown>;
+  if (obj.erro) return String(obj.erro);
+  if (typeof obj.message === "string" && obj.message.trim()) {
+    const msg = obj.message.trim();
+    if (/unauthorized|invalid jwt|invalid token/i.test(msg)) {
+      return "Não foi possível abrir o pagamento. Atualize a página e tente de novo.";
+    }
+    return msg;
+  }
+  return null;
+}
+
+async function mensagemErroFunction(
+  data: unknown,
+  error: unknown,
+): Promise<string> {
+  const doData = mensagemCorpoFunction(data);
+  if (doData) return doData;
+  const context = (error as { context?: unknown } | null)?.context;
+  if (context instanceof Response) {
+    try {
+      const corpo = await context.clone().json();
+      const doContext = mensagemCorpoFunction(corpo);
+      if (doContext) return doContext;
+    } catch {
+      /* body não JSON */
+    }
+  }
+  const msg = error instanceof Error ? error.message : String(error || "");
+  if (/unauthorized|invalid jwt|non-2xx/i.test(msg)) {
+    return "Não foi possível abrir o pagamento. Atualize a página e tente de novo.";
+  }
+  return msg || "Falha na comunicação com o Asaas.";
+}
+
 export async function iniciarCheckoutAsaas(
   pedidoId: string,
   opts?: {
@@ -123,6 +160,9 @@ export async function iniciarCheckoutAsaas(
   checkout_id: string;
   checkout_url: string;
 }> {
+  // JWT expirado no invoke cai no gateway (Unauthorized) antes da function.
+  await supabase.auth.getUser();
+
   const { data, error } = await supabase.functions.invoke(
     "criar-checkout-asaas",
     {
@@ -132,31 +172,14 @@ export async function iniciarCheckoutAsaas(
         site_url: window.location.origin,
         email: opts?.email || undefined,
         cpf: opts?.cpf?.replace(/\D/g, "") || undefined,
-        forcar_novo: Boolean(opts?.forcarNovo),
+        forcar_novo: true,
         callback_pedido: Boolean(opts?.forcarNovo),
       },
     },
   );
 
-  if (data?.erro) throw new Error(String(data.erro));
-  if (error) {
-    // FunctionsHttpError guarda o JSON retornado pela Edge Function em context.
-    // Sem isso o usuário só vê "Edge Function returned a non-2xx status code".
-    const context = (error as { context?: unknown }).context;
-    if (context instanceof Response) {
-      let mensagemContexto: string | null = null;
-      try {
-        const body = (await context.clone().json()) as {
-          erro?: unknown;
-          detalhes?: unknown;
-        };
-        if (body?.erro) mensagemContexto = String(body.erro);
-      } catch {
-        // Resposta sem JSON: usa a mensagem padrão do SDK abaixo.
-      }
-      if (mensagemContexto) throw new Error(mensagemContexto);
-    }
-    throw new Error(error.message || "Falha na comunicação com o Asaas.");
+  if (data?.erro || error) {
+    throw new Error(await mensagemErroFunction(data, error));
   }
   if (!data?.checkout_url) {
     throw new Error("Link de pagamento não retornado pelo Asaas");
@@ -172,12 +195,14 @@ export async function confirmarPagamentoAsaas(pedidoId: string): Promise<{
   status_pagamento: string;
   sincronizado?: boolean;
 }> {
+  await supabase.auth.getUser();
   const { data, error } = await supabase.functions.invoke(
     "confirmar-pagamento-asaas",
     { body: { pedido_id: pedidoId } },
   );
-  if (error) throw new Error(error.message);
-  if (data?.erro) throw new Error(String(data.erro));
+  if (data?.erro || error) {
+    throw new Error(await mensagemErroFunction(data, error));
+  }
   return {
     status_pagamento: String(data?.status_pagamento || "aguardando"),
     sincronizado: Boolean(data?.sincronizado),
