@@ -42,6 +42,7 @@ export function GerenciamentoCatalogo() {
   const [controlarEstoque, setControlarEstoque] = useState(true);
   const [quantidadeEstoque, setQuantidadeEstoque] = useState("0");
   const [emPromocao, setEmPromocao] = useState(false);
+  const [destaque, setDestaque] = useState(false);
   const [ativo, setAtivo] = useState(true);
   const [tipo, setTipo] = useState<"simples" | "combo">("simples");
   const [fichaProdutoId, setFichaProdutoId] = useState("");
@@ -141,6 +142,7 @@ export function GerenciamentoCatalogo() {
         setControlarEstoque(data.controlar_estoque);
         setQuantidadeEstoque(String(data.quantidade_estoque ?? 0));
         setEmPromocao(data.em_promocao);
+        setDestaque(Boolean(data.destaque));
         setAtivo(data.ativo);
         setTipo(data.tipo === "combo" ? "combo" : "simples");
         setDisponibilidade(
@@ -183,6 +185,7 @@ export function GerenciamentoCatalogo() {
     setControlarEstoque(true);
     setQuantidadeEstoque("0");
     setEmPromocao(false);
+    setDestaque(false);
     setAtivo(true);
     setTipo("simples");
     setFichaProdutoId("");
@@ -299,6 +302,7 @@ export function GerenciamentoCatalogo() {
         preco: precoNumerico,
         preco_promocional: precoPromoNumerico,
         em_promocao: emPromocao && precoPromoNumerico != null,
+        destaque,
         categoria_id: categoriaId,
         imagem_url: imagemUrl,
         video_url: videoUrl,
@@ -665,6 +669,26 @@ export function GerenciamentoCatalogo() {
                 />
               </motion.div>
             )}
+
+            <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+              <div>
+                <span className="font-medium dark:text-gray-300">
+                  Destacar no cardápio?
+                </span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Aparece no início do cardápio com destaque visual.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={destaque}
+                  onChange={(e) => setDestaque(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
+              </label>
+            </div>
           </div>
 
           <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 space-y-4">

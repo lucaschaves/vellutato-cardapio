@@ -73,6 +73,15 @@ export function GerenciamentoFuncionamento() {
       toast.warning("Informe um tempo de preparo válido (em minutos).");
       return;
     }
+    if (
+      config.atraso_primeiro_agendamento_min < 0 ||
+      config.atraso_primeiro_agendamento_min > 180
+    ) {
+      toast.warning(
+        "Atraso do 1º agendamento deve ser entre 0 e 180 minutos.",
+      );
+      return;
+    }
 
     try {
       setSalvando(true);
@@ -148,12 +157,29 @@ export function GerenciamentoFuncionamento() {
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Bloqueia novos pedidos imediatamente, mesmo dentro do horário.
+              No topo do admin há um atalho de 10 minutos que reabre sozinho.
             </p>
+            {config.pausado &&
+              config.pausado_ate &&
+              new Date(config.pausado_ate).getTime() > Date.now() && (
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                  Pausa automática até{" "}
+                  {new Date(config.pausado_ate).toLocaleTimeString("pt-BR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                  .
+                </p>
+              )}
           </div>
           <Switch
             checked={config.pausado}
             onCheckedChange={(pausado) =>
-              setConfig({ ...config, pausado })
+              setConfig({
+                ...config,
+                pausado,
+                pausado_ate: null,
+              })
             }
           />
         </div>
@@ -197,6 +223,28 @@ export function GerenciamentoFuncionamento() {
               }
               className="mt-1"
             />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              1º horário agendável após abrir (min)
+            </label>
+            <Input
+              type="number"
+              min={0}
+              max={180}
+              value={config.atraso_primeiro_agendamento_min}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  atraso_primeiro_agendamento_min: Number(e.target.value),
+                })
+              }
+              className="mt-1"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Ex.: abre 14:00 e este valor é 15 → o cliente só vê slots a partir
+              de 14:15. Use 0 para permitir agendar no horário de abertura.
+            </p>
           </div>
           <div>
             <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">

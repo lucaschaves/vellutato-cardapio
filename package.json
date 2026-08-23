@@ -1,7 +1,7 @@
 {
   "name": "cardapio-digital",
   "private": true,
-  "version": "1.0.34",
+  "version": "1.0.35",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "gen-types": "node -e \"require('fs').writeFileSync('src/types/supabase.ts', require('child_process').execSync('npx supabase gen types typescript --project-id uhaapfxdxivmwhvnuyie --schema public',{encoding:'utf8',maxBuffer:2e7}))\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db": "npx supabase db push"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

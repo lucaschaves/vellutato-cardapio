@@ -1342,23 +1342,72 @@ export function DeliveryCheckout() {
           )}
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="font-bold">Cupom</h2>
-              {(cliente?.id || guestClienteId) && (
-                <button
-                  type="button"
-                  onClick={() => setMostrarCuponsCliente((v) => !v)}
-                  className="text-xs font-bold text-cookie-primary inline-flex items-center gap-1"
-                >
-                  <Ticket size={14} />
-                  {carregandoCuponsCliente
-                    ? "Carregando…"
-                    : cuponsCliente.length > 0
-                      ? `Tem ${cuponsCliente.length} cupom${cuponsCliente.length === 1 ? "" : "s"}`
-                      : "Sem cupons"}
-                </button>
-              )}
-            </div>
+            <h2 className="font-bold">Cupom</h2>
+
+            {(cliente?.id || guestClienteId) && (
+              <button
+                type="button"
+                onClick={() => setMostrarCuponsCliente((v) => !v)}
+                className={`w-full text-left rounded-xl border px-3.5 py-3 transition active:scale-[0.99] ${
+                  cuponsCliente.length > 0
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-zinc-200 bg-zinc-50"
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                      cuponsCliente.length > 0
+                        ? "bg-emerald-600 text-white"
+                        : "bg-zinc-200 text-zinc-500"
+                    }`}
+                  >
+                    <Ticket size={16} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`text-sm font-bold leading-snug ${
+                        cuponsCliente.length > 0
+                          ? "text-emerald-900"
+                          : "text-zinc-700"
+                      }`}
+                    >
+                      {carregandoCuponsCliente
+                        ? "Buscando seus cupons…"
+                        : cuponsCliente.length === 0
+                          ? "Nenhum cupom exclusivo agora"
+                          : cuponsCliente.length === 1
+                            ? "Você tem 1 cupom disponível"
+                            : `Você tem ${cuponsCliente.length} cupons disponíveis`}
+                    </p>
+                    <p
+                      className={`text-xs mt-0.5 leading-snug ${
+                        cuponsCliente.length > 0
+                          ? "text-emerald-800/80"
+                          : "text-zinc-500"
+                      }`}
+                    >
+                      {carregandoCuponsCliente
+                        ? "Conferindo benefícios desta conta."
+                        : cuponsCliente.length === 0
+                          ? "Você ainda pode digitar um código abaixo."
+                          : `${cuponsCliente[0].codigo} — ${rotuloCupomResumo(cuponsCliente[0])}${
+                              cuponsCliente.length > 1
+                                ? ` e mais ${cuponsCliente.length - 1}`
+                                : ""
+                            }. Toque para ver e escolher.`}
+                    </p>
+                    {cuponsCliente.length > 0 && (
+                      <p className="text-[11px] font-bold text-cookie-primary mt-1.5">
+                        {mostrarCuponsCliente
+                          ? "Ocultar lista ▲"
+                          : "Ver cupons e escolher ▼"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </button>
+            )}
 
             {mostrarCuponsCliente && (
               <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-2">
@@ -1367,42 +1416,57 @@ export function DeliveryCheckout() {
                     Nenhum cupom exclusivo disponível nesta conta.
                   </p>
                 ) : (
-                  cuponsCliente.map((c) => (
-                    <div
-                      key={c.id}
-                      className="flex items-center justify-between gap-2 rounded-lg bg-white border border-zinc-200 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-mono font-black text-sm tracking-wide">
-                          {c.codigo}
-                        </p>
-                        <p className="text-[11px] text-zinc-500 truncate">
-                          {rotuloCupomResumo(c)}
-                          {c.acumulativo ? " · acumulativo" : ""}
-                        </p>
+                  cuponsCliente.map((c) => {
+                    const usosRestantes =
+                      c.limite_uso != null
+                        ? Math.max(c.limite_uso - c.usos, 0)
+                        : null;
+                    return (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-white border border-zinc-200 px-3 py-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-mono font-black text-sm tracking-wide">
+                            {c.codigo}
+                          </p>
+                          <p className="text-[11px] text-zinc-500 leading-snug">
+                            {rotuloCupomResumo(c)}
+                            {c.acumulativo ? " · acumulativo" : ""}
+                            {c.valor_minimo
+                              ? ` · mín. R$ ${c.valor_minimo.toFixed(2).replace(".", ",")}`
+                              : ""}
+                            {c.validade
+                              ? ` · válido até ${new Date(c.validade).toLocaleDateString("pt-BR")}`
+                              : ""}
+                            {usosRestantes != null
+                              ? ` · ${usosRestantes} uso(s) restante(s)`
+                              : ""}
+                          </p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2"
+                            onClick={() => void copiarCodigoCupom(c.codigo)}
+                            title="Copiar código"
+                          >
+                            <Copy size={14} />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 px-2 bg-cookie-primary hover:bg-cookie-primary-hover"
+                            onClick={() => void aplicarCupomHandler(c.codigo)}
+                          >
+                            Usar
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex gap-1 shrink-0">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-2"
-                          onClick={() => void copiarCodigoCupom(c.codigo)}
-                          title="Copiar código"
-                        >
-                          <Copy size={14} />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 px-2 bg-cookie-primary hover:bg-cookie-primary-hover"
-                          onClick={() => void aplicarCupomHandler(c.codigo)}
-                        >
-                          Usar
-                        </Button>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}

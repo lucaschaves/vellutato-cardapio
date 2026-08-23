@@ -22,6 +22,7 @@ import {
   ShoppingCart,
   Ticket,
   Users,
+  Wallet,
   Warehouse,
 } from "lucide-react";
 
@@ -117,6 +118,14 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
         rotulo: "Vendas cruzadas",
         icone: GitBranch,
       },
+    ],
+  },
+  {
+    id: "financeiro",
+    rotulo: "Financeiro",
+    icone: Wallet,
+    itens: [
+      { to: "/admin/despesas", rotulo: "Despesas", icone: Wallet },
     ],
   },
   {

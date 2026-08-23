@@ -95,8 +95,8 @@ export type SlotsAgendamento = {
 };
 
 /**
- * Gera slots de 15 min para hoje, dentro do horário da loja,
- * a partir de agora + tempo_preparo_min.
+ * Gera slots de 15 min para hoje, dentro do horário da loja.
+ * Início = max(agora + tempo_preparo, abertura + atraso_primeiro_agendamento).
  */
 export async function listarSlotsAgendamentoHoje(
   ref = new Date(),
@@ -108,6 +108,10 @@ export async function listarSlotsAgendamentoHoje(
   const p = partesAgoraSp(ref);
   const horarioHoje = horarios.find((h) => h.dia_semana === p.dow) ?? null;
   const preparo = Math.max(0, status?.tempo_preparo_min ?? 0);
+  const atrasoAbertura = Math.max(
+    0,
+    status?.atraso_primeiro_agendamento_min ?? 15,
+  );
 
   if (!horarioHoje || !horarioHoje.aberto) {
     return {
@@ -122,7 +126,8 @@ export async function listarSlotsAgendamentoHoje(
   const abre = parseHora(horarioHoje.abre);
   const fecha = parseHora(horarioHoje.fecha);
   const agoraMin = p.hora * 60 + p.minuto;
-  const minInicio = Math.max(agoraMin + preparo, abre.h * 60 + abre.m);
+  const abreMin = abre.h * 60 + abre.m + atrasoAbertura;
+  const minInicio = Math.max(agoraMin + preparo, abreMin);
   // Arredonda para o próximo múltiplo de 15.
   const primeiro = Math.ceil(minInicio / 15) * 15;
   const fechaMin = fecha.h * 60 + fecha.m;

@@ -20,7 +20,10 @@ import { useLayoutCarrinhoSplit } from "../hooks/useLayoutCarrinhoSplit";
 import { useRevalidarCupomCarrinho } from "../hooks/useRevalidarCupomCarrinho";
 import {
   buscarClientePorCelular,
+  buscarCuponsDoCliente,
+  rotuloCupomResumo,
   upsertCliente,
+  type CupomCliente,
 } from "../lib/clientes";
 import { anexarCuponsPedido, validarCupom } from "../lib/cupons";
 import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
@@ -99,6 +102,12 @@ export function CarrinhoLateral({
   const [etapaMobile, setEtapaMobile] = useState<EtapaMobileCarrinho>("itens");
   const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
+  const [clienteIdReconhecido, setClienteIdReconhecido] = useState<
+    string | null
+  >(null);
+  const [cuponsCliente, setCuponsCliente] = useState<CupomCliente[]>([]);
+  const [carregandoCuponsCliente, setCarregandoCuponsCliente] = useState(false);
+  const [mostrarCuponsCliente, setMostrarCuponsCliente] = useState(false);
 
   // Consulta o horário de funcionamento sempre que o carrinho abre
   useEffect(() => {
@@ -141,7 +150,12 @@ export function CarrinhoLateral({
       const cliente = await buscarClientePorCelular(celularFormatado);
       if (cliente) {
         setNomeCliente(cliente.nome);
+        setClienteIdReconhecido(cliente.id);
         toast.success(`Olá de novo, ${cliente.nome.split(" ")[0]}!`);
+      } else {
+        setClienteIdReconhecido(null);
+        setCuponsCliente([]);
+        setMostrarCuponsCliente(false);
       }
     } catch {
       /* opcional — não bloqueia checkout */
@@ -152,10 +166,48 @@ export function CarrinhoLateral({
 
   const handleCelularChange = (formatado: string) => {
     setCelularCliente(formatado);
-    if (telefoneDigitosCompleto(formatado)) {
-      void reconhecerClientePorTelefone(formatado);
+    if (!telefoneDigitosCompleto(formatado)) {
+      setClienteIdReconhecido(null);
+      setCuponsCliente([]);
+      setMostrarCuponsCliente(false);
+      return;
     }
+    void reconhecerClientePorTelefone(formatado);
   };
+
+  useEffect(() => {
+    if (!clienteIdReconhecido) {
+      setCuponsCliente([]);
+      setCarregandoCuponsCliente(false);
+      return;
+    }
+    let ativo = true;
+    setCarregandoCuponsCliente(true);
+    void buscarCuponsDoCliente(clienteIdReconhecido)
+      .then((lista) => {
+        if (!ativo) return;
+        setCuponsCliente(lista);
+        if (lista.length > 0) setMostrarCuponsCliente(false);
+      })
+      .catch(() => {
+        if (ativo) setCuponsCliente([]);
+      })
+      .finally(() => {
+        if (ativo) setCarregandoCuponsCliente(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [clienteIdReconhecido]);
+
+  // Se o carrinho abrir com celular já salvo, reconhece o cliente.
+  useEffect(() => {
+    if (!aberto) return;
+    if (!telefoneDigitosCompleto(celularCliente)) return;
+    if (clienteIdReconhecido) return;
+    void reconhecerClientePorTelefone(celularCliente);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir
+  }, [aberto]);
 
   const subtotal = obterSubtotal();
   const descontoCupom = obterDescontoCupom();
@@ -180,7 +232,12 @@ export function CarrinhoLateral({
     alterarQuantidade(idUnico, novaQuantidade);
   };
 
-  const handleAplicarCupom = async () => {
+  const handleAplicarCupom = async (codigo?: string) => {
+    const codigoUsar = (codigo ?? codigoCupom).trim();
+    if (!codigoUsar) {
+      toast.error("Informe um código de cupom.");
+      return;
+    }
     if (!telefoneDigitosCompleto(celularCliente)) {
       toast.error("Informe o celular antes de aplicar o cupom.");
       return;
@@ -193,9 +250,11 @@ export function CarrinhoLateral({
     try {
       setValidandoCupom(true);
       const celularNorm = normalizarTelefoneParaSalvar(celularCliente);
-      const clienteId = await upsertCliente(nomeCliente, celularNorm);
+      const clienteId =
+        clienteIdReconhecido ||
+        (await upsertCliente(nomeCliente, celularNorm));
 
-      const resultado = await validarCupom(codigoCupom, subtotal, clienteId);
+      const resultado = await validarCupom(codigoUsar, subtotal, clienteId);
 
       if (resultado.ok === false) {
         toast.error(resultado.erro);
@@ -216,6 +275,8 @@ export function CarrinhoLateral({
       } else {
         toast.success(`Cupom ${resultado.cupom.codigo} aplicado!`);
       }
+      setCodigoCupom("");
+      setMostrarCuponsCliente(false);
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO - CUPOM]", mensagem);
@@ -394,11 +455,143 @@ export function CarrinhoLateral({
     </div>
   );
 
+  const resumoCuponsDisponiveis = (() => {
+    if (carregandoCuponsCliente) {
+      return {
+        titulo: "Buscando seus cupons…",
+        detalhe: "Conferindo benefícios vinculados a este celular.",
+      };
+    }
+    if (!clienteIdReconhecido) return null;
+    if (cuponsCliente.length === 0) {
+      return {
+        titulo: "Nenhum cupom exclusivo agora",
+        detalhe:
+          "Este celular não tem cupom pessoal ativo. Você ainda pode digitar um código abaixo.",
+      };
+    }
+    const qtd = cuponsCliente.length;
+    const destaque = cuponsCliente[0];
+    const outros = qtd > 1 ? ` e mais ${qtd - 1}` : "";
+    return {
+      titulo:
+        qtd === 1
+          ? "Você tem 1 cupom disponível"
+          : `Você tem ${qtd} cupons disponíveis`,
+      detalhe: `${destaque.codigo} — ${rotuloCupomResumo(destaque)}${outros}. Toque para ver e escolher.`,
+    };
+  })();
+
   const renderCampoCupom = () => (
     <div className="space-y-2">
       <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
         Cupom de desconto
       </label>
+
+      {clienteIdReconhecido && resumoCuponsDisponiveis && (
+        <button
+          type="button"
+          onClick={() => setMostrarCuponsCliente((v) => !v)}
+          className={`w-full text-left rounded-xl border px-3.5 py-3 transition active:scale-[0.99] ${
+            cuponsCliente.length > 0
+              ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/30"
+              : "border-gray-200 bg-gray-50 dark:border-[#323438] dark:bg-[#121212]"
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            <span
+              className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                cuponsCliente.length > 0
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300"
+              }`}
+            >
+              <Ticket size={16} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p
+                className={`text-sm font-bold leading-snug ${
+                  cuponsCliente.length > 0
+                    ? "text-emerald-900 dark:text-emerald-200"
+                    : "text-zinc-700 dark:text-zinc-200"
+                }`}
+              >
+                {resumoCuponsDisponiveis.titulo}
+              </p>
+              <p
+                className={`text-xs mt-0.5 leading-snug ${
+                  cuponsCliente.length > 0
+                    ? "text-emerald-800/80 dark:text-emerald-300/80"
+                    : "text-zinc-500"
+                }`}
+              >
+                {resumoCuponsDisponiveis.detalhe}
+              </p>
+              {cuponsCliente.length > 0 && (
+                <p className="text-[11px] font-bold text-cookie-primary mt-1.5">
+                  {mostrarCuponsCliente
+                    ? "Ocultar lista ▲"
+                    : "Ver cupons e escolher ▼"}
+                </p>
+              )}
+            </div>
+          </div>
+        </button>
+      )}
+
+      {mostrarCuponsCliente && clienteIdReconhecido && (
+        <div className="rounded-xl border border-gray-200 dark:border-[#323438] bg-gray-50 dark:bg-[#121212] p-3 space-y-2">
+          {carregandoCuponsCliente ? (
+            <p className="text-xs text-zinc-500">Buscando cupons…</p>
+          ) : cuponsCliente.length === 0 ? (
+            <p className="text-xs text-zinc-500">
+              Nenhum cupom exclusivo disponível neste celular.
+            </p>
+          ) : (
+            cuponsCliente.map((c) => {
+              const jaAplicado = cuponsAplicados.some((a) => a.id === c.id);
+              const usosRestantes =
+                c.limite_uso != null
+                  ? Math.max(c.limite_uso - c.usos, 0)
+                  : null;
+              return (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-[#323438] px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono font-black text-sm tracking-wide">
+                      {c.codigo}
+                    </p>
+                    <p className="text-[11px] text-zinc-500 leading-snug">
+                      {rotuloCupomResumo(c)}
+                      {c.acumulativo ? " · acumulativo" : ""}
+                      {c.valor_minimo
+                        ? ` · mín. R$ ${c.valor_minimo.toFixed(2).replace(".", ",")}`
+                        : ""}
+                      {c.validade
+                        ? ` · válido até ${new Date(c.validade).toLocaleDateString("pt-BR")}`
+                        : ""}
+                      {usosRestantes != null
+                        ? ` · ${usosRestantes} uso(s) restante(s)`
+                        : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={validandoCupom || jaAplicado}
+                    onClick={() => void handleAplicarCupom(c.codigo)}
+                    className="shrink-0 h-9 px-3 rounded-lg bg-cookie-primary hover:bg-cookie-primary-hover text-white text-xs font-bold disabled:opacity-50"
+                  >
+                    {jaAplicado ? "Aplicado" : "Usar"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
       {cuponsAplicados.length > 0 ? (
         <div className="space-y-2">
           {cuponsAplicados.map((c) => (

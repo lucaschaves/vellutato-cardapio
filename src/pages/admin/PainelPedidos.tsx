@@ -8,6 +8,7 @@ import {
   Clock,
   MapPin,
   MessageCircle,
+  MessagesSquare,
   Phone,
   Printer,
   Trash2,
@@ -15,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
 import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
@@ -28,6 +30,7 @@ import {
   type MensagemWhatsapp,
 } from "../../lib/mensagensWhatsapp";
 import { MINUTOS_EXPIRA_PAGAMENTO_DELIVERY } from "../../lib/deliveryPedido";
+import { obterOuCriarConversa } from "../../lib/deliveryChat";
 import { dispararNotificacaoStatusPedido } from "../../lib/notificacoesPedido";
 import {
   compararPedidosKds,
@@ -60,6 +63,7 @@ interface Pedido {
   modalidade?: "entrega" | "retirada" | null;
   status_pagamento?: string | null;
   identificador: string;
+  cliente_id?: string | null;
   cliente_nome: string;
   cliente_celular: string | null;
   total: number | null;
@@ -179,6 +183,7 @@ function dadosMensagemDoPedido(pedido: Pedido): DadosMensagemPedido {
 }
 
 export function PainelPedidos() {
+  const navigate = useNavigate();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [carregando, setCarregando] = useState(true);
   const {
@@ -193,6 +198,7 @@ export function PainelPedidos() {
     MensagemWhatsapp[]
   >([]);
   const [pedidoWhatsApp, setPedidoWhatsApp] = useState<Pedido | null>(null);
+  const [abrindoChatId, setAbrindoChatId] = useState<string | null>(null);
   const requisicaoAtualRef = useRef(0);
   const debounceRef = useRef<number | null>(null);
 
@@ -206,7 +212,7 @@ export function PainelPedidos() {
           .from("pedidos")
           .select(
             `
-            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_nome, cliente_celular, total, taxa_entrega, desconto_aplicado, desconto_frete, acrescimo_clima, status, criado_em, voa_order_id, tracking_url, endereco_json, agendado_para,
+            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_id, cliente_nome, cliente_celular, total, taxa_entrega, desconto_aplicado, desconto_frete, acrescimo_clima, status, criado_em, voa_order_id, tracking_url, endereco_json, agendado_para,
             pedido_itens (
               id, quantidade, observacoes, modo_consumo,
               produtos ( nome ),
@@ -378,6 +384,41 @@ export function PainelPedidos() {
       return;
     }
     setPedidoWhatsApp(pedido);
+  };
+
+  const abrirChatCliente = async (pedido: Pedido) => {
+    if (abrindoChatId) return;
+    setAbrindoChatId(pedido.id);
+    try {
+      let clienteId = pedido.cliente_id || null;
+      if (!clienteId && pedido.cliente_celular) {
+        const digitos = pedido.cliente_celular.replace(/\D/g, "");
+        const { data } = await supabase
+          .from("clientes")
+          .select("id")
+          .or(`celular.eq.${pedido.cliente_celular},celular.eq.${digitos}`)
+          .limit(1)
+          .maybeSingle();
+        clienteId = data?.id ?? null;
+      }
+      if (!clienteId) {
+        toast.error(
+          "Este pedido não tem cliente vinculado para abrir o chat.",
+        );
+        return;
+      }
+      const conversaId = await obterOuCriarConversa({
+        clienteId,
+        pedidoId: pedido.id,
+      });
+      navigate(`/admin/chat?conversa=${conversaId}`);
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[CHAT] Abrir do KDS:", mensagem);
+      toast.error("Não foi possível abrir o chat deste cliente.");
+    } finally {
+      setAbrindoChatId(null);
+    }
   };
 
   const enviarWhatsApp = (pedido: Pedido, modelo: string) => {
@@ -606,6 +647,17 @@ export function PainelPedidos() {
                   <MessageCircle size={20} />
                 </button>
               )}
+              {(pedido.cliente_id || pedido.cliente_celular) && (
+                <button
+                  type="button"
+                  onClick={() => void abrirChatCliente(pedido)}
+                  disabled={abrindoChatId === pedido.id}
+                  className="p-2 bg-cookie-primary text-white rounded-md hover:bg-cookie-primary/90 transition-colors disabled:opacity-60"
+                  title="Abrir chat do cliente"
+                >
+                  <MessagesSquare size={20} />
+                </button>
+              )}
               <button
                 onClick={() => enviarParaImpressora(pedido)}
                 className="p-2 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -806,32 +858,49 @@ export function PainelPedidos() {
           <div className="animate-spin h-10 w-10 border-4 border-cookie-accent border-t-transparent rounded-full"></div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 overflow-hidden">
-          {/* Coluna PENDENTE */}
-          <div className="flex flex-col bg-gray-100 dark:bg-[#1a1815] rounded-xl p-4 overflow-y-auto hide-scrollbar">
-            <h2 className="font-bold text-lg mb-1 flex items-center gap-2 text-red-600">
-              <Clock size={20} /> Novos ({pendentes.length})
-            </h2>
-            <p className="text-[11px] text-gray-500 mb-4 leading-snug">
-              Agendados ficam aqui até 30 min antes (aí preparam e imprimem).
-              Demais: impressão na entrada; sobem sozinhos em 1 min sem Preparar.
-            </p>
-            <div className="flex flex-col gap-4">
-              <AnimatePresence>
-                {pendentes.map((p) => (
-                  <CardPedido
-                    key={p.id}
-                    pedido={p}
-                    corBorder="border-red-500"
-                  />
-                ))}
-              </AnimatePresence>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden md:flex-row md:gap-6">
+          {/* Coluna PENDENTE — aba recolhida à esquerda quando vazia */}
+          {pendentes.length > 0 ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-xl bg-gray-100 p-4 hide-scrollbar dark:bg-[#1a1815]">
+              <h2 className="mb-1 flex items-center gap-2 text-lg font-bold text-red-600">
+                <Clock size={20} /> Novos ({pendentes.length})
+              </h2>
+              <p className="mb-4 text-[11px] leading-snug text-gray-500">
+                Agendados ficam aqui até 30 min antes (aí preparam e imprimem).
+                Demais: impressão na entrada; sobem sozinhos em 1 min sem
+                Preparar.
+              </p>
+              <div className="flex flex-col gap-4">
+                <AnimatePresence>
+                  {pendentes.map((p) => (
+                    <CardPedido
+                      key={p.id}
+                      pedido={p}
+                      corBorder="border-red-500"
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div
+              className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gray-100 px-3 py-3 text-red-600 dark:bg-[#1a1815] md:w-12 md:flex-col md:gap-3 md:px-2 md:py-4"
+              title="Nenhum pedido novo"
+              aria-label="Novos: nenhum pedido"
+            >
+              <Clock size={18} className="shrink-0" />
+              <span className="text-sm font-bold md:[writing-mode:vertical-rl] md:rotate-180">
+                Novos
+              </span>
+              <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-red-700 dark:bg-red-950/50 dark:text-red-300">
+                0
+              </span>
+            </div>
+          )}
 
           {/* Coluna EM PRODUÇÃO */}
-          <div className="flex flex-col bg-gray-100 dark:bg-[#1a1815] rounded-xl p-4 overflow-y-auto hide-scrollbar">
-            <h2 className="font-bold text-lg mb-4 flex items-center gap-2 text-yellow-600">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-xl bg-gray-100 p-4 hide-scrollbar dark:bg-[#1a1815]">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-yellow-600">
               <ChefHat size={20} /> Preparando ({emProducao.length})
             </h2>
             <div className="flex flex-col gap-4">
@@ -848,11 +917,11 @@ export function PainelPedidos() {
           </div>
 
           {/* Coluna PRONTO */}
-          <div className="flex flex-col bg-gray-100 dark:bg-[#1a1815] rounded-xl p-4 overflow-y-auto hide-scrollbar">
-            <h2 className="font-bold text-lg mb-1 flex items-center gap-2 text-green-600">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-xl bg-gray-100 p-4 hide-scrollbar dark:bg-[#1a1815]">
+            <h2 className="mb-1 flex items-center gap-2 text-lg font-bold text-green-600">
               <CheckCircle2 size={20} /> Prontos ({prontos.length})
             </h2>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="mb-4 text-xs text-gray-500">
               Delivery: chame o motoboy aqui. Retirada: aguarde o cliente.
             </p>
             <div className="flex flex-col gap-4">

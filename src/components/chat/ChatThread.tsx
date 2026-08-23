@@ -1,4 +1,4 @@
-import { Send } from "lucide-react";
+import { Check, CheckCheck, Send } from "lucide-react";
 import { useMemo } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -89,6 +89,12 @@ export function ChatThread({
                   const propria = m.autor === perspectiva;
                   const nome =
                     m.autor === "cliente" ? nomeCliente : nomeLoja;
+                  const visualizada =
+                    perspectiva === "admin" &&
+                    propria &&
+                    m.lida_cliente === true;
+                  const enviadaPropria =
+                    perspectiva === "admin" && propria;
                   return (
                     <MessageScrollerItem
                       key={m.id}
@@ -118,8 +124,34 @@ export function ChatThread({
                               {m.corpo}
                             </BubbleContent>
                           </Bubble>
-                          <MessageFooter>
-                            {formatarHoraMensagem(m.criado_em)}
+                          <MessageFooter
+                            className={cn(
+                              "gap-1",
+                              propria && "justify-end",
+                            )}
+                          >
+                            <span>{formatarHoraMensagem(m.criado_em)}</span>
+                            {enviadaPropria && (
+                              <span
+                                className={cn(
+                                  "inline-flex items-center",
+                                  visualizada
+                                    ? "text-sky-500"
+                                    : "text-muted-foreground",
+                                )}
+                                title={
+                                  visualizada
+                                    ? "Visualizado pelo cliente"
+                                    : "Enviado"
+                                }
+                              >
+                                {visualizada ? (
+                                  <CheckCheck size={14} aria-hidden />
+                                ) : (
+                                  <Check size={14} aria-hidden />
+                                )}
+                              </span>
+                            )}
                           </MessageFooter>
                         </MessageContent>
                       </Message>

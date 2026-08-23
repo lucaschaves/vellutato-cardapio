@@ -22,6 +22,7 @@ import { GerenciamentoClientes } from "@/pages/admin/GerenciamentoClientes";
 import { GerenciamentoCombos } from "@/pages/admin/GerenciamentoCombos";
 import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
+import { GerenciamentoDespesas } from "@/pages/admin/GerenciamentoDespesas";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
 import { GerenciamentoImpressao } from "@/pages/admin/GerenciamentoImpressao";
 import { GerenciamentoIntegracoes } from "@/pages/admin/GerenciamentoIntegracoes";
@@ -32,10 +33,10 @@ import { GestaoCaixa } from "@/pages/admin/GestaoCaixa";
 import { HistoricoPedidos } from "@/pages/admin/HistoricoPedidos";
 import { BemVindo } from "@/pages/client/BemVindo";
 import { AdminLayout } from "../components/AdminLayout";
+import { EditorFichaTecnica } from "../pages/admin/EditorFichaTecnica";
 import { GerenciamentoCatalogo } from "../pages/admin/GerenciamentoCatalogo";
 import { GerenciamentoEstoque } from "../pages/admin/GerenciamentoEstoque";
 import { GerenciamentoFichasTecnicas } from "../pages/admin/GerenciamentoFichasTecnicas";
-import { EditorFichaTecnica } from "../pages/admin/EditorFichaTecnica";
 import { GerenciamentoInsumos } from "../pages/admin/GerenciamentoInsumos";
 import { ListaCompras } from "../pages/admin/ListaCompras";
 import { PainelPedidos } from "../pages/admin/PainelPedidos";
@@ -173,7 +174,10 @@ const router = createBrowserRouter([
       { path: "/admin/mesas", element: <GerenciamentoMesas /> },
       { path: "/admin/estoque", element: <GerenciamentoEstoque /> },
       { path: "/admin/insumos", element: <GerenciamentoInsumos /> },
-      { path: "/admin/fichas-tecnicas", element: <GerenciamentoFichasTecnicas /> },
+      {
+        path: "/admin/fichas-tecnicas",
+        element: <GerenciamentoFichasTecnicas />,
+      },
       { path: "/admin/fichas-tecnicas/nova", element: <EditorFichaTecnica /> },
       { path: "/admin/fichas-tecnicas/:id", element: <EditorFichaTecnica /> },
       { path: "/admin/lista-compras", element: <ListaCompras /> },
@@ -196,6 +200,7 @@ const router = createBrowserRouter([
         element: <GerenciamentoVendasCruzadas />,
       },
       { path: "/admin/caixa", element: <GestaoCaixa /> },
+      { path: "/admin/despesas", element: <GerenciamentoDespesas /> },
       { path: "/admin", element: <Navigate to="/admin/dashboard" replace /> },
     ],
   },

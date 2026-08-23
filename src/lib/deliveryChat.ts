@@ -98,6 +98,48 @@ export async function marcarConversaLidaAdmin(
   }
 }
 
+/**
+ * Marca a conversa como não lida para o admin (responder depois).
+ * Reabre a última mensagem do cliente como não lida, se existir.
+ */
+export async function marcarConversaNaoLidaAdmin(
+  conversaId: string,
+): Promise<void> {
+  const { data: ultimaCliente } = await supabase
+    .from("mensagens")
+    .select("id")
+    .eq("conversa_id", conversaId)
+    .eq("autor", "cliente")
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (ultimaCliente?.id) {
+    const { error: errMsg } = await supabase
+      .from("mensagens")
+      .update({ lida_admin: false })
+      .eq("id", ultimaCliente.id);
+    if (errMsg) throw new Error(errMsg.message);
+  }
+
+  const { count } = await supabase
+    .from("mensagens")
+    .select("id", { count: "exact", head: true })
+    .eq("conversa_id", conversaId)
+    .eq("autor", "cliente")
+    .eq("lida_admin", false);
+
+  const qtd = Math.max(1, count ?? 0);
+  const { error: errConv } = await supabase
+    .from("conversas")
+    .update({
+      nao_lida_admin: true,
+      nao_lidas_admin_count: qtd,
+    })
+    .eq("id", conversaId);
+  if (errConv) throw new Error(errConv.message);
+}
+
 export async function marcarConversaLidaCliente(
   conversaId: string,
 ): Promise<void> {

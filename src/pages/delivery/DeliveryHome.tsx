@@ -1,10 +1,17 @@
-import { Bike, Clock, MapPin, Search } from "lucide-react";
+import { Bike, Clock, MapPin, Search, Sparkles, Tag } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useClienteDeliverySessao } from "../../hooks/useClienteDeliverySessao";
+import { track } from "../../lib/analytics";
+import {
+  avaliarEntregaDelivery,
+  listarBairrosFreteGeojson,
+  taxasDosBairrosGeojson,
+} from "../../lib/deliveryBairros";
 import {
   buscarCep,
   formatarCep,
@@ -13,24 +20,17 @@ import {
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
 import {
-  avaliarEntregaDelivery,
-  listarBairrosFreteGeojson,
-  taxasDosBairrosGeojson,
-} from "../../lib/deliveryBairros";
-import {
   formatarDistanciaEntrega,
   taxaMinimaConfig,
   type DeliveryConfig,
 } from "../../lib/deliveryFrete";
-import { produtoEstaEsgotado } from "../../lib/estoque";
-import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
-import { supabase } from "../../lib/supabase";
 import {
   lerEnderecoDeliveryLocal,
   salvarEnderecoDeliveryLocal,
 } from "../../lib/deliveryGuestStorage";
-import { TagMedidaProduto } from "../../components/TagMedidaProduto";
-import { track } from "../../lib/analytics";
+import { produtoEstaEsgotado } from "../../lib/estoque";
+import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
+import { supabase } from "../../lib/supabase";
 import {
   lerRascunhoEndereco,
   salvarRascunhoEndereco,
@@ -50,6 +50,7 @@ interface Produto {
   preco: number;
   preco_promocional: number | null;
   em_promocao: boolean | null;
+  destaque?: boolean | null;
   imagem_url: string | null;
   categoria_id: string | null;
   ativo: boolean;
@@ -59,12 +60,23 @@ interface Produto {
   disponibilidade?: string | null;
 }
 
+const CATEGORIA_DESTAQUES_ID = "__destaques__";
+const CATEGORIA_DESTAQUES_NOME = "Especiais";
+
+function ordenarProdutos(a: Produto, b: Produto) {
+  const diff = (a.ordem ?? 0) - (b.ordem ?? 0);
+  if (diff !== 0) return diff;
+  return a.nome.localeCompare(b.nome, "pt-BR");
+}
+
 function CardProduto({
   produto,
   onClick,
+  variante = "normal",
 }: {
   produto: Produto;
   onClick: () => void;
+  variante?: "normal" | "destaque";
 }) {
   const promo =
     produto.em_promocao &&
@@ -73,14 +85,24 @@ function CardProduto({
   const preco = promo
     ? Number(produto.preco_promocional)
     : Number(produto.preco);
+  const ehDestaque = variante === "destaque";
+  const mostrarEspecial = Boolean(produto.destaque);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex gap-3 w-full bg-white rounded-2xl border border-zinc-200 p-3 text-left active:scale-[0.99] transition"
+      className={`flex gap-3 w-full bg-white rounded-2xl p-3 text-left active:scale-[0.99] transition ${
+        ehDestaque
+          ? "border-2 border-amber-400/80 shadow-sm"
+          : "border border-zinc-200"
+      }`}
     >
-      <div className="relative h-24 w-24 shrink-0 rounded-xl overflow-hidden bg-zinc-100">
+      <div
+        className={`relative shrink-0 rounded-xl overflow-hidden bg-zinc-100 ${
+          ehDestaque ? "h-32 w-32 sm:h-36 sm:w-36" : "h-24 w-24"
+        }`}
+      >
         {produto.imagem_url ? (
           <img
             src={produto.imagem_url}
@@ -92,16 +114,44 @@ function CardProduto({
             sem foto
           </div>
         )}
+        {promo && (
+          <span className="absolute top-1.5 left-1.5 z-10 inline-flex items-center gap-0.5 rounded-md bg-cookie-primary px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow">
+            <Tag size={9} strokeWidth={3} />
+            Promo
+          </span>
+        )}
+        {mostrarEspecial && (
+          <span
+            className={`absolute z-10 inline-flex items-center gap-0.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow ${
+              promo ? "top-1.5 left-[3.75rem]" : "top-1.5 left-1.5"
+            }`}
+          >
+            <Sparkles size={9} strokeWidth={3} />
+            Especial
+          </span>
+        )}
         <TagMedidaProduto
           valor={produto.medida_valor}
           unidade={produto.medida_unidade}
           variante="overlay"
           tamanho="sm"
-          className="absolute top-1.5 left-1.5 z-10"
+          className={`absolute z-10 ${
+            promo || mostrarEspecial
+              ? promo && mostrarEspecial
+                ? "top-1.5 left-[7.25rem]"
+                : "top-1.5 left-[3.75rem]"
+              : "top-1.5 left-1.5"
+          }`}
         />
       </div>
       <div className="flex-1 min-w-0 flex flex-col">
-        <h3 className="font-bold leading-snug">{produto.nome}</h3>
+        <h3
+          className={`font-bold leading-snug ${
+            ehDestaque ? "text-base" : "text-sm"
+          }`}
+        >
+          {produto.nome}
+        </h3>
         <TagMedidaProduto
           valor={produto.medida_valor}
           unidade={produto.medida_unidade}
@@ -109,12 +159,20 @@ function CardProduto({
           className="mt-1 self-start"
         />
         {produto.descricao && (
-          <p className="text-xs text-zinc-500 line-clamp-2 mt-0.5">
+          <p
+            className={`text-xs text-zinc-500 mt-0.5 ${
+              ehDestaque ? "line-clamp-3" : "line-clamp-2"
+            }`}
+          >
             {produto.descricao}
           </p>
         )}
         <div className="mt-auto pt-2 flex items-baseline gap-2">
-          <span className="font-black text-cookie-primary">
+          <span
+            className={`font-black text-cookie-primary ${
+              ehDestaque ? "text-base" : ""
+            }`}
+          >
             R$ {preco.toFixed(2).replace(".", ",")}
           </span>
           {promo && (
@@ -207,7 +265,9 @@ export function DeliveryHome() {
           .sort((a, b) => a.ordem - b.ordem)
           .filter((c) => prods.some((p) => p.categoria_id === c.id));
         setCategorias(cats);
-        if (cats[0]) setCatAtiva(cats[0].id);
+        const temDestaque = prods.some((p) => p.destaque);
+        if (temDestaque) setCatAtiva(CATEGORIA_DESTAQUES_ID);
+        else if (cats[0]) setCatAtiva(cats[0].id);
       } catch (e) {
         console.error(e);
         toast.error("Falha ao carregar cardápio.");
@@ -289,10 +349,8 @@ export function DeliveryHome() {
       setFreteInfo(null);
       return;
     }
-    const lat =
-      endereco && "latitude" in endereco ? endereco.latitude : null;
-    const lng =
-      endereco && "longitude" in endereco ? endereco.longitude : null;
+    const lat = endereco && "latitude" in endereco ? endereco.latitude : null;
+    const lng = endereco && "longitude" in endereco ? endereco.longitude : null;
     if (lat == null || lng == null) {
       setFreteInfo(null);
       return;
@@ -324,18 +382,36 @@ export function DeliveryHome() {
   }, [config, endereco]);
 
   const secoes = useMemo(() => {
-    return categorias
+    const produtosDestaque = produtos
+      .filter((p) => p.destaque)
+      .slice()
+      .sort(ordenarProdutos);
+
+    const base = categorias
       .map((categoria) => ({
         categoria,
         produtos: produtos
           .filter((p) => p.categoria_id === categoria.id)
-          .sort((a, b) => {
-            const diff = (a.ordem ?? 0) - (b.ordem ?? 0);
-            if (diff !== 0) return diff;
-            return a.nome.localeCompare(b.nome, "pt-BR");
-          }),
+          .slice()
+          .sort(ordenarProdutos),
+        destaque: false as boolean,
       }))
       .filter((s) => s.produtos.length > 0);
+
+    if (produtosDestaque.length === 0) return base;
+
+    return [
+      {
+        categoria: {
+          id: CATEGORIA_DESTAQUES_ID,
+          nome: CATEGORIA_DESTAQUES_NOME,
+          ordem: -1,
+        },
+        produtos: produtosDestaque,
+        destaque: true,
+      },
+      ...base,
+    ];
   }, [categorias, produtos]);
 
   // Destaca a categoria visível no scroll
@@ -474,8 +550,7 @@ export function DeliveryHome() {
                   <h2 className="font-bold text-sm">Onde você quer receber?</h2>
                   {tempoEntrega != null && tempoEntrega > 0 && (
                     <span className="inline-flex items-center gap-1 shrink-0 text-xs font-medium text-zinc-500">
-                      <Clock size={12} />
-                      ~{tempoEntrega} min
+                      <Clock size={12} />~{tempoEntrega} min
                     </span>
                   )}
                 </div>
@@ -548,8 +623,7 @@ export function DeliveryHome() {
                 </p>
                 {tempoEntrega != null && tempoEntrega > 0 && (
                   <span className="inline-flex items-center gap-1 shrink-0 text-xs font-medium text-zinc-500">
-                    <Clock size={12} />
-                    ~{tempoEntrega} min
+                    <Clock size={12} />~{tempoEntrega} min
                   </span>
                 )}
               </div>
@@ -599,42 +673,61 @@ export function DeliveryHome() {
       {secoes.length > 0 && (
         <div className="sticky top-14 z-20 -mx-4 px-4 py-2 bg-[#f4f4f5]/95 backdrop-blur border-b border-zinc-200/80">
           <div className="flex gap-2 overflow-x-auto scrollbar-none">
-            {secoes.map(({ categoria }) => (
-              <button
-                key={categoria.id}
-                type="button"
-                ref={(el) => {
-                  chipRefs.current[categoria.id] = el;
-                }}
-                onClick={() => irParaCategoria(categoria.id)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold border transition ${
-                  catAtiva === categoria.id
-                    ? "bg-zinc-900 text-white border-zinc-900"
-                    : "bg-white border-zinc-200 text-zinc-700"
-                }`}
-              >
-                {categoria.nome}
-              </button>
-            ))}
+            {secoes.map(({ categoria, destaque }) => {
+              const ativa = catAtiva === categoria.id;
+              return (
+                <button
+                  key={categoria.id}
+                  type="button"
+                  ref={(el) => {
+                    chipRefs.current[categoria.id] = el;
+                  }}
+                  onClick={() => irParaCategoria(categoria.id)}
+                  className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold border transition ${
+                    ativa
+                      ? destaque
+                        ? "bg-amber-500 text-white border-amber-500"
+                        : "bg-zinc-900 text-white border-zinc-900"
+                      : destaque
+                        ? "bg-amber-50 border-amber-300 text-amber-900"
+                        : "bg-white border-zinc-200 text-zinc-700"
+                  }`}
+                >
+                  {destaque && <Sparkles size={13} strokeWidth={2.5} />}
+                  {categoria.nome}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
       <div className="space-y-8">
-        {secoes.map(({ categoria, produtos: itens }) => (
+        {secoes.map(({ categoria, produtos: itens, destaque }) => (
           <section
             key={categoria.id}
             id={`cat-${categoria.id}`}
             className="scroll-mt-28 space-y-3"
           >
-            <h2 className="text-lg font-black tracking-tight">
-              {categoria.nome}
-            </h2>
+            <div>
+              <h2 className="text-lg font-black tracking-tight inline-flex items-center gap-2">
+                {destaque && (
+                  <Sparkles size={18} className="text-amber-500 shrink-0" />
+                )}
+                {categoria.nome}
+              </h2>
+              {destaque && (
+                <p className="text-xs text-amber-800/80 font-medium mt-0.5">
+                  Seleção da casa
+                </p>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-3">
               {itens.map((p) => (
                 <CardProduto
-                  key={p.id}
+                  key={`${destaque ? "d" : "n"}-${p.id}`}
                   produto={p}
+                  variante={destaque ? "destaque" : "normal"}
                   onClick={() => navigate(`/item/${p.id}`)}
                 />
               ))}

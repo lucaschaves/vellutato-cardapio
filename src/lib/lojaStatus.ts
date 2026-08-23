@@ -5,13 +5,33 @@ export interface StatusLoja {
   aberta: boolean;
   motivo: string | null;
   tempo_preparo_min: number;
+  /** Minutos após a abertura antes do 1º slot agendável. */
+  atraso_primeiro_agendamento_min?: number;
 }
 
 export interface LojaConfig {
   pausado: boolean;
+  /** ISO; se no futuro, a loja reabre sozinha neste instante. */
+  pausado_ate: string | null;
   mensagem_pausa: string | null;
   tempo_preparo_min: number;
+  /**
+   * Minutos após a abertura em que o primeiro horário de agendamento
+   * pode ser oferecido (ex.: abre 14:00 + 15 → 14:15).
+   */
+  atraso_primeiro_agendamento_min: number;
   limite_pedidos_ativos: number | null;
+}
+
+export const MINUTOS_PAUSA_RAPIDA_LOJA = 10;
+
+export function pausaLojaEfetiva(
+  config: Pick<LojaConfig, "pausado" | "pausado_ate">,
+  agora = Date.now(),
+): boolean {
+  if (!config.pausado) return false;
+  if (!config.pausado_ate) return true;
+  return new Date(config.pausado_ate).getTime() > agora;
 }
 
 export interface LojaHorario {
@@ -43,11 +63,19 @@ export async function buscarStatusLoja(): Promise<StatusLoja | null> {
 export async function buscarConfigLoja(): Promise<LojaConfig> {
   const { data, error } = await supabase
     .from("loja_config")
-    .select("pausado, mensagem_pausa, tempo_preparo_min, limite_pedidos_ativos")
+    .select(
+      "pausado, pausado_ate, mensagem_pausa, tempo_preparo_min, atraso_primeiro_agendamento_min, limite_pedidos_ativos",
+    )
     .eq("id", 1)
     .single();
   if (error) throw new Error(error.message);
-  return data as LojaConfig;
+  const row = data as LojaConfig;
+  return {
+    ...row,
+    atraso_primeiro_agendamento_min: Number(
+      row.atraso_primeiro_agendamento_min ?? 15,
+    ),
+  };
 }
 
 export async function salvarConfigLoja(config: LojaConfig): Promise<void> {
@@ -55,8 +83,15 @@ export async function salvarConfigLoja(config: LojaConfig): Promise<void> {
     .from("loja_config")
     .update({
       pausado: config.pausado,
+      pausado_ate: config.pausado
+        ? config.pausado_ate
+        : null,
       mensagem_pausa: config.mensagem_pausa?.trim() || null,
       tempo_preparo_min: config.tempo_preparo_min,
+      atraso_primeiro_agendamento_min: Math.max(
+        0,
+        Math.min(180, Number(config.atraso_primeiro_agendamento_min) || 0),
+      ),
       limite_pedidos_ativos: config.limite_pedidos_ativos,
       atualizado_em: new Date().toISOString(),
     })
@@ -71,6 +106,32 @@ export async function buscarHorariosLoja(): Promise<LojaHorario[]> {
     .order("dia_semana");
   if (error) throw new Error(error.message);
   return (data ?? []) as LojaHorario[];
+}
+
+export async function pausarLojaPorMinutos(minutos: number): Promise<void> {
+  const ate = new Date(Date.now() + minutos * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from("loja_config")
+    .update({
+      pausado: true,
+      pausado_ate: ate,
+      mensagem_pausa: `Pausa rápida de ${minutos} minutos. Voltamos já!`,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq("id", 1);
+  if (error) throw new Error(error.message);
+}
+
+export async function reabrirLoja(): Promise<void> {
+  const { error } = await supabase
+    .from("loja_config")
+    .update({
+      pausado: false,
+      pausado_ate: null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq("id", 1);
+  if (error) throw new Error(error.message);
 }
 
 export async function salvarHorarioLoja(horario: LojaHorario): Promise<void> {

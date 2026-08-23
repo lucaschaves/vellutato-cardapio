@@ -681,6 +681,203 @@ export type Database = {
         }
         Relationships: []
       }
+      financeiro_categorias: {
+        Row: {
+          ativo: boolean
+          criado_em: string
+          id: string
+          nome: string
+          ordem: number
+          tipo: string
+        }
+        Insert: {
+          ativo?: boolean
+          criado_em?: string
+          id?: string
+          nome: string
+          ordem?: number
+          tipo?: string
+        }
+        Update: {
+          ativo?: boolean
+          criado_em?: string
+          id?: string
+          nome?: string
+          ordem?: number
+          tipo?: string
+        }
+        Relationships: []
+      }
+      financeiro_lancamentos: {
+        Row: {
+          atualizado_em: string
+          categoria_id: string
+          competencia: string
+          criado_em: string
+          data_pagamento: string | null
+          descricao: string
+          forma_pagamento: string | null
+          id: string
+          observacao: string | null
+          parcela_numero: number | null
+          parcela_total: number | null
+          parcelamento_id: string | null
+          recorrencia_id: string | null
+          status: string
+          tipo: string
+          valor: number
+          vencimento: string
+        }
+        Insert: {
+          atualizado_em?: string
+          categoria_id: string
+          competencia: string
+          criado_em?: string
+          data_pagamento?: string | null
+          descricao: string
+          forma_pagamento?: string | null
+          id?: string
+          observacao?: string | null
+          parcela_numero?: number | null
+          parcela_total?: number | null
+          parcelamento_id?: string | null
+          recorrencia_id?: string | null
+          status?: string
+          tipo: string
+          valor: number
+          vencimento: string
+        }
+        Update: {
+          atualizado_em?: string
+          categoria_id?: string
+          competencia?: string
+          criado_em?: string
+          data_pagamento?: string | null
+          descricao?: string
+          forma_pagamento?: string | null
+          id?: string
+          observacao?: string | null
+          parcela_numero?: number | null
+          parcela_total?: number | null
+          parcelamento_id?: string | null
+          recorrencia_id?: string | null
+          status?: string
+          tipo?: string
+          valor?: number
+          vencimento?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financeiro_lancamentos_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_categorias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financeiro_lancamentos_parcelamento_id_fkey"
+            columns: ["parcelamento_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_parcelamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financeiro_lancamentos_recorrencia_id_fkey"
+            columns: ["recorrencia_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_recorrencias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financeiro_parcelamentos: {
+        Row: {
+          categoria_id: string
+          criado_em: string
+          descricao: string
+          forma_pagamento: string | null
+          id: string
+          n_parcelas: number
+          observacao: string | null
+          valor_total: number
+        }
+        Insert: {
+          categoria_id: string
+          criado_em?: string
+          descricao: string
+          forma_pagamento?: string | null
+          id?: string
+          n_parcelas: number
+          observacao?: string | null
+          valor_total: number
+        }
+        Update: {
+          categoria_id?: string
+          criado_em?: string
+          descricao?: string
+          forma_pagamento?: string | null
+          id?: string
+          n_parcelas?: number
+          observacao?: string | null
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financeiro_parcelamentos_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_categorias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financeiro_recorrencias: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          categoria_id: string
+          criado_em: string
+          descricao: string
+          dia_vencimento: number
+          forma_pagamento: string | null
+          id: string
+          observacao: string | null
+          valor: number
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          categoria_id: string
+          criado_em?: string
+          descricao: string
+          dia_vencimento?: number
+          forma_pagamento?: string | null
+          id?: string
+          observacao?: string | null
+          valor: number
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          categoria_id?: string
+          criado_em?: string
+          descricao?: string
+          dia_vencimento?: number
+          forma_pagamento?: string | null
+          id?: string
+          observacao?: string | null
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financeiro_recorrencias_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_categorias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       impressao_config: {
         Row: {
           atualizado_em: string
@@ -1021,7 +1218,9 @@ export type Database = {
           limite_pedidos_ativos: number | null
           mensagem_pausa: string | null
           pausado: boolean
+          pausado_ate: string | null
           tempo_preparo_min: number
+          atraso_primeiro_agendamento_min: number
         }
         Insert: {
           atualizado_em?: string
@@ -1033,7 +1232,9 @@ export type Database = {
           limite_pedidos_ativos?: number | null
           mensagem_pausa?: string | null
           pausado?: boolean
+          pausado_ate?: string | null
           tempo_preparo_min?: number
+          atraso_primeiro_agendamento_min?: number
         }
         Update: {
           atualizado_em?: string
@@ -1045,7 +1246,9 @@ export type Database = {
           limite_pedidos_ativos?: number | null
           mensagem_pausa?: string | null
           pausado?: boolean
+          pausado_ate?: string | null
           tempo_preparo_min?: number
+          atraso_primeiro_agendamento_min?: number
         }
         Relationships: [
           {
@@ -1568,6 +1771,7 @@ export type Database = {
           controlar_estoque: boolean
           criado_em: string
           descricao: string | null
+          destaque: boolean
           disponibilidade: Database["public"]["Enums"]["disponibilidade_produto"]
           em_promocao: boolean
           ficha_embalagem_delivery_id: string | null
@@ -1596,6 +1800,7 @@ export type Database = {
           controlar_estoque?: boolean
           criado_em?: string
           descricao?: string | null
+          destaque?: boolean
           disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           em_promocao?: boolean
           ficha_embalagem_delivery_id?: string | null
@@ -1624,6 +1829,7 @@ export type Database = {
           controlar_estoque?: boolean
           criado_em?: string
           descricao?: string | null
+          destaque?: boolean
           disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           em_promocao?: boolean
           ficha_embalagem_delivery_id?: string | null
@@ -2027,10 +2233,23 @@ export type Database = {
         Args: { p_conversa_id: string }
         Returns: undefined
       }
-      perfil_embalagem_item: {
-        Args: { p_modalidade: string; p_modo_consumo: string; p_origem: string }
-        Returns: string
-      }
+      perfil_embalagem_item:
+        | {
+            Args: {
+              p_modalidade: string
+              p_modo_consumo: string
+              p_origem: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_modalidade: Database["public"]["Enums"]["tipo_modalidade_pedido"]
+              p_modo_consumo: string
+              p_origem: string
+            }
+            Returns: string
+          }
       processar_pedido_pos_criacao: {
         Args: { p_cupom_id?: string; p_pedido_id: string }
         Returns: undefined

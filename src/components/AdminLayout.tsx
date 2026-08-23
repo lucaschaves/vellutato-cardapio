@@ -1,4 +1,4 @@
-import { LogOut, Search, X } from "lucide-react";
+import { LogOut, PanelLeftClose, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -18,6 +18,16 @@ import { cn } from "../lib/utils";
 import { AdminBreadcrumbHeader } from "./AdminBreadcrumbHeader";
 import { BotaoInstalarPwa } from "./BotaoInstalarPwa";
 import { LogoMarca } from "./LogoMarca";
+
+const LS_SIDEBAR_RECOLHIDO = "admin-sidebar-recolhido";
+
+function lerSidebarRecolhido(): boolean {
+  try {
+    return localStorage.getItem(LS_SIDEBAR_RECOLHIDO) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function LinkNav({
   item,
@@ -53,6 +63,7 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+  const [sidebarRecolhido, setSidebarRecolhido] = useState(lerSidebarRecolhido);
   const [busca, setBusca] = useState("");
   const [secaoId, setSecaoId] = useState(() => resolverSecaoPorPath(pathname));
 
@@ -60,6 +71,27 @@ export function AdminLayout() {
     setSecaoId(resolverSecaoPorPath(pathname));
     setBusca("");
   }, [pathname]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LS_SIDEBAR_RECOLHIDO,
+        sidebarRecolhido ? "1" : "0",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarRecolhido]);
+
+  const abrirSidebar = () => {
+    setMenuMobileAberto(true);
+    setSidebarRecolhido(false);
+  };
+
+  const recolherSidebar = () => {
+    setSidebarRecolhido(true);
+    setMenuMobileAberto(false);
+  };
 
   const secaoAtiva =
     SECOES_NAVEGACAO_ADMIN.find((s) => s.id === secaoId) ??
@@ -106,8 +138,9 @@ export function AdminLayout() {
 
               <aside
                 className={cn(
-                  "fixed inset-y-0 left-0 z-50 flex border-r border-gray-200 bg-white transition-transform duration-300 dark:border-gray-800 dark:bg-surface-dark lg:static lg:translate-x-0",
+                  "fixed inset-y-0 left-0 z-50 flex border-r border-gray-200 bg-white transition-[transform,width] duration-300 dark:border-gray-800 dark:bg-surface-dark lg:static lg:translate-x-0",
                   menuMobileAberto ? "translate-x-0" : "-translate-x-full",
+                  sidebarRecolhido && "lg:hidden",
                 )}
               >
                 {/* Rail de seções */}
@@ -171,14 +204,25 @@ export function AdminLayout() {
                         Admin
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={fecharMenuMobile}
-                      className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 lg:hidden dark:hover:bg-gray-800"
-                      aria-label="Fechar navegação"
-                    >
-                      <X size={18} />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={recolherSidebar}
+                        className="hidden rounded-lg p-2 text-gray-500 hover:bg-gray-100 lg:inline-flex dark:hover:bg-gray-800"
+                        aria-label="Recolher menu"
+                        title="Recolher menu"
+                      >
+                        <PanelLeftClose size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={fecharMenuMobile}
+                        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 lg:hidden dark:hover:bg-gray-800"
+                        aria-label="Fechar navegação"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="shrink-0 space-y-3 border-b border-gray-100 p-3 dark:border-gray-800/80">
@@ -254,7 +298,8 @@ export function AdminLayout() {
 
               <div className="flex min-w-0 flex-1 flex-col">
                 <AdminBreadcrumbHeader
-                  onAbrirMenu={() => setMenuMobileAberto(true)}
+                  onAbrirMenu={abrirSidebar}
+                  menuSempreVisivel={sidebarRecolhido}
                 />
 
                 <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

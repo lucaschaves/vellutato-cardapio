@@ -9,6 +9,7 @@ import {
   Plus,
   Settings,
   ShoppingBag,
+  Sparkles,
   Sun,
   Tag,
   Type,
@@ -23,7 +24,9 @@ import { CarrinhoLateral } from "../../components/CarrinhoLateral";
 import { InatividadeToten } from "../../components/InatividadeToten";
 import { LogoMarca } from "../../components/LogoMarca";
 import { ModalConfirmacao } from "../../components/ModalConfirmacao";
+import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
+import { lembrarMesaAnalytics, track } from "../../lib/analytics";
 import { formatarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
 import {
   lerTipoConsumo,
@@ -34,7 +37,6 @@ import {
   type ModoConsumoItem,
 } from "../../lib/disponibilidadeProduto";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
-import { lembrarMesaAnalytics, track } from "../../lib/analytics";
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
 import {
@@ -51,7 +53,6 @@ import {
   salvarTemaEscuro,
   type EscalaFonte,
 } from "../../lib/preferenciasExibicao";
-import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { supabase } from "../../lib/supabase";
 import { urlCardapio, urlItemProduto } from "../../lib/urlCardapio";
 import { useCartStore } from "../../store/useCartStore";
@@ -73,6 +74,7 @@ interface Produto {
   categoria_id: string;
   ativo: boolean;
   em_promocao: boolean;
+  destaque?: boolean;
   ordem?: number | null;
   medida_valor?: number | null;
   medida_unidade?: string | null;
@@ -80,6 +82,10 @@ interface Produto {
   quantidade_estoque?: number;
   disponibilidade?: DisponibilidadeProduto;
 }
+
+/** Categoria virtual no topo do cardápio (não existe em `categorias`). */
+const CATEGORIA_DESTAQUES_ID = "__destaques__";
+const CATEGORIA_DESTAQUES_NOME = "Especiais";
 
 function ordenarProdutosCategoria(a: Produto, b: Produto) {
   const diff = (a.ordem ?? 0) - (b.ordem ?? 0);
@@ -290,7 +296,12 @@ export function FeedProdutos() {
       )
     : [];
 
-  const categoriasFiltradas = categorias
+  const produtosDestaque = produtosFiltrados
+    .filter((p) => p.destaque)
+    .slice()
+    .sort(ordenarProdutosCategoria);
+
+  const categoriasBase = categorias
     .map((cat) => ({
       ...cat,
       quantidade_produtos: produtosFiltrados.filter(
@@ -299,7 +310,22 @@ export function FeedProdutos() {
     }))
     .filter((cat) => cat.quantidade_produtos > 0);
 
-  const renderCardProduto = (produto: Produto) => {
+  const categoriasFiltradas: Categoria[] =
+    produtosDestaque.length > 0
+      ? [
+          {
+            id: CATEGORIA_DESTAQUES_ID,
+            nome: CATEGORIA_DESTAQUES_NOME,
+            quantidade_produtos: produtosDestaque.length,
+          },
+          ...categoriasBase,
+        ]
+      : categoriasBase;
+
+  const renderCardProduto = (
+    produto: Produto,
+    variante: "normal" | "destaque" = "normal",
+  ) => {
     const esgotado = produtoEstaEsgotado(produto);
     const temPromocao =
       produto.em_promocao &&
@@ -308,21 +334,53 @@ export function FeedProdutos() {
     const precoExibido = temPromocao
       ? (produto.preco_promocional as number)
       : produto.preco;
+    const ehDestaque = variante === "destaque";
+    const mostrarTagEspecial = Boolean(produto.destaque);
+
+    const esquerdaTags =
+      temPromocao && mostrarTagEspecial
+        ? "left-[9.5rem]"
+        : temPromocao || mostrarTagEspecial
+          ? "left-[4.75rem]"
+          : "left-2";
 
     return (
       <motion.article
-        key={produto.id}
+        key={`${variante}-${produto.id}`}
         onClick={() => navigate(urlItemProduto(produto.id, location.search))}
-        className={`bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer select-none active:scale-[0.98] transition-all group ${esgotado ? "opacity-75" : ""}`}
+        className={`bg-white dark:bg-[#242629] shadow-sm rounded-[1.5rem] p-3 flex flex-col h-full cursor-pointer select-none active:scale-[0.98] transition-all group ${
+          esgotado ? "opacity-75" : ""
+        } ${
+          ehDestaque
+            ? "border-2 border-amber-400/80 dark:border-amber-500/50"
+            : "border border-gray-200 dark:border-[#3a3c40]"
+        }`}
       >
         <motion.div
-          layoutId={`produto-midia-${produto.id}`}
-          className="w-full aspect-square mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative"
+          layoutId={
+            ehDestaque
+              ? `produto-destaque-midia-${produto.id}`
+              : `produto-midia-${produto.id}`
+          }
+          className={`w-full mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative ${
+            ehDestaque ? "aspect-[4/5] sm:aspect-[5/4]" : "aspect-square"
+          }`}
         >
-          {produto.em_promocao && !esgotado && (
+          {temPromocao && !esgotado && (
             <div className="absolute top-2 left-2 z-20 bg-[#6b1d2a] text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md">
               <Tag size={10} strokeWidth={3} />
               PROMO
+            </div>
+          )}
+
+          {mostrarTagEspecial && !esgotado && (
+            <div
+              className={`absolute top-2 z-20 bg-amber-500 text-white text-[0.6875rem] font-black uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1 shadow-md ${
+                temPromocao ? "left-[4.75rem]" : "left-2"
+              }`}
+            >
+              <Sparkles size={10} strokeWidth={3} />
+              Especial
             </div>
           )}
 
@@ -332,9 +390,7 @@ export function FeedProdutos() {
               unidade={produto.medida_unidade}
               variante="overlay"
               tamanho="sm"
-              className={`absolute z-20 ${
-                produto.em_promocao ? "top-2 left-[4.75rem]" : "top-2 left-2"
-              }`}
+              className={`absolute top-2 z-20 ${esquerdaTags}`}
             />
           )}
 
@@ -352,7 +408,11 @@ export function FeedProdutos() {
                 e.stopPropagation();
                 navigate(urlItemProduto(produto.id, location.search));
               }}
-              className="absolute top-2 right-2 z-20 bg-[#6b1d2a] p-2 rounded-full text-white shadow-md hover:bg-[#541622] active:scale-90 transition-all"
+              className={`absolute top-2 right-2 z-20 p-2 rounded-full text-white shadow-md active:scale-90 transition-all ${
+                ehDestaque
+                  ? "bg-amber-500 hover:bg-amber-600"
+                  : "bg-[#6b1d2a] hover:bg-[#541622]"
+              }`}
               aria-label="Adicionar item"
             >
               <Plus size={18} strokeWidth={3} />
@@ -363,7 +423,11 @@ export function FeedProdutos() {
         </motion.div>
 
         <div className="flex-1 flex flex-col px-1.5 pb-1.5">
-          <h3 className="text-sm md:text-base font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-2 leading-snug">
+          <h3
+            className={`font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-2 leading-snug ${
+              ehDestaque ? "text-base md:text-lg" : "text-sm md:text-base"
+            }`}
+          >
             {produto.nome}
           </h3>
           <TagMedidaProduto
@@ -373,7 +437,11 @@ export function FeedProdutos() {
             className="mb-1.5 self-start"
           />
 
-          <p className="text-sm md:text-base font-extrabold text-[#6b1d2a] leading-snug">
+          <p
+            className={`font-extrabold text-[#6b1d2a] leading-snug ${
+              ehDestaque ? "text-base md:text-lg" : "text-sm md:text-base"
+            }`}
+          >
             {esgotado ? (
               <span className="text-gray-500 dark:text-gray-400 font-medium">
                 Indisponível no momento.
@@ -390,7 +458,13 @@ export function FeedProdutos() {
             )}
           </p>
 
-          <p className="hidden md:block mt-1 text-xs md:text-sm text-gray-700 dark:text-gray-200 line-clamp-2 leading-snug font-medium whitespace-pre-line">
+          <p
+            className={`mt-1 text-gray-700 dark:text-gray-200 leading-snug font-medium whitespace-pre-line ${
+              ehDestaque
+                ? "line-clamp-3 text-sm"
+                : "hidden md:block line-clamp-2 text-xs md:text-sm"
+            }`}
+          >
             {esgotado
               ? "Indisponível no momento."
               : formatarDescricaoComQuebras(produto.descricao) ||
@@ -404,20 +478,27 @@ export function FeedProdutos() {
   const produtosPorCategoria = categoriasFiltradas
     .map((categoria) => ({
       categoria,
-      produtos: produtosFiltrados
-        .filter((p) => p.categoria_id === categoria.id)
-        .slice()
-        .sort(ordenarProdutosCategoria),
+      produtos:
+        categoria.id === CATEGORIA_DESTAQUES_ID
+          ? produtosDestaque
+          : produtosFiltrados
+              .filter((p) => p.categoria_id === categoria.id)
+              .slice()
+              .sort(ordenarProdutosCategoria),
     }))
     .filter((grupo) => grupo.produtos.length > 0);
 
   const produtosExibidos =
     categoriaAtiva === "all"
       ? produtosFiltrados.slice().sort(ordenarProdutosCategoria)
-      : produtosFiltrados
-          .filter((p) => p.categoria_id === categoriaAtiva)
-          .slice()
-          .sort(ordenarProdutosCategoria);
+      : categoriaAtiva === CATEGORIA_DESTAQUES_ID
+        ? produtosDestaque
+        : produtosFiltrados
+            .filter((p) => p.categoria_id === categoriaAtiva)
+            .slice()
+            .sort(ordenarProdutosCategoria);
+
+  const ehAbaDestaques = categoriaAtiva === CATEGORIA_DESTAQUES_ID;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32 font-sans transition-colors duration-300 selection:bg-[#6b1d2a]/30">
@@ -427,9 +508,7 @@ export function FeedProdutos() {
           <div className="flex items-center gap-2">
             {!modoToten && (
               <button
-                onClick={() =>
-                  navigate(urlCardapio("perfil", location.search))
-                }
+                onClick={() => navigate(urlCardapio("perfil", location.search))}
                 className="p-2.5 bg-gray-100 dark:bg-[#2a2c30] rounded-full text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white active:scale-95 transition-transform"
                 aria-label="Minha conta"
               >
@@ -526,29 +605,43 @@ export function FeedProdutos() {
                 </span>
               </button>
 
-              {categoriasFiltradas.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setCategoriaAtiva(cat.id)}
-                  className={`shrink-0 snap-start inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors lg:landscape:hidden max-lg:landscape:px-2.5 max-lg:landscape:py-1.5 max-lg:landscape:text-[0.6875rem] max-lg:landscape:gap-1 ${
-                    categoriaAtiva === cat.id
-                      ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                      : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
-                  }`}
-                >
-                  {cat.icone && <span>{cat.icone}</span>}
-                  {cat.nome}
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black max-lg:landscape:px-1 max-lg:landscape:py-0 ${
-                      categoriaAtiva === cat.id
-                        ? "bg-white/20 text-white"
-                        : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
+              {categoriasFiltradas.map((cat) => {
+                const ehDestaques = cat.id === CATEGORIA_DESTAQUES_ID;
+                const ativa = categoriaAtiva === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setCategoriaAtiva(cat.id)}
+                    className={`shrink-0 snap-start inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold whitespace-nowrap transition-colors lg:landscape:hidden max-lg:landscape:px-2.5 max-lg:landscape:py-1.5 max-lg:landscape:text-[0.6875rem] max-lg:landscape:gap-1 ${
+                      ativa
+                        ? ehDestaques
+                          ? "bg-amber-500 border-amber-500 text-white"
+                          : "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
+                        : ehDestaques
+                          ? "bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950/40 dark:border-amber-700 dark:text-amber-200"
+                          : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100"
                     }`}
                   >
-                    {cat.quantidade_produtos}
-                  </span>
-                </button>
-              ))}
+                    {ehDestaques ? (
+                      <Sparkles size={12} strokeWidth={2.5} />
+                    ) : (
+                      cat.icone && <span>{cat.icone}</span>
+                    )}
+                    {cat.nome}
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[0.625rem] font-black max-lg:landscape:px-1 max-lg:landscape:py-0 ${
+                        ativa
+                          ? "bg-white/20 text-white"
+                          : ehDestaques
+                            ? "bg-amber-200/80 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100"
+                            : "bg-gray-100 dark:bg-[#2a2c30] text-gray-700 dark:text-gray-200"
+                      }`}
+                    >
+                      {cat.quantidade_produtos}
+                    </span>
+                  </button>
+                );
+              })}
 
               <button
                 onClick={() => setCategoriaAtiva("all")}
@@ -566,27 +659,45 @@ export function FeedProdutos() {
                 </span>
               </button>
 
-              {categoriasFiltradas.map((cat) => (
-                <button
-                  key={`desktop-${cat.id}`}
-                  onClick={() => setCategoriaAtiva(cat.id)}
-                  className={`hidden lg:landscape:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[7.5rem] transition-colors border ${
-                    categoriaAtiva === cat.id
-                      ? "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
-                      : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#6b1d2a]/40"
-                  }`}
-                >
-                  <span className="text-sm font-bold whitespace-nowrap">
-                    {cat.icone && `${cat.icone} `}
-                    {cat.nome}
-                  </span>
-                  <span
-                    className={`text-xs font-semibold ${categoriaAtiva === cat.id ? "text-gray-200" : "text-gray-600 dark:text-gray-300"}`}
+              {categoriasFiltradas.map((cat) => {
+                const ehDestaques = cat.id === CATEGORIA_DESTAQUES_ID;
+                const ativa = categoriaAtiva === cat.id;
+                return (
+                  <button
+                    key={`desktop-${cat.id}`}
+                    onClick={() => setCategoriaAtiva(cat.id)}
+                    className={`hidden lg:landscape:flex shrink-0 snap-start flex-col items-start px-5 py-2.5 rounded-2xl min-w-[7.5rem] transition-colors border ${
+                      ativa
+                        ? ehDestaques
+                          ? "bg-amber-500 border-amber-500 text-white"
+                          : "bg-gray-950 border-gray-950 text-white dark:bg-[#323438] dark:border-[#5a5c60]"
+                        : ehDestaques
+                          ? "bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950/40 dark:border-amber-700 dark:text-amber-200"
+                          : "bg-white border-gray-300 text-gray-900 dark:bg-[#222426] dark:border-[#3a3c40] dark:text-gray-100 hover:border-[#6b1d2a]/40"
+                    }`}
                   >
-                    {cat.quantidade_produtos} Itens
-                  </span>
-                </button>
-              ))}
+                    <span className="text-sm font-bold whitespace-nowrap inline-flex items-center gap-1.5">
+                      {ehDestaques ? (
+                        <Sparkles size={14} strokeWidth={2.5} />
+                      ) : (
+                        cat.icone && <span>{cat.icone}</span>
+                      )}
+                      {cat.nome}
+                    </span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        ativa
+                          ? "text-white/80"
+                          : ehDestaques
+                            ? "text-amber-800/80 dark:text-amber-200/80"
+                            : "text-gray-600 dark:text-gray-300"
+                      }`}
+                    >
+                      {cat.quantidade_produtos} Itens
+                    </span>
+                  </button>
+                );
+              })}
             </>
           )}
         </nav>
@@ -607,34 +718,86 @@ export function FeedProdutos() {
         ) : categoriaAtiva === "all" ? (
           <div className="space-y-10">
             {produtosPorCategoria.map(
-              ({ categoria, produtos: itens }, indice) => (
-                <section
-                  key={categoria.id}
-                  id={`categoria-${categoria.id}`}
-                  className={`scroll-mt-36 ${indice > 0 ? "pt-2 border-t-2 border-gray-200 dark:border-[#2f3135]" : ""}`}
-                >
-                  <div className="flex items-center justify-between gap-4 mb-5 px-1">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-1.5 h-8 rounded-full bg-[#6b1d2a] shrink-0" />
-                      <h2 className="text-lg md:text-xl font-black text-gray-950 dark:text-white truncate">
-                        {categoria.nome}
-                      </h2>
+              ({ categoria, produtos: itens }, indice) => {
+                const ehDestaques = categoria.id === CATEGORIA_DESTAQUES_ID;
+                return (
+                  <section
+                    key={categoria.id}
+                    id={`categoria-${categoria.id}`}
+                    className={`scroll-mt-36 ${
+                      indice > 0
+                        ? "pt-2 border-t-2 border-gray-200 dark:border-[#2f3135]"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4 mb-5 px-1">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-1.5 h-8 rounded-full shrink-0 ${
+                            ehDestaques ? "bg-amber-500" : "bg-[#6b1d2a]"
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <h2 className="text-lg md:text-xl font-black text-gray-950 dark:text-white truncate inline-flex items-center gap-2">
+                            {ehDestaques && (
+                              <Sparkles
+                                size={20}
+                                className="text-amber-500 shrink-0"
+                              />
+                            )}
+                            {categoria.nome}
+                          </h2>
+                          {ehDestaques && (
+                            <p className="text-xs md:text-sm text-amber-800/80 dark:text-amber-200/70 font-medium mt-0.5">
+                              Seleção da casa
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 text-xs md:text-sm font-bold px-3 py-1.5 rounded-full border ${
+                          ehDestaques
+                            ? "text-amber-900 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800"
+                            : "text-gray-700 dark:text-gray-200 bg-white dark:bg-[#242629] border-gray-200 dark:border-[#3a3c40]"
+                        }`}
+                      >
+                        {itens.length} {itens.length === 1 ? "item" : "itens"}
+                      </span>
                     </div>
-                    <span className="shrink-0 text-xs md:text-sm font-bold text-gray-700 dark:text-gray-200 bg-white dark:bg-[#242629] border border-gray-200 dark:border-[#3a3c40] px-3 py-1.5 rounded-full">
-                      {itens.length} {itens.length === 1 ? "item" : "itens"}
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {itens.map((produto) => renderCardProduto(produto))}
-                  </div>
-                </section>
-              ),
+                    <div
+                      className={
+                        ehDestaques
+                          ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+                          : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+                      }
+                    >
+                      {itens.map((produto) =>
+                        renderCardProduto(
+                          produto,
+                          ehDestaques ? "destaque" : "normal",
+                        ),
+                      )}
+                    </div>
+                  </section>
+                );
+              },
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {produtosExibidos.map((produto) => renderCardProduto(produto))}
+          <div
+            className={
+              ehAbaDestaques
+                ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+                : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+            }
+          >
+            {produtosExibidos.map((produto) =>
+              renderCardProduto(
+                produto,
+                ehAbaDestaques ? "destaque" : "normal",
+              ),
+            )}
           </div>
         )}
       </main>

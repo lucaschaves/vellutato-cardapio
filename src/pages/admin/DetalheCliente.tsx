@@ -3,13 +3,17 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  MessageCircle,
   User,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { obterOuCriarConversa } from "../../lib/deliveryChat";
+import { montarLinkWhatsapp } from "../../lib/mensagensWhatsapp";
 import {
   formatarDataHora,
   formatarMoeda,
@@ -52,11 +56,28 @@ interface PedidoCliente {
 }
 
 export function DetalheCliente() {
+  const navigate = useNavigate();
   const { clienteId } = useParams<{ clienteId: string }>();
   const [cliente, setCliente] = useState<ClienteDetalhe | null>(null);
   const [pedidos, setPedidos] = useState<PedidoCliente[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
+  const [abrindoChat, setAbrindoChat] = useState(false);
+
+  const abrirChat = async () => {
+    if (!clienteId || abrindoChat) return;
+    setAbrindoChat(true);
+    try {
+      const conversaId = await obterOuCriarConversa({ clienteId });
+      navigate(`/admin/chat?conversa=${conversaId}`);
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[CHAT] Abrir conversa do cliente:", mensagem);
+      toast.error("Não foi possível abrir o chat deste cliente.");
+    } finally {
+      setAbrindoChat(false);
+    }
+  };
 
   const carregar = useCallback(async () => {
     if (!clienteId) return;
@@ -106,6 +127,23 @@ export function DetalheCliente() {
     void carregar();
   }, [carregar]);
 
+  const linkWhatsapp = useMemo(() => {
+    if (!cliente?.celular) return null;
+    const primeiroNome = cliente.nome.trim().split(/\s+/)[0] || "cliente";
+    return montarLinkWhatsapp(
+      cliente.celular,
+      `Olá, ${primeiroNome}! Aqui é da Vellutato 😊`,
+    );
+  }, [cliente]);
+
+  const abrirWhatsapp = () => {
+    if (!linkWhatsapp) {
+      toast.error("Este cliente não tem um celular válido para WhatsApp.");
+      return;
+    }
+    window.open(linkWhatsapp, "_blank", "noopener,noreferrer");
+  };
+
   if (carregando) {
     return (
       <AdminPageShell contentClassName="flex justify-center py-20">
@@ -148,13 +186,43 @@ export function DetalheCliente() {
         </>
       }
       actions={
-        <Link
-          to="/admin/clientes"
-          className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-cookie-primary transition-colors"
-        >
-          <ArrowLeft size={16} />
-          Voltar para clientes
-        </Link>
+        <>
+          <Button
+            type="button"
+            onClick={() => void abrirChat()}
+            disabled={abrindoChat}
+            className="bg-cookie-primary hover:bg-cookie-primary-hover text-white"
+          >
+            {abrindoChat ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <MessageCircle size={16} />
+            )}
+            Chat com o cliente
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={abrirWhatsapp}
+            disabled={!linkWhatsapp}
+            className="border-[#25D366]/60 text-[#128C7E] hover:bg-[#25D366]/10 hover:text-[#075E54]"
+            title={
+              linkWhatsapp
+                ? "Abrir conversa no WhatsApp"
+                : "Cliente sem celular válido"
+            }
+          >
+            <MessageCircle size={16} />
+            WhatsApp
+          </Button>
+          <Link
+            to="/admin/clientes"
+            className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-cookie-primary transition-colors"
+          >
+            <ArrowLeft size={16} />
+            Voltar para clientes
+          </Link>
+        </>
       }
       contentClassName="space-y-6"
     >

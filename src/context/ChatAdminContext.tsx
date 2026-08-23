@@ -16,6 +16,7 @@ import {
 import {
   contarMensagensNaoLidasAdmin,
   marcarConversaLidaAdmin,
+  marcarConversaNaoLidaAdmin,
 } from "../lib/deliveryChat";
 import { supabase } from "../lib/supabase";
 import { useAlertaNovoPedidoAdmin } from "./AlertaNovoPedidoContext";
@@ -23,6 +24,7 @@ import { useAlertaNovoPedidoAdmin } from "./AlertaNovoPedidoContext";
 interface ChatAdminContextValue {
   naoLidas: number;
   marcarLida: (conversaId: string) => Promise<void>;
+  marcarNaoLida: (conversaId: string) => Promise<void>;
   recarregarNaoLidas: () => Promise<void>;
 }
 
@@ -63,6 +65,14 @@ export function ChatAdminProvider({ children }: { children: ReactNode }) {
   const marcarLida = useCallback(
     async (conversaId: string) => {
       await marcarConversaLidaAdmin(conversaId);
+      await recarregarNaoLidas();
+    },
+    [recarregarNaoLidas],
+  );
+
+  const marcarNaoLida = useCallback(
+    async (conversaId: string) => {
+      await marcarConversaNaoLidaAdmin(conversaId);
       await recarregarNaoLidas();
     },
     [recarregarNaoLidas],
@@ -134,7 +144,7 @@ export function ChatAdminProvider({ children }: { children: ReactNode }) {
 
   return (
     <ChatAdminContext.Provider
-      value={{ naoLidas, marcarLida, recarregarNaoLidas }}
+      value={{ naoLidas, marcarLida, marcarNaoLida, recarregarNaoLidas }}
     >
       {children}
     </ChatAdminContext.Provider>

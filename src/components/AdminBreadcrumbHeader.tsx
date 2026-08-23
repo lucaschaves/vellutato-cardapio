@@ -1,5 +1,5 @@
-import { FileText, Loader2, Menu, MessageCircle, Printer, Volume2, VolumeX } from "lucide-react";
-import { Fragment, useState } from "react";
+import { FileText, Loader2, Menu, MessageCircle, Pause, Play, Printer, Volume2, VolumeX } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { useAlertaNovoPedidoAdmin } from "../context/AlertaNovoPedidoContext";
@@ -7,6 +7,13 @@ import { useChatAdmin } from "../context/ChatAdminContext";
 import { useImpressaoAdmin } from "../context/ImpressaoAdminContext";
 import { impressoraEmModoPdf } from "../lib/impressoraLocal";
 import { resolverBreadcrumbAdmin } from "../lib/adminNavegacao";
+import {
+  buscarConfigLoja,
+  MINUTOS_PAUSA_RAPIDA_LOJA,
+  pausaLojaEfetiva,
+  pausarLojaPorMinutos,
+  reabrirLoja,
+} from "../lib/lojaStatus";
 import { cn } from "../lib/utils";
 import {
   Breadcrumb,
@@ -19,7 +26,122 @@ import {
 
 type Props = {
   onAbrirMenu?: () => void;
+  /** Mostra o botão de menu também no desktop (sidebar recolhido). */
+  menuSempreVisivel?: boolean;
 };
+
+function formatarRestantePausa(ateIso: string, agora: number): string {
+  const ms = new Date(ateIso).getTime() - agora;
+  if (ms <= 0) return "0:00";
+  const totalSeg = Math.ceil(ms / 1000);
+  const min = Math.floor(totalSeg / 60);
+  const seg = totalSeg % 60;
+  return `${min}:${String(seg).padStart(2, "0")}`;
+}
+
+function StatusPausaLoja() {
+  const [pausado, setPausado] = useState(false);
+  const [pausadoAte, setPausadoAte] = useState<string | null>(null);
+  const [agora, setAgora] = useState(() => Date.now());
+  const [enviando, setEnviando] = useState(false);
+
+  const carregar = async () => {
+    try {
+      const cfg = await buscarConfigLoja();
+      setPausado(cfg.pausado);
+      setPausadoAte(cfg.pausado_ate);
+    } catch (erro: unknown) {
+      console.error("[LOJA] Falha ao ler pausa:", erro);
+    }
+  };
+
+  useEffect(() => {
+    void carregar();
+  }, []);
+
+  const efetiva = pausaLojaEfetiva(
+    { pausado, pausado_ate: pausadoAte },
+    agora,
+  );
+
+  useEffect(() => {
+    if (!efetiva || !pausadoAte) return;
+    const id = window.setInterval(() => {
+      const t = Date.now();
+      setAgora(t);
+      if (new Date(pausadoAte).getTime() <= t) {
+        setPausado(false);
+        setPausadoAte(null);
+        void carregar();
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [efetiva, pausadoAte]);
+
+  const alternar = async () => {
+    if (enviando) return;
+    setEnviando(true);
+    try {
+      if (efetiva) {
+        await reabrirLoja();
+        setPausado(false);
+        setPausadoAte(null);
+        toast.success("Loja reaberta.");
+      } else {
+        await pausarLojaPorMinutos(MINUTOS_PAUSA_RAPIDA_LOJA);
+        await carregar();
+        toast.message(
+          `Loja pausada por ${MINUTOS_PAUSA_RAPIDA_LOJA} minutos. Reabre sozinha.`,
+        );
+      }
+    } catch (erro: unknown) {
+      const msg = erro instanceof Error ? erro.message : String(erro);
+      console.error("[LOJA] Falha ao pausar/reabrir:", msg);
+      toast.error("Não foi possível alterar a pausa da loja.");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const restante =
+    efetiva && pausadoAte ? formatarRestantePausa(pausadoAte, agora) : null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => void alternar()}
+      disabled={enviando}
+      title={
+        efetiva
+          ? restante
+            ? `Loja pausada — reabre em ${restante}. Clique para reabrir agora.`
+            : "Loja pausada — clique para reabrir"
+          : `Pausar a loja por ${MINUTOS_PAUSA_RAPIDA_LOJA} minutos`
+      }
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60",
+        efetiva
+          ? "animate-pulse bg-amber-500 text-white shadow-sm hover:bg-amber-600"
+          : "border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-800",
+      )}
+    >
+      {enviando ? (
+        <Loader2 size={15} className="shrink-0 animate-spin" />
+      ) : efetiva ? (
+        <Play size={15} className="shrink-0" />
+      ) : (
+        <Pause size={15} className="shrink-0" />
+      )}
+      <span className="hidden sm:inline">
+        {efetiva
+          ? restante
+            ? `Pausa ${restante}`
+            : "Pausada"
+          : "Pausar 10 min"}
+      </span>
+    </button>
+  );
+}
 
 function StatusSom() {
   const { ativo, precisaReativar, ativar, desativar } =
@@ -161,7 +283,10 @@ function StatusImpressora() {
   );
 }
 
-export function AdminBreadcrumbHeader({ onAbrirMenu }: Props) {
+export function AdminBreadcrumbHeader({
+  onAbrirMenu,
+  menuSempreVisivel = false,
+}: Props) {
   const { pathname } = useLocation();
   const crumbs = resolverBreadcrumbAdmin(pathname);
 
@@ -171,8 +296,12 @@ export function AdminBreadcrumbHeader({ onAbrirMenu }: Props) {
         <button
           type="button"
           onClick={onAbrirMenu}
-          className="-ml-1 rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
+          className={cn(
+            "-ml-1 rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800",
+            !menuSempreVisivel && "lg:hidden",
+          )}
           aria-label="Abrir menu"
+          title="Abrir menu"
         >
           <Menu size={22} />
         </button>
@@ -214,6 +343,7 @@ export function AdminBreadcrumbHeader({ onAbrirMenu }: Props) {
       </Breadcrumb>
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        <StatusPausaLoja />
         <StatusSom />
         <StatusChat />
         <StatusImpressora />

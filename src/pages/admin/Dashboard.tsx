@@ -38,6 +38,10 @@ import {
   pedidoContaComoVenda,
   type PeriodoRelatorio,
 } from "../../lib/pedidosAdmin";
+import {
+  buscarResumoFinanceiroPeriodo,
+  type ResumoFinanceiroPeriodo,
+} from "../../lib/financeiro";
 import { supabase } from "../../lib/supabase";
 
 interface ItemDashboard {
@@ -160,6 +164,12 @@ export function Dashboard() {
     { nome: string; total_pedidos: number | null; valor_gasto: number | null }[]
   >([]);
   const [carregandoVendas, setCarregandoVendas] = useState(true);
+  const [resumoFinanceiro, setResumoFinanceiro] =
+    useState<ResumoFinanceiroPeriodo>({
+      despesas: 0,
+      receitasAvulsas: 0,
+      cmv: 0,
+    });
 
   // Comportamento
   const [resumos, setResumos] = useState<ResumoCanal[]>([]);
@@ -198,17 +208,23 @@ export function Dashboard() {
         query = query.gte("criado_em", inicioBusca);
       }
 
-      const [resPedidos, resClientes] = await Promise.all([
+      const [resPedidos, resClientes, resFin] = await Promise.all([
         query,
         supabase
           .from("clientes")
           .select("nome, total_pedidos, valor_gasto")
           .order("valor_gasto", { ascending: false, nullsFirst: false })
           .limit(8),
+        buscarResumoFinanceiroPeriodo(inicioAtual).catch((err: unknown) => {
+          console.warn("[DASHBOARD financeiro]", err);
+          return { despesas: 0, receitasAvulsas: 0, cmv: 0 };
+        }),
       ]);
 
       if (resPedidos.error) throw resPedidos.error;
       if (resClientes.error) throw resClientes.error;
+
+      setResumoFinanceiro(resFin);
 
       const todos = (resPedidos.data as unknown as PedidoDashboard[]) || [];
 
@@ -586,6 +602,80 @@ export function Dashboard() {
                   <p className="text-xs text-gray-500 flex items-center gap-1">
                     <XCircle size={14} /> {metricas.taxaCancelamento.toFixed(1)}%
                     do total
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+                <CardHeader>
+                  <CardDescription>CMV (listas finalizadas)</CardDescription>
+                  <CardTitle className="text-2xl font-black text-orange-600 dark:text-orange-400">
+                    {formatarMoeda(resumoFinanceiro.cmv)}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-gray-500">
+                    Itens comprados em listas finalizadas no período
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+                <CardHeader>
+                  <CardDescription>Despesas (competência)</CardDescription>
+                  <CardTitle className="text-2xl font-black text-red-600 dark:text-red-400">
+                    {formatarMoeda(resumoFinanceiro.despesas)}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-gray-500">
+                    Lançamentos de despesa no mês da competência
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+                <CardHeader>
+                  <CardDescription>Receitas avulsas</CardDescription>
+                  <CardTitle className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                    {formatarMoeda(resumoFinanceiro.receitasAvulsas)}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-gray-500">
+                    Entradas manuais (fora das vendas)
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-white dark:bg-surface-dark border-gray-200 dark:border-gray-800">
+                <CardHeader>
+                  <CardDescription>Resultado estimado</CardDescription>
+                  <CardTitle
+                    className={`text-2xl font-black ${
+                      metricas.receitaTotal -
+                        resumoFinanceiro.cmv -
+                        resumoFinanceiro.despesas +
+                        resumoFinanceiro.receitasAvulsas >=
+                      0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {formatarMoeda(
+                      metricas.receitaTotal -
+                        resumoFinanceiro.cmv -
+                        resumoFinanceiro.despesas +
+                        resumoFinanceiro.receitasAvulsas,
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-gray-500">
+                    Vendas (já líquidas de cupom) − CMV − despesas + receitas
+                    avulsas
+                    {metricas.descontoTotal > 0
+                      ? ` · cupons: ${formatarMoeda(metricas.descontoTotal)}`
+                      : ""}
                   </p>
                 </CardContent>
               </Card>
