@@ -28,7 +28,12 @@ import {
   lerEnderecoDeliveryLocal,
   salvarEnderecoDeliveryLocal,
 } from "../../lib/deliveryGuestStorage";
+import { precoEfetivoCanal } from "../../lib/precificacao";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import {
+  buscarDisponibilidadeEncomendaLote,
+  type DisponibilidadeEncomenda,
+} from "../../lib/encomendaProgramada";
 import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
 import { supabase } from "../../lib/supabase";
 import {
@@ -48,6 +53,8 @@ interface Produto {
   nome: string;
   descricao: string | null;
   preco: number;
+  preco_delivery?: number | null;
+  preco_ifood?: number | null;
   preco_promocional: number | null;
   em_promocao: boolean | null;
   destaque?: boolean | null;
@@ -78,13 +85,8 @@ function CardProduto({
   onClick: () => void;
   variante?: "normal" | "destaque";
 }) {
-  const promo =
-    produto.em_promocao &&
-    produto.preco_promocional != null &&
-    produto.preco_promocional > 0;
-  const preco = promo
-    ? Number(produto.preco_promocional)
-    : Number(produto.preco);
+  const preco = precoEfetivoCanal(produto, "delivery");
+  const promo = false; // promo só no canal loja nesta fase
   const ehDestaque = variante === "destaque";
   const mostrarEspecial = Boolean(produto.destaque);
 
@@ -160,9 +162,7 @@ function CardProduto({
         />
         {produto.descricao && (
           <p
-            className={`text-xs text-zinc-500 mt-0.5 ${
-              ehDestaque ? "line-clamp-3" : "line-clamp-2"
-            }`}
+            className="text-xs text-zinc-500 mt-0.5 line-clamp-2"
           >
             {produto.descricao}
           </p>
@@ -251,14 +251,27 @@ export function DeliveryHome() {
         } catch {
           setTaxaMinima(taxaMinimaConfig(cfg));
         }
-        const prods = (
-          (prodRes.data || []) as Array<
-            Produto & {
-              controlar_estoque?: boolean | null;
-              quantidade_estoque?: number | null;
-            }
-          >
-        ).filter((p) => !produtoEstaEsgotado(p));
+        const brutos = (prodRes.data || []) as Array<
+          Produto & {
+            controlar_estoque?: boolean | null;
+            quantidade_estoque?: number | null;
+            encomenda_programada?: boolean | null;
+          }
+        >;
+        const idsEncomenda = brutos
+          .filter((p) => p.encomenda_programada)
+          .map((p) => p.id);
+        let mapaDisp: Record<string, DisponibilidadeEncomenda> = {};
+        if (idsEncomenda.length > 0) {
+          try {
+            mapaDisp = await buscarDisponibilidadeEncomendaLote(idsEncomenda);
+          } catch {
+            mapaDisp = {};
+          }
+        }
+        const prods = brutos.filter(
+          (p) => !produtoEstaEsgotado(p, mapaDisp[p.id]),
+        );
         setProdutos(prods);
         const cats = ((catRes.data || []) as Categoria[])
           .slice()

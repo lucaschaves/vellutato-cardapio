@@ -33,3 +33,11 @@ verify_jwt = false
 
 [functions.voa-enviar-pedido]
 verify_jwt = true
+
+[functions.ifood-poll-pedidos]
+# Cron externo / manual com IFOOD_POLL_SECRET (header x-ifood-poll-secret)
+verify_jwt = false
+
+[functions.ifood-admin]
+# Admin JWT (app_metadata.role = admin)
+verify_jwt = true

@@ -71,8 +71,10 @@ export function GerenciamentoFichasTecnicas() {
   const [filhasDe, setFilhasDe] = useState<Record<string, number>>({});
   const [embDelivery, setEmbDelivery] = useState("");
   const [embRetirada, setEmbRetirada] = useState("");
+  const [embLoja, setEmbLoja] = useState("");
   const [capDelivery, setCapDelivery] = useState("4");
   const [capRetirada, setCapRetirada] = useState("4");
+  const [capLoja, setCapLoja] = useState("1");
   const [salvandoCfg, setSalvandoCfg] = useState(false);
   const [recalcando, setRecalcando] = useState(false);
   const [fichaExcluir, setFichaExcluir] = useState<FichaTecnica | null>(null);
@@ -96,7 +98,7 @@ export function GerenciamentoFichasTecnicas() {
         supabase
           .from("loja_config")
           .select(
-            "ficha_embalagem_pedido_delivery_id, ficha_embalagem_pedido_retirada_id, capacidade_embalagem_pedido_delivery, capacidade_embalagem_pedido_retirada",
+            "ficha_embalagem_pedido_delivery_id, ficha_embalagem_pedido_retirada_id, ficha_embalagem_pedido_loja_id, capacidade_embalagem_pedido_delivery, capacidade_embalagem_pedido_retirada, capacidade_embalagem_pedido_loja",
           )
           .eq("id", 1)
           .maybeSingle(),
@@ -158,10 +160,24 @@ export function GerenciamentoFichasTecnicas() {
 
       const c = cfg.data as Record<string, unknown> | null;
       if (c) {
-        setEmbDelivery(String(c.ficha_embalagem_pedido_delivery_id ?? ""));
-        setEmbRetirada(String(c.ficha_embalagem_pedido_retirada_id ?? ""));
+        setEmbDelivery(
+          c.ficha_embalagem_pedido_delivery_id
+            ? String(c.ficha_embalagem_pedido_delivery_id)
+            : "",
+        );
+        setEmbRetirada(
+          c.ficha_embalagem_pedido_retirada_id
+            ? String(c.ficha_embalagem_pedido_retirada_id)
+            : "",
+        );
+        setEmbLoja(
+          c.ficha_embalagem_pedido_loja_id
+            ? String(c.ficha_embalagem_pedido_loja_id)
+            : "",
+        );
         setCapDelivery(String(c.capacidade_embalagem_pedido_delivery ?? 4));
         setCapRetirada(String(c.capacidade_embalagem_pedido_retirada ?? 4));
+        setCapLoja(String(c.capacidade_embalagem_pedido_loja ?? 1));
       }
     } catch (erro: unknown) {
       toast.error(erro instanceof Error ? erro.message : "Falha ao carregar.");
@@ -226,24 +242,50 @@ export function GerenciamentoFichasTecnicas() {
   const salvarConfig = async () => {
     const nD = parseDecimalBr(capDelivery);
     const nR = parseDecimalBr(capRetirada);
-    if (nD == null || nD < 1 || nR == null || nR < 1) {
+    const nL = parseDecimalBr(capLoja);
+    if (
+      nD == null ||
+      nD < 1 ||
+      nR == null ||
+      nR < 1 ||
+      nL == null ||
+      nL < 1
+    ) {
       toast.warning("Capacidade N deve ser ≥ 1.");
       return;
     }
     try {
       setSalvandoCfg(true);
+      // Fichas usadas como sacola/caixa/serviço precisam de escopo "pedido".
+      const idsParaPedido = [embDelivery, embRetirada, embLoja].filter(Boolean);
+      for (const fid of idsParaPedido) {
+        const f = fichasPorId.get(fid);
+        if (f && f.tipo === "embalagem" && f.escopo !== "pedido") {
+          const { error: escErr } = await supabase
+            .from("fichas_tecnicas")
+            .update({
+              escopo: "pedido",
+              atualizado_em: new Date().toISOString(),
+            })
+            .eq("id", fid);
+          if (escErr) throw new Error(escErr.message);
+        }
+      }
       const { error } = await supabase
         .from("loja_config")
         .update({
           ficha_embalagem_pedido_delivery_id: embDelivery || null,
           ficha_embalagem_pedido_retirada_id: embRetirada || null,
+          ficha_embalagem_pedido_loja_id: embLoja || null,
           capacidade_embalagem_pedido_delivery: Math.round(nD),
           capacidade_embalagem_pedido_retirada: Math.round(nR),
+          capacidade_embalagem_pedido_loja: Math.round(nL),
           atualizado_em: new Date().toISOString(),
         })
         .eq("id", 1);
       if (error) throw new Error(error.message);
-      toast.success("Sacola/caixa salva.");
+      toast.success("Embalagem do pedido salva.");
+      await carregar();
     } catch (erro: unknown) {
       toast.error(erro instanceof Error ? erro.message : "Falha ao salvar.");
     } finally {
@@ -320,8 +362,10 @@ export function GerenciamentoFichasTecnicas() {
             insumos,
             fichaEmbPedidoDeliveryId: embDelivery || null,
             fichaEmbPedidoRetiradaId: embRetirada || null,
+            fichaEmbPedidoLojaId: embLoja || null,
             capacidadeDelivery: parseDecimalBr(capDelivery) ?? 4,
             capacidadeRetirada: parseDecimalBr(capRetirada) ?? 4,
+            capacidadeLoja: parseDecimalBr(capLoja) ?? 1,
           }),
         );
         return;
@@ -399,8 +443,10 @@ export function GerenciamentoFichasTecnicas() {
           insumos,
           fichaEmbPedidoDeliveryId: embDelivery || null,
           fichaEmbPedidoRetiradaId: embRetirada || null,
+          fichaEmbPedidoLojaId: embLoja || null,
           capacidadeDelivery: parseDecimalBr(capDelivery) ?? 4,
           capacidadeRetirada: parseDecimalBr(capRetirada) ?? 4,
+          capacidadeLoja: parseDecimalBr(capLoja) ?? 1,
         }),
       );
     } catch (erro: unknown) {
@@ -478,9 +524,17 @@ export function GerenciamentoFichasTecnicas() {
     });
   }, [fichas, busca, filtroTipo]);
 
-  const fichasPedido = fichas.filter(
-    (f) => f.tipo === "embalagem" && f.escopo === "pedido",
-  );
+  // Select aceita qualquer embalagem; ao salvar, escopo vira "pedido" se necessário.
+  const fichasEmbalagem = useMemo(() => {
+    const emb = fichas.filter((f) => f.tipo === "embalagem");
+    return [...emb].sort((a, b) => {
+      const rank = (e: string | null) => (e === "pedido" ? 0 : 1);
+      const d = rank(a.escopo) - rank(b.escopo);
+      return d !== 0 ? d : a.nome.localeCompare(b.nome, "pt-BR");
+    });
+  }, [fichas]);
+  const fichasPedido = fichasEmbalagem.filter((f) => f.escopo === "pedido");
+  const fichasEmbItem = fichasEmbalagem.filter((f) => f.escopo !== "pedido");
   const insumosStale = insumos.filter((i) => i.ativo && insumoPrecoDesatualizado(i));
 
   return (
@@ -533,52 +587,82 @@ export function GerenciamentoFichasTecnicas() {
           )}
 
           <div className="rounded-xl border bg-white p-4 dark:border-gray-800 dark:bg-surface-dark">
-            <h2 className="mb-3 font-semibold">Sacola / caixa do pedido</h2>
+            <h2 className="mb-3 font-semibold">Embalagem / serviço do pedido</h2>
             <p className="mb-4 text-xs text-muted-foreground">
-              Quantidade de sacolas = teto (itens embaláveis ÷ N). Não vale para
-              mesa / comer na loja.
+              Quantidade = teto (itens ÷ N). Delivery/retirada: sacola ou caixa.
+              Loja: prato, talheres, enfeite (itens com consumo na loja). Use ficha
+              tipo Embalagem com escopo <strong>Pedido</strong>; se escolher Item,
+              o escopo vira Pedido ao salvar.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Delivery (entrega)</Label>
-                <select
-                  className="flex h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  value={embDelivery}
-                  onChange={(e) => setEmbDelivery(e.target.value)}
-                >
-                  <option value="">Sem ficha</option>
-                  {fichasPedido.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
-                <Input
-                  value={capDelivery}
-                  onChange={(e) => setCapDelivery(e.target.value)}
-                  placeholder="N itens por sacola"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Retirada</Label>
-                <select
-                  className="flex h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  value={embRetirada}
-                  onChange={(e) => setEmbRetirada(e.target.value)}
-                >
-                  <option value="">Sem ficha</option>
-                  {fichasPedido.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
-                <Input
-                  value={capRetirada}
-                  onChange={(e) => setCapRetirada(e.target.value)}
-                  placeholder="N itens por sacola"
-                />
-              </div>
+            {fichasEmbalagem.length === 0 && (
+              <p className="mb-3 text-xs text-amber-800 dark:text-amber-200">
+                Nenhuma ficha de embalagem cadastrada. Crie uma em Nova ficha →
+                tipo Embalagem → escopo Pedido.
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(
+                [
+                  {
+                    label: "Delivery (entrega)",
+                    value: embDelivery,
+                    setValue: setEmbDelivery,
+                    cap: capDelivery,
+                    setCap: setCapDelivery,
+                    placeholder: "N itens por sacola",
+                  },
+                  {
+                    label: "Retirada",
+                    value: embRetirada,
+                    setValue: setEmbRetirada,
+                    cap: capRetirada,
+                    setCap: setCapRetirada,
+                    placeholder: "N itens por sacola",
+                  },
+                  {
+                    label: "Loja (prato / talheres)",
+                    value: embLoja,
+                    setValue: setEmbLoja,
+                    cap: capLoja,
+                    setCap: setCapLoja,
+                    placeholder: "N itens por jogo (ex.: 1)",
+                  },
+                ] as const
+              ).map((campo) => (
+                <div key={campo.label} className="space-y-1.5">
+                  <Label>{campo.label}</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    value={campo.value}
+                    onChange={(e) => campo.setValue(e.target.value)}
+                  >
+                    <option value="">Sem ficha</option>
+                    {fichasPedido.length > 0 && (
+                      <optgroup label="Pedido (sacola/caixa)">
+                        {fichasPedido.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {fichasEmbItem.length > 0 && (
+                      <optgroup label="Item (vira Pedido ao salvar)">
+                        {fichasEmbItem.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  <Input
+                    value={campo.cap}
+                    onChange={(e) => campo.setCap(e.target.value)}
+                    placeholder={campo.placeholder}
+                  />
+                </div>
+              ))}
             </div>
             <Button
               type="button"

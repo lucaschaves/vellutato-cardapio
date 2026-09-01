@@ -1,24 +1,21 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
-  Bike,
-  Building2,
   CheckCircle2,
   ChefHat,
   Clock,
-  MapPin,
   MessageCircle,
-  MessagesSquare,
-  Phone,
-  Printer,
-  Trash2,
-  User,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import {
+  CardPedidoKds,
+  listaPedidosEquivalente,
+  type PedidoKds,
+} from "../../components/admin/CardPedidoKds";
 import { useImpressaoAdmin } from "../../context/ImpressaoAdminContext";
 import { usePedidosRealtime } from "../../context/PedidosRealtimeContext";
 import {
@@ -33,11 +30,11 @@ import { MINUTOS_EXPIRA_PAGAMENTO_DELIVERY } from "../../lib/deliveryPedido";
 import { obterOuCriarConversa } from "../../lib/deliveryChat";
 import { dispararNotificacaoStatusPedido } from "../../lib/notificacoesPedido";
 import {
-  compararPedidosKds,
-  minutosAteAgendado,
-  pedidoAgendadoEmAlerta,
-  rotuloHoraAgendada,
-} from "../../lib/pedidoAgendado";
+  ifoodCancelarPedido,
+  ifoodMotivosCancelamento,
+  type IfoodMotivoCancel,
+} from "../../lib/ifoodAdmin";
+import { compararPedidosKds } from "../../lib/pedidoAgendado";
 import { supabase } from "../../lib/supabase";
 
 // Tipagens
@@ -50,16 +47,18 @@ interface EscolhaComboPedido {
 interface ItemPedido {
   id: string;
   quantidade: number;
+  preco_unitario: number;
   observacoes: string;
   modo_consumo?: string | null;
   produtos: { nome: string };
+  pedido_item_adicionais?: Array<{ preco_aplicado: number }>;
   pedido_item_combo_escolhas?: EscolhaComboPedido[];
 }
 
 interface Pedido {
   id: string;
   sequencia_pedido: number;
-  origem: "mesa" | "balcao" | "totem" | "delivery";
+  origem: "mesa" | "balcao" | "totem" | "delivery" | "ifood";
   modalidade?: "entrega" | "retirada" | null;
   status_pagamento?: string | null;
   identificador: string;
@@ -80,6 +79,7 @@ interface Pedido {
     | "aguardando_pagamento";
   criado_em: string;
   agendado_para?: string | null;
+  ifood_order_id?: string | null;
   voa_order_id?: string | null;
   tracking_url?: string | null;
   endereco_json?: EnderecoPedido | null;
@@ -130,7 +130,8 @@ function complementoPedido(
   return texto || null;
 }
 
-const STATUS_MENSAGEM_WHATSAPP: Record<Pedido["status"], string> = {
+
+const STATUS_MENSAGEM_WHATSAPP: Record<PedidoKds["status"], string> = {
   pendente: "Recebemos o seu pedido e em breve ele entra no preparo.",
   em_producao: "Seu pedido já está sendo preparado!",
   pronto: "Seu pedido está pronto!",
@@ -139,14 +140,16 @@ const STATUS_MENSAGEM_WHATSAPP: Record<Pedido["status"], string> = {
   aguardando_pagamento: "Aguardando a confirmação do pagamento.",
 };
 
-function fraseStatusWhatsapp(pedido: Pedido): string {
+function fraseStatusWhatsapp(pedido: PedidoKds): string {
+  const canalEntrega =
+    pedido.origem === "delivery" || pedido.origem === "ifood";
   if (pedido.status === "pronto") {
-    if (pedido.origem === "delivery" && pedido.modalidade === "entrega") {
+    if (canalEntrega && pedido.modalidade === "entrega") {
       return pedido.voa_order_id
         ? "Seu pedido saiu para entrega! Acompanhe pelo rastreio."
         : "Seu pedido está pronto e em breve sai para entrega!";
     }
-    if (pedido.origem === "delivery" && pedido.modalidade === "retirada") {
+    if (canalEntrega && pedido.modalidade === "retirada") {
       return "Seu pedido está pronto para retirada!";
     }
     return "Seu pedido está pronto! Pode vir buscar.";
@@ -154,7 +157,7 @@ function fraseStatusWhatsapp(pedido: Pedido): string {
   return STATUS_MENSAGEM_WHATSAPP[pedido.status];
 }
 
-function dadosMensagemDoPedido(pedido: Pedido): DadosMensagemPedido {
+function dadosMensagemDoPedido(pedido: PedidoKds): DadosMensagemPedido {
   const produtos = pedido.pedido_itens
     .map((item) => {
       const modo =
@@ -197,7 +200,13 @@ export function PainelPedidos() {
   const [mensagensWhatsapp, setMensagensWhatsapp] = useState<
     MensagemWhatsapp[]
   >([]);
-  const [pedidoWhatsApp, setPedidoWhatsApp] = useState<Pedido | null>(null);
+  const [pedidoWhatsApp, setPedidoWhatsApp] = useState<PedidoKds | null>(null);
+  const [pedidoCancelIfood, setPedidoCancelIfood] = useState<PedidoKds | null>(
+    null,
+  );
+  const [motivosIfood, setMotivosIfood] = useState<IfoodMotivoCancel[]>([]);
+  const [carregandoMotivos, setCarregandoMotivos] = useState(false);
+  const [cancelandoIfood, setCancelandoIfood] = useState(false);
   const [abrindoChatId, setAbrindoChatId] = useState<string | null>(null);
   const requisicaoAtualRef = useRef(0);
   const debounceRef = useRef<number | null>(null);
@@ -212,10 +221,11 @@ export function PainelPedidos() {
           .from("pedidos")
           .select(
             `
-            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_id, cliente_nome, cliente_celular, total, taxa_entrega, desconto_aplicado, desconto_frete, acrescimo_clima, status, criado_em, voa_order_id, tracking_url, endereco_json, agendado_para,
+            id, sequencia_pedido, origem, modalidade, status_pagamento, identificador, cliente_id, cliente_nome, cliente_celular, total, taxa_entrega, desconto_aplicado, desconto_frete, acrescimo_clima, status, criado_em, voa_order_id, tracking_url, endereco_json, agendado_para, ifood_order_id,
             pedido_itens (
-              id, quantidade, observacoes, modo_consumo,
+              id, quantidade, preco_unitario, observacoes, modo_consumo,
               produtos ( nome ),
+              pedido_item_adicionais ( preco_aplicado ),
               pedido_item_combo_escolhas (
                 nome_grupo, nome_produto, delta_preco
               )
@@ -238,7 +248,9 @@ export function PainelPedidos() {
             p.status_pagamento !== "aguardando" &&
             p.status !== "aguardando_pagamento",
         );
-        setPedidos(lista);
+        setPedidos((prev) =>
+          listaPedidosEquivalente(prev, lista) ? prev : lista,
+        );
       } catch (erro: unknown) {
         const mensagem = erro instanceof Error ? erro.message : String(erro);
         console.error("[ERRO - PAINEL] Falha ao carregar:", mensagem);
@@ -330,18 +342,66 @@ export function PainelPedidos() {
     };
   }, [carregarPedidosAtivos, expirarPedidosSemPagamento]);
 
-  const cancelarPedido = async (pedidoId: string) => {
+  const cancelarPedidoLocal = async (pedidoId: string) => {
+    const { error } = await supabase.rpc("cancelar_pedido_com_estoque", {
+      p_pedido_id: pedidoId,
+    });
+    if (error) throw error;
+    toast.success("Pedido cancelado e estoque atualizado!");
+    void carregarPedidosAtivos();
+  };
+
+  const confirmarCancelamentoIfood = async (motivo: IfoodMotivoCancel) => {
+    if (!pedidoCancelIfood?.ifood_order_id) return;
+    const codigo = motivo.code ?? motivo.cancelCodeId;
+    if (!codigo) {
+      toast.error("Motivo sem código");
+      return;
+    }
+    setCancelandoIfood(true);
     try {
-      // Chamada da função que criamos no SQL
-      const { error } = await supabase.rpc("cancelar_pedido_com_estoque", {
-        p_pedido_id: pedidoId,
+      await ifoodCancelarPedido({
+        orderId: pedidoCancelIfood.ifood_order_id,
+        cancellationCode: String(codigo),
+        reason:
+          typeof motivo.description === "string"
+            ? motivo.description
+            : undefined,
       });
+      await cancelarPedidoLocal(pedidoCancelIfood.id);
+      setPedidoCancelIfood(null);
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[IFOOD] Cancelar pedido:", mensagem);
+      toast.error("Falha ao cancelar pedido no iFood.");
+    } finally {
+      setCancelandoIfood(false);
+    }
+  };
 
-      if (error) throw error;
+  const cancelarPedido = async (pedido: PedidoKds) => {
+    if (pedido.origem === "ifood" && pedido.ifood_order_id) {
+      setPedidoCancelIfood(pedido);
+      setMotivosIfood([]);
+      setCarregandoMotivos(true);
+      try {
+        const motivos = await ifoodMotivosCancelamento(pedido.ifood_order_id);
+        setMotivosIfood(motivos);
+      } catch (erro: unknown) {
+        const mensagem = erro instanceof Error ? erro.message : String(erro);
+        console.error("[IFOOD] Motivos cancelamento:", mensagem);
+        toast.error("Não foi possível carregar motivos do iFood.");
+        setPedidoCancelIfood(null);
+      } finally {
+        setCarregandoMotivos(false);
+      }
+      return;
+    }
 
-      toast.success("Pedido cancelado e estoque atualizado!");
-      carregarPedidosAtivos(); // Recarrega a lista
-    } catch (erro: any) {
+    if (!window.confirm("Cancelar este pedido e devolver estoque?")) return;
+    try {
+      await cancelarPedidoLocal(pedido.id);
+    } catch (erro: unknown) {
       console.error("Erro ao cancelar:", erro);
       toast.error("Falha ao cancelar pedido.");
     }
@@ -373,7 +433,7 @@ export function PainelPedidos() {
     void dispararNotificacaoStatusPedido(pedidoId, novoStatus);
   };
 
-  const abrirModalWhatsApp = (pedido: Pedido) => {
+  const abrirModalWhatsApp = (pedido: PedidoKds) => {
     if (!montarLinkWhatsapp(pedido.cliente_celular, "x")) {
       toast.error("Este pedido não tem celular do cliente cadastrado.");
       return;
@@ -386,7 +446,7 @@ export function PainelPedidos() {
     setPedidoWhatsApp(pedido);
   };
 
-  const abrirChatCliente = async (pedido: Pedido) => {
+  const abrirChatCliente = async (pedido: PedidoKds) => {
     if (abrindoChatId) return;
     setAbrindoChatId(pedido.id);
     try {
@@ -421,7 +481,7 @@ export function PainelPedidos() {
     }
   };
 
-  const enviarWhatsApp = (pedido: Pedido, modelo: string) => {
+  const enviarWhatsApp = (pedido: PedidoKds, modelo: string) => {
     const mensagem = preencherMensagemWhatsapp(
       modelo,
       dadosMensagemDoPedido(pedido),
@@ -435,7 +495,7 @@ export function PainelPedidos() {
     window.open(link, "_blank", "noopener,noreferrer");
   };
 
-  const enviarParaImpressora = async (pedido: Pedido) => {
+  const enviarParaImpressora = async (pedido: PedidoKds) => {
     const sucesso = await imprimirPedido(pedido.id, { manual: true });
     if (sucesso) {
       console.info(
@@ -458,21 +518,21 @@ export function PainelPedidos() {
     }
   };
 
-  const copiarNomeCliente = (pedido: Pedido) =>
+  const copiarNomeCliente = (pedido: PedidoKds) =>
     void copiarTexto(
       pedido.cliente_nome || "",
       "Nome copiado!",
       "Não foi possível copiar o nome.",
     );
 
-  const copiarTelefoneCliente = (pedido: Pedido) =>
+  const copiarTelefoneCliente = (pedido: PedidoKds) =>
     void copiarTexto(
       pedido.cliente_celular || "",
       "Telefone copiado!",
       "Não foi possível copiar o telefone.",
     );
 
-  const copiarEnderecoEntrega = (pedido: Pedido) =>
+  const copiarEnderecoEntrega = (pedido: PedidoKds) =>
     void copiarTexto(
       formatarEnderecoEntrega(pedido.endereco_json) || "",
       "Endereço copiado!",
@@ -481,7 +541,7 @@ export function PainelPedidos() {
         : "Este pedido não tem endereço de entrega.",
     );
 
-  const copiarComplementoEntrega = (pedido: Pedido) =>
+  const copiarComplementoEntrega = (pedido: PedidoKds) =>
     void copiarTexto(
       complementoPedido(pedido.endereco_json) || "",
       "Complemento copiado!",
@@ -498,7 +558,7 @@ export function PainelPedidos() {
   }, []);
 
   const pendentes = pedidos
-    .filter((p) => p.status === "pendente")
+    .filter((p) => p.status === "pendente" && p.agendado_para)
     .slice()
     .sort(compararPedidosKds);
   const emProducao = pedidos
@@ -510,321 +570,18 @@ export function PainelPedidos() {
     .slice()
     .sort(compararPedidosKds);
 
-  // Subcomponente para renderizar o Card do Pedido
-  const CardPedido = ({
-    pedido,
-    corBorder,
-  }: {
-    pedido: Pedido;
-    corBorder: string;
-  }) => {
-    const emAlerta = pedidoAgendadoEmAlerta(pedido.agendado_para, agoraTick);
-    const minAte = minutosAteAgendado(pedido.agendado_para, agoraTick);
-
-    return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      className={`bg-white dark:bg-surface-dark border-l-4 ${corBorder} shadow-sm p-4 rounded-lg flex flex-col gap-3 ${
-        emAlerta
-          ? "ring-2 ring-amber-400 animate-pulse shadow-amber-200/50 dark:shadow-amber-900/30"
-          : ""
-      }`}
-    >
-      <div className="flex justify-between items-start border-b border-gray-100 dark:border-gray-800 pb-2">
-        <div>
-          <h3 className="font-bold text-lg">
-            #{pedido.sequencia_pedido} - {pedido.identificador}
-          </h3>
-          <p className="text-sm text-gray-500">{pedido.cliente_nome}</p>
-          {pedido.agendado_para && (
-            <p
-              className={`mt-1 text-sm font-bold ${
-                emAlerta
-                  ? "text-amber-700 dark:text-amber-300"
-                  : "text-sky-700 dark:text-sky-300"
-              }`}
-            >
-              {pedido.modalidade === "retirada" ? "Retirada" : "Entrega"} às{" "}
-              {rotuloHoraAgendada(pedido.agendado_para)}
-              {emAlerta && minAte != null
-                ? minAte <= 0
-                  ? " · agora!"
-                  : ` · em ${minAte} min`
-                : ""}
-            </p>
-          )}
-          {(pedido.origem === "delivery" ||
-            Number(pedido.desconto_aplicado || 0) > 0) && (
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              {pedido.origem === "delivery" && (
-                <span
-                  className={`inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                    pedido.modalidade === "retirada"
-                      ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-                      : "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
-                  }`}
-                >
-                  {pedido.modalidade === "retirada" ? "Retirada" : "Delivery"}
-                </span>
-              )}
-              {pedido.agendado_para && (
-                <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
-                  Agendado
-                </span>
-              )}
-              {pedido.origem === "delivery" &&
-                pedido.modalidade === "entrega" &&
-                Number(pedido.taxa_entrega || 0) > 0 && (
-                  <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                    Frete R${" "}
-                    {Number(pedido.taxa_entrega)
-                      .toFixed(2)
-                      .replace(".", ",")}
-                  </span>
-                )}
-              {pedido.origem === "delivery" &&
-                Number(pedido.desconto_frete || 0) > 0 && (
-                  <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
-                    Frete -R${" "}
-                    {Number(pedido.desconto_frete)
-                      .toFixed(2)
-                      .replace(".", ",")}
-                  </span>
-                )}
-              {pedido.origem === "delivery" &&
-                Number(pedido.acrescimo_clima || 0) > 0 && (
-                  <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
-                    Chuva +R${" "}
-                    {Number(pedido.acrescimo_clima)
-                      .toFixed(2)
-                      .replace(".", ",")}
-                  </span>
-                )}
-              {Number(pedido.desconto_aplicado || 0) > 0 && (
-                <span className="inline-block text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                  Desconto -R${" "}
-                  {Number(pedido.desconto_aplicado)
-                    .toFixed(2)
-                    .replace(".", ",")}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-end justify-end gap-3">
-          {(pedido.status === "pendente" ||
-            pedido.status === "em_producao") && (
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                Excluir
-              </span>
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => cancelarPedido(pedido.id)}
-                  className="p-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex justify-center items-center"
-                  title="Excluir pedido"
-                >
-                  <Trash2 size={18} className="text-white" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col items-center gap-1 pl-3 border-l border-gray-200 dark:border-gray-700">
-            <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              Ações
-            </span>
-            <div className="flex gap-1.5">
-              {pedido.cliente_celular && (
-                <button
-                  onClick={() => abrirModalWhatsApp(pedido)}
-                  className="p-2 bg-[#25D366] text-white rounded-md hover:bg-[#1ebe5b] transition-colors"
-                  title="Enviar mensagem no WhatsApp"
-                >
-                  <MessageCircle size={20} />
-                </button>
-              )}
-              {(pedido.cliente_id || pedido.cliente_celular) && (
-                <button
-                  type="button"
-                  onClick={() => void abrirChatCliente(pedido)}
-                  disabled={abrindoChatId === pedido.id}
-                  className="p-2 bg-cookie-primary text-white rounded-md hover:bg-cookie-primary/90 transition-colors disabled:opacity-60"
-                  title="Abrir chat do cliente"
-                >
-                  <MessagesSquare size={20} />
-                </button>
-              )}
-              <button
-                onClick={() => enviarParaImpressora(pedido)}
-                className="p-2 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                title="Imprimir Cupom"
-              >
-                <Printer
-                  size={20}
-                  className="text-gray-700 dark:text-gray-300"
-                />
-              </button>
-            </div>
-          </div>
-
-          {(pedido.cliente_nome?.trim() ||
-            pedido.cliente_celular?.trim() ||
-            (pedido.origem === "delivery" &&
-              pedido.modalidade === "entrega" &&
-              formatarEnderecoEntrega(pedido.endereco_json))) && (
-            <div className="flex flex-col items-center gap-1 pl-3 border-l border-gray-200 dark:border-gray-700">
-              <span className="text-[0.625rem] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                Copiar
-              </span>
-              <div className="flex gap-1.5">
-                {pedido.cliente_nome?.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => copiarNomeCliente(pedido)}
-                    className="p-2 bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 rounded-md hover:bg-sky-200 dark:hover:bg-sky-900 transition-colors"
-                    title="Copiar nome do cliente"
-                  >
-                    <User size={20} />
-                  </button>
-                )}
-                {pedido.cliente_celular?.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => copiarTelefoneCliente(pedido)}
-                    className="p-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-md hover:bg-emerald-200 dark:hover:bg-emerald-900 transition-colors"
-                    title="Copiar telefone do cliente"
-                  >
-                    <Phone size={20} />
-                  </button>
-                )}
-                {pedido.origem === "delivery" &&
-                  pedido.modalidade === "entrega" &&
-                  formatarEnderecoEntrega(pedido.endereco_json) && (
-                    <button
-                      type="button"
-                      onClick={() => copiarEnderecoEntrega(pedido)}
-                      className="p-2 bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 rounded-md hover:bg-violet-200 dark:hover:bg-violet-900 transition-colors"
-                      title="Copiar endereço de entrega"
-                    >
-                      <MapPin size={20} />
-                    </button>
-                  )}
-                {pedido.origem === "delivery" &&
-                  pedido.modalidade === "entrega" &&
-                  complementoPedido(pedido.endereco_json) && (
-                    <button
-                      type="button"
-                      onClick={() => copiarComplementoEntrega(pedido)}
-                      className="p-2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-md hover:bg-amber-200 dark:hover:bg-amber-900 transition-colors"
-                      title="Copiar complemento (apto, casa…)"
-                    >
-                      <Building2 size={20} />
-                    </button>
-                  )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <ul className="flex-1 space-y-2">
-        {pedido.pedido_itens.map((item) => (
-          <li key={item.id} className="text-sm">
-            <span className="font-bold">{item.quantidade}x</span>{" "}
-            {item.produtos.nome}
-            {item.modo_consumo === "levar" && (
-              <span className="ml-1 text-[0.625rem] font-black uppercase tracking-wide text-orange-600 dark:text-orange-400">
-                · LEVAR
-              </span>
-            )}
-            {item.modo_consumo === "loja" && (
-              <span className="ml-1 text-[0.625rem] font-black uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                · LOJA
-              </span>
-            )}
-            {item.pedido_item_combo_escolhas &&
-              item.pedido_item_combo_escolhas.length > 0 && (
-                <ul className="ml-4 mt-0.5 space-y-0.5">
-                  {item.pedido_item_combo_escolhas.map((escolha, idx) => (
-                    <li
-                      key={`${item.id}-combo-${idx}`}
-                      className="text-xs text-gray-600 dark:text-gray-400"
-                    >
-                      {escolha.nome_grupo}: {escolha.nome_produto}
-                      {Number(escolha.delta_preco) > 0 &&
-                        ` (+R$ ${Number(escolha.delta_preco).toFixed(2)})`}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            {item.observacoes && (
-              <p className="text-xs text-red-500 font-medium ml-4">
-                Obs: {item.observacoes}
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      <div className="pt-2 flex gap-2 flex-col">
-        {pedido.status === "pendente" && (
-          <button
-            onClick={() => atualizarStatus(pedido.id, "em_producao")}
-            className="flex-1 bg-yellow-500 text-white py-2 rounded font-bold flex justify-center items-center gap-2"
-          >
-            <ChefHat size={18} /> Preparar
-          </button>
-        )}
-        {pedido.status === "em_producao" && (
-          <button
-            onClick={() => atualizarStatus(pedido.id, "pronto")}
-            className="flex-1 bg-green-500 text-white py-2 rounded font-bold flex justify-center items-center gap-2"
-          >
-            <CheckCircle2 size={18} /> Finalizar (pronto)
-          </button>
-        )}
-        {pedido.status === "pronto" && (
-          <>
-            {pedido.origem === "delivery" &&
-              pedido.modalidade === "entrega" &&
-              pedido.voa_order_id && (
-                <div className="rounded-lg bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-3 py-2 text-xs font-semibold text-violet-800 dark:text-violet-200 flex items-center gap-2">
-                  <Bike size={14} />
-                  Motoboy chamado
-                  {pedido.tracking_url && (
-                    <a
-                      href={pedido.tracking_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline ml-auto"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      Rastrear
-                    </a>
-                  )}
-                </div>
-              )}
-            <button
-              type="button"
-              onClick={() => atualizarStatus(pedido.id, "entregue")}
-              className="flex-1 bg-gray-800 text-white py-2 rounded font-bold"
-            >
-              {pedido.origem === "delivery" && pedido.modalidade === "retirada"
-                ? "Cliente retirou"
-                : pedido.origem === "delivery" &&
-                    pedido.modalidade === "entrega"
-                  ? "Entrega concluída"
-                  : "Entregue"}
-            </button>
-          </>
-        )}
-      </div>
-    </motion.div>
-  );
+  const cardPropsCompartilhadas = {
+    agoraTick,
+    abrindoChatId,
+    onImprimir: enviarParaImpressora,
+    onWhatsApp: abrirModalWhatsApp,
+    onChat: abrirChatCliente,
+    onCancelar: cancelarPedido,
+    onAtualizarStatus: atualizarStatus,
+    onCopiarNome: copiarNomeCliente,
+    onCopiarTelefone: copiarTelefoneCliente,
+    onCopiarEndereco: copiarEnderecoEntrega,
+    onCopiarComplemento: copiarComplementoEntrega,
   };
 
   return (
@@ -863,20 +620,21 @@ export function PainelPedidos() {
           {pendentes.length > 0 ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-xl bg-gray-100 p-4 hide-scrollbar dark:bg-[#1a1815]">
               <h2 className="mb-1 flex items-center gap-2 text-lg font-bold text-red-600">
-                <Clock size={20} /> Novos ({pendentes.length})
+                <Clock size={20} /> Agendados ({pendentes.length})
               </h2>
               <p className="mb-4 text-[11px] leading-snug text-gray-500">
-                Agendados ficam aqui até 30 min antes (aí preparam e imprimem).
-                Demais: impressão na entrada; sobem sozinhos em 1 min sem
-                Preparar.
+                Só pedidos programados. Impressão e preparo 30 min antes do
+                horário (ou ao clicar Preparar). Pedidos imediatos entram direto
+                em Preparando.
               </p>
               <div className="flex flex-col gap-4">
                 <AnimatePresence>
                   {pendentes.map((p) => (
-                    <CardPedido
+                    <CardPedidoKds
                       key={p.id}
                       pedido={p}
                       corBorder="border-red-500"
+                      {...cardPropsCompartilhadas}
                     />
                   ))}
                 </AnimatePresence>
@@ -885,12 +643,12 @@ export function PainelPedidos() {
           ) : (
             <div
               className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gray-100 px-3 py-3 text-red-600 dark:bg-[#1a1815] md:w-12 md:flex-col md:gap-3 md:px-2 md:py-4"
-              title="Nenhum pedido novo"
-              aria-label="Novos: nenhum pedido"
+              title="Nenhum pedido agendado"
+              aria-label="Agendados: nenhum pedido"
             >
               <Clock size={18} className="shrink-0" />
               <span className="text-sm font-bold md:[writing-mode:vertical-rl] md:rotate-180">
-                Novos
+                Agendados
               </span>
               <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-red-700 dark:bg-red-950/50 dark:text-red-300">
                 0
@@ -906,10 +664,11 @@ export function PainelPedidos() {
             <div className="flex flex-col gap-4">
               <AnimatePresence>
                 {emProducao.map((p) => (
-                  <CardPedido
+                  <CardPedidoKds
                     key={p.id}
                     pedido={p}
                     corBorder="border-yellow-500"
+                    {...cardPropsCompartilhadas}
                   />
                 ))}
               </AnimatePresence>
@@ -927,10 +686,11 @@ export function PainelPedidos() {
             <div className="flex flex-col gap-4">
               <AnimatePresence>
                 {prontos.map((p) => (
-                  <CardPedido
+                  <CardPedidoKds
                     key={p.id}
                     pedido={p}
                     corBorder="border-green-500"
+                    {...cardPropsCompartilhadas}
                   />
                 ))}
               </AnimatePresence>
@@ -938,6 +698,72 @@ export function PainelPedidos() {
           </div>
         </div>
       )}
+
+      {/* Modal: cancelamento iFood */}
+      <AnimatePresence>
+        {pedidoCancelIfood && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !cancelandoIfood && setPedidoCancelIfood(null)}
+              className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900/20">
+                <div>
+                  <h3 className="font-bold text-lg dark:text-white">
+                    Cancelar pedido iFood
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    #{pedidoCancelIfood.sequencia_pedido} ·{" "}
+                    {pedidoCancelIfood.cliente_nome}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !cancelandoIfood && setPedidoCancelIfood(null)}
+                  className="p-2 bg-white dark:bg-gray-800 rounded-full border dark:border-gray-700 active:scale-95"
+                  aria-label="Fechar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto flex-1 space-y-2">
+                {carregandoMotivos ? (
+                  <div className="flex justify-center py-8">
+                    <div className="animate-spin h-8 w-8 border-4 border-cookie-accent border-t-transparent rounded-full" />
+                  </div>
+                ) : motivosIfood.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    Nenhum motivo disponível.
+                  </p>
+                ) : (
+                  motivosIfood.map((motivo, idx) => (
+                    <button
+                      key={String(motivo.code ?? motivo.cancelCodeId ?? idx)}
+                      type="button"
+                      disabled={cancelandoIfood}
+                      onClick={() => void confirmarCancelamentoIfood(motivo)}
+                      className="w-full text-left p-4 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-60 transition-all"
+                    >
+                      <p className="font-bold text-sm text-gray-900 dark:text-white">
+                        {motivo.description || "Motivo"}
+                      </p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Modal: escolher qual mensagem de WhatsApp enviar */}
       <AnimatePresence>

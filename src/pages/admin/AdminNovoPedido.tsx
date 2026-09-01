@@ -24,6 +24,7 @@ import {
   type ComboGrupo,
   type EscolhaCombo,
 } from "../../lib/combos";
+import { precoEfetivoCanal } from "../../lib/precificacao";
 import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
@@ -53,7 +54,10 @@ import {
   listarSlotsAgendamentoHoje,
   rotuloSlot,
 } from "../../lib/lojaAgendamento";
-import type { StatusLoja } from "../../lib/lojaStatus";
+import {
+  buscarStatusLoja,
+  type StatusLoja,
+} from "../../lib/lojaStatus";
 import {
   criarPedidoCompleto,
   ErroNegocioCheckout,
@@ -108,10 +112,7 @@ type ItemRascunho = {
 type MesaOpt = { id: string; numero: number; apelido: string | null };
 
 function precoEfetivo(p: ProdutoCat): number {
-  if (p.em_promocao && p.preco_promocional != null && p.preco_promocional > 0) {
-    return Number(p.preco_promocional);
-  }
-  return Number(p.preco);
+  return precoEfetivoCanal(p, "loja");
 }
 
 function custoItem(item: ItemRascunho): number {
@@ -188,6 +189,16 @@ export function AdminNovoPedido() {
 
   const modoItens = canal === "balcao" ? modoBalcao : modoCanal(canal);
 
+  const aplicarSlots = (r: Awaited<ReturnType<typeof listarSlotsAgendamentoHoje>>) => {
+    setStatusLoja(r.status);
+    setSlotsHoje(r.slots);
+    setMotivoSemSlots(r.motivoSemSlots);
+    setAbreHoje(r.abreHoje);
+    if (r.status?.aberta) setAgendadoPara(null);
+    else if (r.slots[0]) setAgendadoPara(r.slots[0]);
+    else setAgendadoPara(null);
+  };
+
   useEffect(() => {
     void buscarDeliveryConfig().then(setConfig);
     void supabase
@@ -196,16 +207,15 @@ export function AdminNovoPedido() {
       .eq("ativo", true)
       .order("numero")
       .then(({ data }) => setMesas((data as MesaOpt[]) || []));
-    void (async () => {
-      const r = await listarSlotsAgendamentoHoje();
-      setStatusLoja(r.status);
-      setSlotsHoje(r.slots);
-      setMotivoSemSlots(r.motivoSemSlots);
-      setAbreHoje(r.abreHoje);
-      if (r.status?.aberta) setAgendadoPara(null);
-      else if (r.slots[0]) setAgendadoPara(r.slots[0]);
-      else setAgendadoPara(null);
-    })();
+    void listarSlotsAgendamentoHoje().then(aplicarSlots);
+  }, []);
+
+  useEffect(() => {
+    const recarregar = () => {
+      void listarSlotsAgendamentoHoje().then(aplicarSlots);
+    };
+    window.addEventListener("focus", recarregar);
+    return () => window.removeEventListener("focus", recarregar);
   }, []);
 
   useEffect(() => {
@@ -243,11 +253,8 @@ export function AdminNovoPedido() {
   const lojaAberta = Boolean(statusLoja?.aberta);
   const agendamentoOk =
     !ehDeliveryCanal ||
-    (abreHoje
-      ? lojaAberta
-        ? true
-        : Boolean(agendadoPara) && slotsHoje.length > 0
-      : false);
+    lojaAberta ||
+    (Boolean(agendadoPara) && slotsHoje.length > 0);
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -583,6 +590,11 @@ export function AdminNovoPedido() {
       toast.warning("Informe o nome do cliente");
       return;
     }
+
+    const slotsAtual = await listarSlotsAgendamentoHoje();
+    aplicarSlots(slotsAtual);
+    const abertaAgora = Boolean(slotsAtual.status?.aberta);
+
     if (ehDeliveryCanal) {
       if (!telefone.trim()) {
         toast.warning("Informe o celular do cliente");
@@ -592,16 +604,17 @@ export function AdminNovoPedido() {
         toast.warning(mensagemTelefoneInvalido(telefone) || "Telefone inválido");
         return;
       }
-      if (!agendamentoOk) {
+      if (!abertaAgora && !agendadoPara) {
         toast.warning(
-          motivoSemSlots || "Não há horários disponíveis para agendar hoje.",
+          slotsAtual.motivoSemSlots ||
+            "Escolha um horário de entrega/retirada ou abra a loja em Funcionamento.",
         );
         return;
       }
-      if (!lojaAberta && !agendadoPara) {
-        toast.warning("Escolha um horário de entrega/retirada.");
-        return;
-      }
+    } else if (!abertaAgora) {
+      const st = slotsAtual.status ?? (await buscarStatusLoja());
+      toast.warning(st?.motivo || "Loja fechada. Ative a abertura temporária em Funcionamento.");
+      return;
     } else if (telefone && !telefoneCelularValido(telefone)) {
       toast.warning(mensagemTelefoneInvalido(telefone) || "Telefone inválido");
       return;
@@ -890,15 +903,15 @@ export function AdminNovoPedido() {
                   horário de hoje.
                 </p>
               ) : (
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  O quanto antes, ou escolha um horário (agendado fica em Novos
-                  até 30 min antes).
+                <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
+                  Loja aberta (incl. abertura temporária). Pedido imediato ou
+                  agendado.
                 </p>
               )}
             </div>
           </div>
 
-          {!abreHoje || slotsHoje.length === 0 ? (
+          {!abreHoje && !lojaAberta && slotsHoje.length === 0 ? (
             <p className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">
               {motivoSemSlots || "Não há horários disponíveis para hoje."}
             </p>

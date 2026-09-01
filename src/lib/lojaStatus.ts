@@ -14,6 +14,10 @@ export interface LojaConfig {
   /** ISO; se no futuro, a loja reabre sozinha neste instante. */
   pausado_ate: string | null;
   mensagem_pausa: string | null;
+  /** Força loja aberta fora do horário cadastrado. */
+  abertura_temporaria: boolean;
+  /** ISO; se no futuro, a abertura temporária encerra neste instante. */
+  abertura_temporaria_ate: string | null;
   tempo_preparo_min: number;
   /**
    * Minutos após a abertura em que o primeiro horário de agendamento
@@ -24,6 +28,7 @@ export interface LojaConfig {
 }
 
 export const MINUTOS_PAUSA_RAPIDA_LOJA = 10;
+export const MINUTOS_ABERTURA_RAPIDA_LOJA = 120;
 
 export function pausaLojaEfetiva(
   config: Pick<LojaConfig, "pausado" | "pausado_ate">,
@@ -32,6 +37,15 @@ export function pausaLojaEfetiva(
   if (!config.pausado) return false;
   if (!config.pausado_ate) return true;
   return new Date(config.pausado_ate).getTime() > agora;
+}
+
+export function aberturaTemporariaEfetiva(
+  config: Pick<LojaConfig, "abertura_temporaria" | "abertura_temporaria_ate">,
+  agora = Date.now(),
+): boolean {
+  if (!config.abertura_temporaria) return false;
+  if (!config.abertura_temporaria_ate) return true;
+  return new Date(config.abertura_temporaria_ate).getTime() > agora;
 }
 
 export interface LojaHorario {
@@ -64,7 +78,7 @@ export async function buscarConfigLoja(): Promise<LojaConfig> {
   const { data, error } = await supabase
     .from("loja_config")
     .select(
-      "pausado, pausado_ate, mensagem_pausa, tempo_preparo_min, atraso_primeiro_agendamento_min, limite_pedidos_ativos",
+      "pausado, pausado_ate, mensagem_pausa, abertura_temporaria, abertura_temporaria_ate, tempo_preparo_min, atraso_primeiro_agendamento_min, limite_pedidos_ativos",
     )
     .eq("id", 1)
     .single();
@@ -72,6 +86,8 @@ export async function buscarConfigLoja(): Promise<LojaConfig> {
   const row = data as LojaConfig;
   return {
     ...row,
+    abertura_temporaria: Boolean(row.abertura_temporaria),
+    abertura_temporaria_ate: row.abertura_temporaria_ate ?? null,
     atraso_primeiro_agendamento_min: Number(
       row.atraso_primeiro_agendamento_min ?? 15,
     ),
@@ -87,6 +103,10 @@ export async function salvarConfigLoja(config: LojaConfig): Promise<void> {
         ? config.pausado_ate
         : null,
       mensagem_pausa: config.mensagem_pausa?.trim() || null,
+      abertura_temporaria: config.abertura_temporaria,
+      abertura_temporaria_ate: config.abertura_temporaria
+        ? config.abertura_temporaria_ate
+        : null,
       tempo_preparo_min: config.tempo_preparo_min,
       atraso_primeiro_agendamento_min: Math.max(
         0,
@@ -120,6 +140,47 @@ export async function pausarLojaPorMinutos(minutos: number): Promise<void> {
     })
     .eq("id", 1);
   if (error) throw new Error(error.message);
+
+  try {
+    const { ifoodPausarLoja } = await import("./ifoodAdmin");
+    await ifoodPausarLoja(minutos, `Pausa rápida ${minutos} min (admin)`);
+  } catch (e) {
+    console.warn("[loja] pausa iFood:", e);
+  }
+}
+
+export async function abrirLojaPorMinutos(minutos: number): Promise<void> {
+  const ate = new Date(Date.now() + minutos * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from("loja_config")
+    .update({
+      abertura_temporaria: true,
+      abertura_temporaria_ate: ate,
+      pausado: false,
+      pausado_ate: null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq("id", 1);
+  if (error) throw new Error(error.message);
+
+  try {
+    const { ifoodReabrirLoja } = await import("./ifoodAdmin");
+    await ifoodReabrirLoja();
+  } catch (e) {
+    console.warn("[loja] abertura iFood:", e);
+  }
+}
+
+export async function encerrarAberturaTemporaria(): Promise<void> {
+  const { error } = await supabase
+    .from("loja_config")
+    .update({
+      abertura_temporaria: false,
+      abertura_temporaria_ate: null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq("id", 1);
+  if (error) throw new Error(error.message);
 }
 
 export async function reabrirLoja(): Promise<void> {
@@ -132,6 +193,13 @@ export async function reabrirLoja(): Promise<void> {
     })
     .eq("id", 1);
   if (error) throw new Error(error.message);
+
+  try {
+    const { ifoodReabrirLoja } = await import("./ifoodAdmin");
+    await ifoodReabrirLoja();
+  } catch (e) {
+    console.warn("[loja] reabrir iFood:", e);
+  }
 }
 
 export async function salvarHorarioLoja(horario: LojaHorario): Promise<void> {

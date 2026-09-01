@@ -38,6 +38,10 @@ import {
 } from "../../lib/disponibilidadeProduto";
 import { obterQuantidadeErros } from "../../lib/errorLogger";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import {
+  buscarDisponibilidadeEncomendaLote,
+  type DisponibilidadeEncomenda,
+} from "../../lib/encomendaProgramada";
 import { buscarStatusLoja, type StatusLoja } from "../../lib/lojaStatus";
 import {
   emModoToten,
@@ -80,6 +84,7 @@ interface Produto {
   medida_unidade?: string | null;
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
+  encomenda_programada?: boolean;
   disponibilidade?: DisponibilidadeProduto;
 }
 
@@ -152,6 +157,9 @@ function SkeletonGridProdutos() {
 export function FeedProdutos() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [dispEncomenda, setDispEncomenda] = useState<
+    Record<string, DisponibilidadeEncomenda>
+  >({});
   const [categoriaAtiva, setCategoriaAtiva] = useState<string>("all");
   const [carregando, setCarregando] = useState(true);
 
@@ -182,6 +190,8 @@ export function FeedProdutos() {
   const navigate = useNavigate();
   const location = useLocation();
   const contextoCardapio = lerContextoCardapio(location.search);
+  const ehLayoutMesa = contextoCardapio.tipo === "mesa";
+  const naPaginaItem = /\/item\//.test(location.pathname);
   const quantidadeTotalCarrinho = useCartStore((state) =>
     state.obterQuantidadeTotal(),
   );
@@ -228,12 +238,14 @@ export function FeedProdutos() {
     }
   }, [modalOpcoesAberto]);
 
-  // Sem escolha comer/levar, volta ao onboarding
+  // Sem escolha comer/levar, volta ao onboarding (preserva ?mesa=)
   useEffect(() => {
     if (!lerTipoConsumo()) {
-      navigate(urlBoasVindasCardapio(), { replace: true });
+      navigate(`${urlBoasVindasCardapio()}${location.search}`, {
+        replace: true,
+      });
     }
-  }, [navigate]);
+  }, [location.search, navigate]);
 
   useEffect(() => {
     async function carregarCardapio() {
@@ -252,8 +264,22 @@ export function FeedProdutos() {
           .eq("ativo", true);
         if (errProd) throw new Error(errProd.message);
 
-        const produtosDoBanco = (dataProd || []).filter(
-          (p) => !produtoEstaEsgotado(p),
+        const todos = (dataProd || []) as Produto[];
+        const idsEncomenda = todos
+          .filter((p) => p.encomenda_programada)
+          .map((p) => p.id);
+        let mapaDisp: Record<string, DisponibilidadeEncomenda> = {};
+        if (idsEncomenda.length > 0) {
+          try {
+            mapaDisp = await buscarDisponibilidadeEncomendaLote(idsEncomenda);
+          } catch {
+            mapaDisp = {};
+          }
+        }
+        setDispEncomenda(mapaDisp);
+
+        const produtosDoBanco = todos.filter(
+          (p) => !produtoEstaEsgotado(p, mapaDisp[p.id]),
         );
 
         const categoriasComItens = (dataCat || [])
@@ -326,7 +352,10 @@ export function FeedProdutos() {
     produto: Produto,
     variante: "normal" | "destaque" = "normal",
   ) => {
-    const esgotado = produtoEstaEsgotado(produto);
+    const esgotado = produtoEstaEsgotado(produto, dispEncomenda[produto.id]);
+    const ehEncomenda =
+      produto.encomenda_programada &&
+      dispEncomenda[produto.id]?.modo === "encomenda";
     const temPromocao =
       produto.em_promocao &&
       produto.preco_promocional != null &&
@@ -363,7 +392,7 @@ export function FeedProdutos() {
               : `produto-midia-${produto.id}`
           }
           className={`w-full mb-3 mt-1 rounded-[1rem] overflow-hidden bg-gray-100 dark:bg-[#181a1b] relative ${
-            ehDestaque ? "aspect-[4/5] sm:aspect-[5/4]" : "aspect-square"
+            ehDestaque ? "aspect-[3/2] sm:aspect-[5/4]" : "aspect-square"
           }`}
         >
           {temPromocao && !esgotado && (
@@ -424,12 +453,17 @@ export function FeedProdutos() {
 
         <div className="flex-1 flex flex-col px-1.5 pb-1.5">
           <h3
-            className={`font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-2 leading-snug ${
-              ehDestaque ? "text-base md:text-lg" : "text-sm md:text-base"
+            className={`font-extrabold text-gray-950 dark:text-white mb-1.5 line-clamp-3 leading-snug ${
+              ehDestaque ? "text-sm sm:text-base md:text-lg" : "text-sm md:text-base"
             }`}
           >
             {produto.nome}
           </h3>
+          {ehEncomenda && !esgotado && (
+            <span className="text-[0.65rem] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">
+              Sob encomenda
+            </span>
+          )}
           <TagMedidaProduto
             valor={produto.medida_valor}
             unidade={produto.medida_unidade}
@@ -439,7 +473,7 @@ export function FeedProdutos() {
 
           <p
             className={`font-extrabold text-[#6b1d2a] leading-snug ${
-              ehDestaque ? "text-base md:text-lg" : "text-sm md:text-base"
+              ehDestaque ? "text-sm sm:text-base md:text-lg" : "text-sm md:text-base"
             }`}
           >
             {esgotado ? (
@@ -461,7 +495,7 @@ export function FeedProdutos() {
           <p
             className={`mt-1 text-gray-700 dark:text-gray-200 leading-snug font-medium whitespace-pre-line ${
               ehDestaque
-                ? "line-clamp-3 text-sm"
+                ? "line-clamp-2 text-sm"
                 : "hidden md:block line-clamp-2 text-xs md:text-sm"
             }`}
           >
@@ -500,10 +534,27 @@ export function FeedProdutos() {
 
   const ehAbaDestaques = categoriaAtiva === CATEGORIA_DESTAQUES_ID;
 
+  if (ehLayoutMesa && naPaginaItem) {
+    return <Outlet />;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32 font-sans transition-colors duration-300 selection:bg-[#6b1d2a]/30">
+    <div
+      className={`min-h-screen font-sans transition-colors duration-300 selection:bg-[#6b1d2a]/30 ${
+        ehLayoutMesa
+          ? "bg-[#f4f4f5] text-zinc-900 pb-32"
+          : "bg-gray-100 dark:bg-[#121212] text-gray-950 dark:text-gray-100 pb-32"
+      }`}
+    >
       {/* Header Fixo */}
-      <header className="sticky top-0 z-30 bg-white dark:bg-[#181a1b] border-b border-gray-200 dark:border-[#2a2c30] shadow-sm pb-4 pt-4 transition-colors duration-300">
+      <header
+        className={`sticky top-0 z-30 border-b shadow-sm pb-4 pt-4 transition-colors duration-300 ${
+          ehLayoutMesa
+            ? "bg-white border-zinc-200"
+            : "bg-white dark:bg-[#181a1b] border-gray-200 dark:border-[#2a2c30]"
+        }`}
+      >
+        {!ehLayoutMesa && (
         <div className="px-5 flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
             {!modoToten && (
@@ -578,6 +629,7 @@ export function FeedProdutos() {
             )}
           </button>
         </div>
+        )}
 
         {/* Abas de Navegação */}
         <nav className="flex overflow-x-auto hide-scrollbar gap-2 max-lg:landscape:gap-1.5 px-4 max-lg:landscape:px-3 pb-1 max-w-full snap-x snap-mandatory">
@@ -942,12 +994,14 @@ export function FeedProdutos() {
 
       <Outlet />
 
-      <CarrinhoLateral
-        aberto={carrinhoAberto}
-        aoFechar={() => setCarrinhoAberto(false)}
-        mesa={contextoCardapio.mesa}
-        rotuloDestino={contextoCardapio.rotuloDestino}
-      />
+      {!ehLayoutMesa && (
+        <CarrinhoLateral
+          aberto={carrinhoAberto}
+          aoFechar={() => setCarrinhoAberto(false)}
+          mesa={contextoCardapio.mesa}
+          rotuloDestino={contextoCardapio.rotuloDestino}
+        />
+      )}
 
       <ModalConfirmacao
         aberto={modalVoltarHomeAberto}
@@ -959,7 +1013,7 @@ export function FeedProdutos() {
         aoCancelar={() => setModalVoltarHomeAberto(false)}
       />
 
-      <InatividadeToten />
+      {!ehLayoutMesa && <InatividadeToten />}
     </div>
   );
 }

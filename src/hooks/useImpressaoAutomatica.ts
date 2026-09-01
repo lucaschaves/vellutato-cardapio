@@ -19,7 +19,6 @@ import {
 import { dispararNotificacaoStatusPedido } from "../lib/notificacoesPedido";
 import {
   instantePreparoAgendado,
-  podeAutoPrepararImediatoAgora,
   podePrepararPedidoAgendadoAgora,
 } from "../lib/pedidoAgendado";
 import { supabase } from "../lib/supabase";
@@ -67,19 +66,13 @@ type PedidoImpressaoSnap = {
 
 /**
  * Impressão automática:
- * - Sem agendamento: imprime ao entrar em "Novos" (pendente).
- * - Agendado: imprime só ao ir para "Preparando" (em_producao),
- *   o que ocorre 30 min antes do horário (ou no clique Preparar).
+ * - Imediato: imprime ao entrar em "Preparando" (em_producao).
+ * - Agendado: imprime ao ir para "Preparando" (30 min antes ou clique Preparar).
  */
 function deveImprimirAutomatico(pedido: PedidoImpressaoSnap): boolean {
   if (!pedido.id || pedido.impresso) return false;
   if (!pagamentoLiberaImpressao(pedido.status_pagamento)) return false;
-
-  const agendado = Boolean(pedido.agendado_para);
-  if (agendado) {
-    return pedido.status === "em_producao";
-  }
-  return pedido.status === "pendente";
+  return pedido.status === "em_producao";
 }
 
 export function useImpressaoAutomatica() {
@@ -183,16 +176,8 @@ export function useImpressaoAutomatica() {
       ).status_pagamento;
       if (!pagamentoLiberaImpressao(statusPagamento)) return false;
 
-      const agendadoPara = (
-        pedido as { agendado_para?: string | null }
-      ).agendado_para;
-      const ehAgendado = Boolean(agendadoPara);
-
       if (!manual) {
-        // Agendado: só imprime em preparando. Imediato: ao entrar em novos.
-        if (ehAgendado) {
-          if (pedido.status !== "em_producao") return false;
-        } else if (pedido.status !== "pendente") {
+        if (pedido.status !== "em_producao") {
           return false;
         }
 
@@ -328,7 +313,7 @@ export function useImpressaoAutomatica() {
       console.info(
         "[KDS] Pedido promovido automaticamente para preparando:",
         pedidoId,
-        data.agendado_para ? "(agendado)" : "(1 min sem Preparar)",
+        data.agendado_para ? "(agendado)" : "(imediato)",
       );
       void dispararNotificacaoStatusPedido(pedidoId, "em_producao");
       return true;
@@ -354,14 +339,8 @@ export function useImpressaoAutomatica() {
       if (pedido.agendado_para) {
         if (podePrepararPedidoAgendadoAgora(pedido.agendado_para, agora)) {
           const ok = await promoverParaPreparando(pedido.id);
-          // Impressão dispara no realtime UPDATE → em_producao.
           if (ok) agendarImpressaoPedido(pedido.id);
         }
-        continue;
-      }
-
-      if (podeAutoPrepararImediatoAgora(pedido.criado_em, agora)) {
-        await promoverParaPreparando(pedido.id);
       }
     }
   }, [promoverParaPreparando]);
@@ -396,7 +375,7 @@ export function useImpressaoAutomatica() {
         pedido.id,
         pedido.agendado_para
           ? "(agendado → preparando)"
-          : "(novos / imediato)",
+          : "(imediato → preparando)",
       );
       agendarImpressaoPedido(pedido.id!);
     });

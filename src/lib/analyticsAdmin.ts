@@ -87,7 +87,7 @@ export async function buscarAnalyticsPeriodo(
 
   let qEventos = supabase
     .from("analytics_eventos")
-    .select("canal, evento, sessao_id, produto_id, props")
+    .select("canal, evento, sessao_id, produto_id, props, cliente_id")
     .order("criado_em", { ascending: false })
     .limit(15000);
 
@@ -96,22 +96,29 @@ export async function buscarAnalyticsPeriodo(
 
   let qPedidos = supabase
     .from("pedidos")
-    .select("id, origem, status, status_pagamento, total")
+    .select("id, origem, status, status_pagamento, total, clientes ( eh_teste )")
     .limit(10000);
 
   if (inicio) qPedidos = qPedidos.gte("criado_em", inicio);
   if (canalFiltro !== "todos") qPedidos = qPedidos.eq("origem", canalFiltro);
 
-  const [evRes, pedRes, prodRes] = await Promise.all([
+  const [evRes, pedRes, prodRes, testeRes] = await Promise.all([
     qEventos,
     qPedidos,
     supabase.from("produtos").select("id, nome").limit(5000),
+    supabase.from("clientes").select("id").eq("eh_teste", true),
   ]);
 
   if (evRes.error) throw new Error(evRes.error.message);
   if (pedRes.error) throw new Error(pedRes.error.message);
 
-  const eventos = (evRes.data || []) as EventoRow[];
+  const idsTeste = new Set((testeRes.data || []).map((c) => c.id as string));
+
+  type EventoComCliente = EventoRow & { cliente_id?: string | null };
+  const eventos = ((evRes.data || []) as EventoComCliente[]).filter(
+    (e) => !e.cliente_id || !idsTeste.has(e.cliente_id),
+  );
+
   const nomes = new Map<string, string>();
   for (const p of prodRes.data || []) {
     nomes.set(p.id as string, String(p.nome));
@@ -209,6 +216,9 @@ export async function buscarAnalyticsPeriodo(
 
   const pedMap = new Map<string, PedidoOrigemResumo>();
   for (const p of pedRes.data || []) {
+    const cliente = p.clientes as { eh_teste?: boolean | null } | null;
+    if (cliente?.eh_teste) continue;
+
     const origem = String(p.origem || "outros");
     const atual = pedMap.get(origem) || {
       origem,

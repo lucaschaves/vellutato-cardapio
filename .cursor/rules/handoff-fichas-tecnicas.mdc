@@ -16,9 +16,9 @@ alwaysApply: false
 4. Baixa de insumos **no mesmo instante do estoque de cardápio** (entra no KDS; não em `aguardando_pagamento`).
 5. Unidades na ficha: **g/kg/ml/L/un**, convertidas para estoque **base** do insumo (kg/L/un).
 6. Sem ficha → **vende normal**; só não baixa / não calcula CMV daquela camada (aviso no admin).
-7. Mesa / `modo_consumo = loja` → **sem embalagem**.
+7. Mesa / `modo_consumo = loja` → sem embalagem de item; usa ficha embalagem pedido **loja** (prato/talheres) se configurada.
 8. Mesmo produto + mesmos adicionais: **3 embalagens de item** (viagem | delivery | levar_rapido).
-9. Embalagem de pedido (sacola/caixa): `ceil(qtd_itens_embaláveis / N)`.
+9. Embalagem de pedido: sacola/caixa (delivery/retirada) ou serviço loja (prato/talheres) + capacidade N: `ceil(qtd / N)`.
 10. Insumo insuficiente → **estoque negativo permitido**; aviso no admin (não bloqueia venda).
 11. **Sub-ficha:** 1 nível (pai → filho; filho só tem insumos). Quantidade do filho = **porções**.
 12. **Combo:** só fichas dos produtos escolhidos (combo em si sem ficha de comida).
@@ -34,7 +34,7 @@ alwaysApply: false
 Ficha produto (compartilhada; pode incluir 1 nível de sub-ficha em porções)
 Fichas adicionais (via adicional)
 Fichas embalagem item: viagem | delivery | levar_rapido
-Ficha embalagem pedido: sacola/caixa + capacidade N
+Ficha embalagem pedido: sacola/caixa (delivery|retirada) ou serviço loja + capacidade N
         ↓
 Produto final = união dessas referências
 ```
@@ -47,11 +47,13 @@ Por cada `pedido_item` × quantidade:
 2. Se **combo**: explode ficha produto de cada `pedido_item_combo_escolhas` (não a do combo).
 3. Explode ficha de cada **adicional** do item (se `ativa`).
 4. Perfil de embalagem item (ficha do produto simples **ou** de cada escolha do combo):
-   - `modo_consumo = loja` → nenhuma
+   - `modo_consumo = loja` → nenhuma (item)
    - delivery + `modalidade = entrega` → **delivery**
    - delivery + `modalidade = retirada` → **levar_rapido**
    - balcão/totem + `modo_consumo = levar` → **viagem**
-5. Uma vez no pedido: `ceil(soma qtd itens embaláveis / N)` × ficha embalagem `escopo = pedido` (canal delivery/retirada).
+5. Uma vez no pedido:
+   - delivery entrega/retirada: `ceil(itens embaláveis / N)` × ficha embalagem pedido delivery|retirada
+   - itens `modo_consumo = loja`: `ceil(itens loja / N)` × ficha embalagem pedido **loja**
 6. Agregar por `insumo_id` → snapshot + baixa (`origem = uso`, `pedido_id`).
 7. Cancelamento → estorno pelo snapshot.
 

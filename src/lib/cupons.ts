@@ -25,9 +25,13 @@ interface RespostaValidarCupom {
   };
 }
 
+/**
+ * Valida cupom usando apenas o subtotal dos produtos (itens + adicionais + combos).
+ * Frete e taxa de entrega não entram no mínimo nem na base do desconto.
+ */
 export async function validarCupom(
   codigo: string,
-  subtotal: number,
+  subtotalItens: number,
   clienteId?: string | null,
 ): Promise<{ ok: true; cupom: CupomValidado } | { ok: false; erro: string }> {
   const codigoLimpo = codigo.trim().toUpperCase();
@@ -37,7 +41,7 @@ export async function validarCupom(
 
   const { data, error } = await supabase.rpc("validar_cupom", {
     p_codigo: codigoLimpo,
-    p_subtotal: subtotal,
+    p_subtotal: subtotalItens,
     p_cliente_id: clienteId || null,
   });
 
@@ -108,4 +112,26 @@ export async function anexarCuponsPedido(
   if (error) {
     console.error("[CUPOM] anexar_cupons_pedido", error.message);
   }
+}
+
+/** Revalida cupons do carrinho contra o subtotal atual (somente itens, sem frete). */
+export async function revalidarCuponsAplicados(
+  cupons: CupomValidado[],
+  subtotalItens: number,
+  clienteId?: string | null,
+): Promise<
+  | { ok: true; cupons: CupomValidado[] }
+  | { ok: false; erro: string; codigo?: string }
+> {
+  const atualizados: CupomValidado[] = [];
+
+  for (const cupom of cupons) {
+    const resultado = await validarCupom(cupom.codigo, subtotalItens, clienteId);
+    if (!resultado.ok) {
+      return { ok: false, erro: resultado.erro, codigo: cupom.codigo };
+    }
+    atualizados.push(resultado.cupom);
+  }
+
+  return { ok: true, cupons: atualizados };
 }

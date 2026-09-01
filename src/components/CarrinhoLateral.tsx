@@ -27,6 +27,7 @@ import {
 } from "../lib/clientes";
 import { anexarCuponsPedido, validarCupom } from "../lib/cupons";
 import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
+import { resumoItensEncomenda } from "../lib/encomendaProgramada";
 import { lembrarClienteAnalytics, track } from "../lib/analytics";
 import { buscarStatusLoja, type StatusLoja } from "../lib/lojaStatus";
 import { somarDeltasCombo } from "../lib/combos";
@@ -315,6 +316,17 @@ export function CarrinhoLateral({
       return;
     }
 
+    const itensEncomenda = itens.filter((i) => i.modoEncomenda === "encomenda");
+    if (itensEncomenda.length > 0) {
+      const linhas = resumoItensEncomenda(itensEncomenda);
+      const ok = window.confirm(
+        linhas.length > 0
+          ? `Seu pedido inclui produto(s) sob encomenda:\n\n${linhas.join("\n")}\n\nConfirmar envio?`
+          : "Seu pedido inclui produto(s) sob encomenda. Confirmar envio?",
+      );
+      if (!ok) return;
+    }
+
     try {
       setEnviando(true);
 
@@ -353,6 +365,7 @@ export function CarrinhoLateral({
           preco_unitario: item.precoBase,
           observacoes: item.observacoes?.trim() || null,
           modo_consumo: modoSessao,
+          modo_encomenda: item.modoEncomenda ?? null,
           adicionais: (item.adicionais ?? []).map((adc) => ({
             adicional_id: adc.id,
             preco_aplicado: adc.preco,

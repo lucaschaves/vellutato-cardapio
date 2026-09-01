@@ -8,21 +8,78 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { GradeRegrasEncomenda } from "../../components/admin/GradeRegrasEncomenda";
 import { Button } from "../../components/ui/button";
 import { supabase } from "../../lib/supabase";
+import { ifoodSyncProdutoSilencioso } from "../../lib/ifoodAdmin";
 import {
   isUnidadeMedida,
   LABELS_UNIDADE_MEDIDA,
   UNIDADES_MEDIDA,
   type UnidadeMedidaProduto,
 } from "../../lib/produtoMedida";
+import {
+  buscarEstoqueProntoHoje,
+  buscarRegrasEncomendaProduto,
+  buscarRegrasTemplate,
+  limparRegrasEncomendaProduto,
+  listarTemplatesEncomenda,
+  montarGradeRegras,
+  salvarEstoqueProntoHoje,
+  salvarRegrasEncomendaProduto,
+  templateIdEfetivo,
+  TEMPLATE_ENCOMENDA_PADRAO_ID,
+  type RegraEncomendaDiaEditavel,
+  type TemplateEncomenda,
+} from "../../lib/encomendaProgramada";
 
 interface Categoria {
   id: string;
   nome: string;
+}
+
+function PreviewRegrasTemplate({ templateId }: { templateId: string }) {
+  const [regras, setRegras] = useState<RegraEncomendaDiaEditavel[]>(
+    montarGradeRegras(),
+  );
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    let ativo = true;
+    void buscarRegrasTemplate(templateIdEfetivo(templateId))
+      .then((db) => {
+        if (ativo) setRegras(montarGradeRegras(db));
+      })
+      .catch(() => {
+        if (ativo) setRegras(montarGradeRegras());
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [templateId]);
+
+  if (carregando) {
+    return (
+      <p className="text-xs text-gray-500 animate-pulse">Carregando regras…</p>
+    );
+  }
+
+  return (
+    <div className="space-y-2 opacity-90">
+      <p className="text-xs text-gray-500">Regras do template selecionado:</p>
+      <GradeRegrasEncomenda
+        regras={regras}
+        onChange={() => {}}
+        somenteLeitura
+      />
+    </div>
+  );
 }
 
 export function GerenciamentoCatalogo() {
@@ -37,6 +94,8 @@ export function GerenciamentoCatalogo() {
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [preco, setPreco] = useState("");
+  const [precoDelivery, setPrecoDelivery] = useState("");
+  const [precoIfood, setPrecoIfood] = useState("");
   const [precoPromocional, setPrecoPromocional] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
   const [controlarEstoque, setControlarEstoque] = useState(true);
@@ -62,6 +121,17 @@ export function GerenciamentoCatalogo() {
   const [medidaUnidade, setMedidaUnidade] = useState<UnidadeMedidaProduto | "">(
     "",
   );
+  const [encomendaProgramada, setEncomendaProgramada] = useState(false);
+  const [encomendaTemplateId, setEncomendaTemplateId] = useState("");
+  const [estoqueProntoHoje, setEstoqueProntoHoje] = useState("0");
+  const [personalizarRegrasProduto, setPersonalizarRegrasProduto] =
+    useState(false);
+  const [regrasProduto, setRegrasProduto] = useState<RegraEncomendaDiaEditavel[]>(
+    montarGradeRegras(),
+  );
+  const [templatesEncomenda, setTemplatesEncomenda] = useState<
+    TemplateEncomenda[]
+  >([]);
 
   const [imagemFila, setImagemFila] = useState<File | null>(null);
   const [videoFila, setVideoFila] = useState<File | null>(null);
@@ -115,6 +185,12 @@ export function GerenciamentoCatalogo() {
   }, []);
 
   useEffect(() => {
+    void listarTemplatesEncomenda()
+      .then(setTemplatesEncomenda)
+      .catch(() => setTemplatesEncomenda([]));
+  }, []);
+
+  useEffect(() => {
     if (!produtoEditandoId) {
       limparFormulario(false);
       return;
@@ -135,6 +211,16 @@ export function GerenciamentoCatalogo() {
         setNome(data.nome);
         setDescricao(data.descricao || "");
         setPreco(String(data.preco));
+        setPrecoDelivery(
+          data.preco_delivery != null
+            ? String(data.preco_delivery)
+            : String(data.preco),
+        );
+        setPrecoIfood(
+          data.preco_ifood != null
+            ? String(data.preco_ifood)
+            : String(data.preco),
+        );
         setPrecoPromocional(
           data.preco_promocional != null ? String(data.preco_promocional) : "",
         );
@@ -164,6 +250,23 @@ export function GerenciamentoCatalogo() {
         setFichaEmbViagem(data.ficha_embalagem_viagem_id ?? "");
         setFichaEmbDelivery(data.ficha_embalagem_delivery_id ?? "");
         setFichaEmbLevar(data.ficha_embalagem_levar_rapido_id ?? "");
+        setEncomendaProgramada(Boolean(data.encomenda_programada));
+        setEncomendaTemplateId(
+          data.encomenda_template_id ?? TEMPLATE_ENCOMENDA_PADRAO_ID,
+        );
+        if (data.encomenda_programada && produtoEditandoId) {
+          const [qtd, regrasDb] = await Promise.all([
+            buscarEstoqueProntoHoje(produtoEditandoId),
+            buscarRegrasEncomendaProduto(produtoEditandoId),
+          ]);
+          setEstoqueProntoHoje(String(qtd));
+          setPersonalizarRegrasProduto(regrasDb.length > 0);
+          setRegrasProduto(montarGradeRegras(regrasDb));
+        } else {
+          setEstoqueProntoHoje("0");
+          setPersonalizarRegrasProduto(false);
+          setRegrasProduto(montarGradeRegras());
+        }
       } catch (erro: unknown) {
         const mensagem = erro instanceof Error ? erro.message : String(erro);
         console.error("[ERRO - CATÁLOGO] Falha ao carregar produto:", mensagem);
@@ -181,6 +284,8 @@ export function GerenciamentoCatalogo() {
     setNome("");
     setDescricao("");
     setPreco("");
+    setPrecoDelivery("");
+    setPrecoIfood("");
     setPrecoPromocional("");
     setControlarEstoque(true);
     setQuantidadeEstoque("0");
@@ -195,6 +300,11 @@ export function GerenciamentoCatalogo() {
     setDisponibilidade("ambos");
     setMedidaValor("");
     setMedidaUnidade("");
+    setEncomendaProgramada(false);
+    setEncomendaTemplateId(TEMPLATE_ENCOMENDA_PADRAO_ID);
+    setEstoqueProntoHoje("0");
+    setPersonalizarRegrasProduto(false);
+    setRegrasProduto(montarGradeRegras());
     setImagemFila(null);
     setVideoFila(null);
     setImagemUrlAtual(null);
@@ -273,10 +383,26 @@ export function GerenciamentoCatalogo() {
       }
 
       const precoNumerico = parseFloat(preco.replace(",", "."));
+      const precoDeliveryNumerico = parseFloat(
+        (precoDelivery.trim() || preco).replace(",", "."),
+      );
+      const precoIfoodNumerico = parseFloat(
+        (precoIfood.trim() || preco).replace(",", "."),
+      );
       const precoPromoNumerico =
         emPromocao && precoPromocional.trim()
           ? parseFloat(precoPromocional.replace(",", "."))
           : null;
+
+      if (
+        !Number.isFinite(precoNumerico) ||
+        !Number.isFinite(precoDeliveryNumerico) ||
+        !Number.isFinite(precoIfoodNumerico)
+      ) {
+        toast.error("Informe preços válidos para loja, delivery e iFood.");
+        setSalvando(false);
+        return;
+      }
 
       const medidaTrim = medidaValor.trim().replace(",", ".");
       let medidaValorNum: number | null = null;
@@ -300,6 +426,8 @@ export function GerenciamentoCatalogo() {
         nome,
         descricao,
         preco: precoNumerico,
+        preco_delivery: precoDeliveryNumerico,
+        preco_ifood: precoIfoodNumerico,
         preco_promocional: precoPromoNumerico,
         em_promocao: emPromocao && precoPromoNumerico != null,
         destaque,
@@ -319,7 +447,14 @@ export function GerenciamentoCatalogo() {
         ficha_embalagem_viagem_id: fichaEmbViagem || null,
         ficha_embalagem_delivery_id: fichaEmbDelivery || null,
         ficha_embalagem_levar_rapido_id: fichaEmbLevar || null,
+        encomenda_programada: tipo === "simples" ? encomendaProgramada : false,
+        encomenda_template_id:
+          tipo === "simples" && encomendaProgramada
+            ? templateIdEfetivo(encomendaTemplateId)
+            : null,
       };
+
+      let produtoIdSalvo = produtoEditandoId;
 
       if (modoEdicao && produtoEditandoId) {
         const { error: dbError } = await supabase
@@ -329,6 +464,19 @@ export function GerenciamentoCatalogo() {
 
         if (dbError) throw new Error(dbError.message);
 
+        if (encomendaProgramada && tipo === "simples") {
+          await salvarEstoqueProntoHoje(
+            produtoEditandoId,
+            parseInt(estoqueProntoHoje, 10) || 0,
+          );
+          if (personalizarRegrasProduto) {
+            await salvarRegrasEncomendaProduto(produtoEditandoId, regrasProduto);
+          } else {
+            await limparRegrasEncomendaProduto(produtoEditandoId);
+          }
+        }
+
+        ifoodSyncProdutoSilencioso(produtoEditandoId);
         toast.success("Produto atualizado com sucesso!");
         if (tipo === "combo") {
           navigate(`/admin/combos?produto=${produtoEditandoId}`);
@@ -354,6 +502,17 @@ export function GerenciamentoCatalogo() {
           .single();
 
         if (dbError) throw new Error(dbError.message);
+
+        produtoIdSalvo = criado?.id;
+        if (produtoIdSalvo && encomendaProgramada && tipo === "simples") {
+          await salvarEstoqueProntoHoje(
+            produtoIdSalvo,
+            parseInt(estoqueProntoHoje, 10) || 0,
+          );
+          if (personalizarRegrasProduto) {
+            await salvarRegrasEncomendaProduto(produtoIdSalvo, regrasProduto);
+          }
+        }
 
         toast.success("Produto cadastrado com sucesso!");
         if (tipo === "combo" && criado?.id) {
@@ -493,10 +652,10 @@ export function GerenciamentoCatalogo() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1 dark:text-gray-300">
-                Preço (R$)
+                Preço loja (R$)
               </label>
               <input
                 required
@@ -504,26 +663,59 @@ export function GerenciamentoCatalogo() {
                 step="0.01"
                 min="0"
                 value={preco}
-                onChange={(e) => setPreco(e.target.value)}
+                onChange={(e) => {
+                  setPreco(e.target.value);
+                  if (!precoDelivery) setPrecoDelivery(e.target.value);
+                  if (!precoIfood) setPrecoIfood(e.target.value);
+                }}
                 className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
               />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1 dark:text-gray-300">
-                Categoria
+                Preço delivery (R$)
               </label>
-              <select
-                value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
+              <input
+                required
+                type="number"
+                step="0.01"
+                min="0"
+                value={precoDelivery}
+                onChange={(e) => setPrecoDelivery(e.target.value)}
                 className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
-              >
-                {categorias.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.nome}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+                Preço iFood (R$)
+              </label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                min="0"
+                value={precoIfood}
+                onChange={(e) => setPrecoIfood(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+              Categoria
+            </label>
+            <select
+              value={categoriaId}
+              onChange={(e) => setCategoriaId(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+            >
+              {categorias.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.nome}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -722,7 +914,7 @@ export function GerenciamentoCatalogo() {
               </label>
             </div>
 
-            {controlarEstoque && (
+            {controlarEstoque && !encomendaProgramada && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
@@ -738,6 +930,119 @@ export function GerenciamentoCatalogo() {
                   className="w-full px-3 py-2 rounded border dark:bg-[#1a1815] dark:border-gray-700"
                 />
               </motion.div>
+            )}
+
+            {tipo === "simples" && (
+              <>
+                <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+                  <span className="font-medium dark:text-gray-300">
+                    Encomenda programada?
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={encomendaProgramada}
+                      onChange={(e) => setEncomendaProgramada(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
+                  </label>
+                </div>
+
+                {encomendaProgramada && (
+                  <div className="space-y-4 pl-1 border-l-2 border-amber-400/60 ml-1 pl-4">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Template de regras
+                      </label>
+                      <select
+                        value={encomendaTemplateId}
+                        disabled={personalizarRegrasProduto}
+                        onChange={(e) => setEncomendaTemplateId(e.target.value)}
+                        className="w-full px-3 py-2 rounded border dark:bg-[#1a1815] dark:border-gray-700 disabled:opacity-60"
+                      >
+                        {templatesEncomenda.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.nome}
+                            {t.id === TEMPLATE_ENCOMENDA_PADRAO_ID
+                              ? " (padrão)"
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        <Link
+                          to="/admin/encomenda"
+                          className="text-cookie-primary font-semibold underline"
+                        >
+                          Configurar horários e prazos
+                        </Link>{" "}
+                        (templates reutilizáveis).
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Unidades prontas hoje
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={estoqueProntoHoje}
+                        onChange={(e) => setEstoqueProntoHoje(e.target.value)}
+                        className="w-full px-3 py-2 rounded border dark:bg-[#1a1815] dark:border-gray-700"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Vendidas primeiro, mesmo depois do horário limite.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium dark:text-gray-300">
+                        Regras só deste produto
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={personalizarRegrasProduto}
+                          onChange={async (e) => {
+                            const ativo = e.target.checked;
+                            setPersonalizarRegrasProduto(ativo);
+                            if (ativo) {
+                              setRegrasProduto(montarGradeRegras());
+                            } else {
+                              try {
+                                const db = await buscarRegrasTemplate(
+                                  templateIdEfetivo(encomendaTemplateId),
+                                );
+                                setRegrasProduto(montarGradeRegras(db));
+                              } catch {
+                                setRegrasProduto(montarGradeRegras());
+                              }
+                            }
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
+                      </label>
+                    </div>
+
+                    {personalizarRegrasProduto ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-gray-500">
+                          Sobrescreve o template acima para este produto.
+                        </p>
+                        <GradeRegrasEncomenda
+                          regras={regrasProduto}
+                          onChange={setRegrasProduto}
+                        />
+                      </div>
+                    ) : (
+                      <PreviewRegrasTemplate templateId={encomendaTemplateId} />
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

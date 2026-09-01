@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
+import { Badge } from "../../components/ui/badge";
 import { Input } from "../../components/ui/input";
 import {
   Pagination,
@@ -29,6 +30,7 @@ interface Cliente {
   id: string;
   nome: string;
   celular: string;
+  eh_teste?: boolean | null;
   total_pedidos: number | null;
   valor_gasto: number | null;
   ultimo_pedido: string | null;
@@ -95,12 +97,16 @@ export function GerenciamentoClientes() {
     const termo = termoBusca.trim().toLowerCase();
     if (!termo) return clientes;
 
+    const digitosBusca = termo.replace(/\D/g, "");
+
     return clientes.filter((cliente) => {
-      return (
-        cliente.nome.toLowerCase().includes(termo) ||
-        cliente.celular.includes(termo.replace(/\D/g, "")) ||
-        formatarTelefoneDeSalvo(cliente.celular).includes(termo)
-      );
+      const nome = (cliente.nome || "").toLowerCase();
+      if (nome.includes(termo)) return true;
+
+      if (digitosBusca.length === 0) return false;
+
+      const celularDigitos = (cliente.celular || "").replace(/\D/g, "");
+      return celularDigitos.includes(digitosBusca);
     });
   }, [clientes, termoBusca]);
 
@@ -187,7 +193,14 @@ export function GerenciamentoClientes() {
                       onClick={() => navigate(`/admin/clientes/${cliente.id}`)}
                     >
                       <TableCell className="font-semibold text-cookie-primary">
-                        {cliente.nome}
+                        <span className="inline-flex items-center gap-2">
+                          {cliente.nome}
+                          {cliente.eh_teste && (
+                            <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200 border-0 font-semibold">
+                              Teste
+                            </Badge>
+                          )}
+                        </span>
                       </TableCell>
                       <TableCell>
                         {formatarTelefoneDeSalvo(cliente.celular)}

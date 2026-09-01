@@ -15,6 +15,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BotaoInstalarPwa } from "../../components/BotaoInstalarPwa";
 import { InputTelaCheia } from "../../components/InputTelaCheia";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useTelaCheia } from "../../hooks/useTelaCheia";
 import { buscarClientePorCelular } from "../../lib/clientes";
 import {
@@ -23,6 +24,7 @@ import {
 } from "../../lib/disponibilidadeProduto";
 import {
   emModoToten,
+  lerContextoCardapio,
   limparIdentificacaoCliente,
   marcarModoToten,
 } from "../../lib/modoCardapio";
@@ -66,8 +68,12 @@ export function BemVindo() {
   // Modo totem é configuração do dispositivo; a rota /totem
   // (e o legado /cardapio-toten) apenas ativa a configuração de forma persistente.
   const modoToten = emModoToten();
+  const contextoMesa = lerContextoCardapio(location.search);
+  const fluxoMesa = contextoMesa.tipo === "mesa";
 
-  const [etapa, setEtapa] = useState(modoToten ? 0 : 1);
+  const [etapa, setEtapa] = useState(
+    fluxoMesa ? 1 : modoToten ? 0 : 1,
+  );
   const [indiceVideo, setIndiceVideo] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -78,7 +84,15 @@ export function BemVindo() {
   const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [clienteReconhecido, setClienteReconhecido] = useState(false);
   const ultimoCelularBuscado = useRef("");
+  const isMobile = useIsMobile();
   const { telaCheia, alternarTelaCheia } = useTelaCheia();
+  const cardTotem = modoToten && !isMobile;
+  const etapaFormulario = etapa === 1 || etapa === 2;
+  const telaCheiaMobile = isMobile && etapaFormulario;
+
+  const classeEtapaFormulario = cardTotem
+    ? "w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
+    : "w-full min-h-dvh bg-white dark:bg-[#181a1b] px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col";
 
   useEffect(() => {
     if (
@@ -190,13 +204,15 @@ export function BemVindo() {
     salvarTipoConsumo(modo);
     // Trocar de modo no meio de um pedido antigo não faz sentido
     limparCarrinho();
-    await prepararNavegacaoComTelaCheia();
+    if (modoToten && !isMobile) {
+      await prepararNavegacaoComTelaCheia();
+    }
     navigate(urlCardapio("", location.search));
   };
 
   return (
     <div className="relative min-h-screen overflow-hidden selection:bg-cookie-primary/30">
-      {modoToten ? (
+      {modoToten && !fluxoMesa ? (
         <video
           ref={videoRef}
           key={srcVideoAtual}
@@ -217,11 +233,13 @@ export function BemVindo() {
         className={`absolute inset-0 transition-all duration-500 ${
           etapa === 0
             ? "bg-linear-to-t from-black/85 via-black/20 to-black/45"
-            : "bg-black/60 backdrop-blur-sm"
+            : telaCheiaMobile
+              ? "bg-white dark:bg-[#181a1b]"
+              : "bg-black/60 backdrop-blur-sm"
         }`}
       />
 
-      {modoToten && (
+      {modoToten && !isMobile && (
         <>
           <div className="absolute top-5 left-5 z-20">
             <BotaoInstalarPwa
@@ -243,8 +261,10 @@ export function BemVindo() {
       )}
 
       <div
-        className={`relative z-10 min-h-screen flex flex-col items-center justify-center ${
-          modoToten ? "p-6" : "p-0"
+        className={`relative z-10 min-h-dvh flex flex-col ${
+          etapa === 0 || cardTotem
+            ? "items-center justify-center p-6"
+            : "w-full"
         }`}
       >
         <AnimatePresence mode="wait">
@@ -306,14 +326,17 @@ export function BemVindo() {
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
-              className={
-                modoToten
-                  ? "w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
-                  : "w-full min-h-screen bg-white dark:bg-[#181a1b] p-6 md:p-8 flex flex-col justify-start *:w-full *:max-w-md *:mx-auto"
-              }
+              className={classeEtapaFormulario}
             >
+              <div
+                className={
+                  cardTotem
+                    ? undefined
+                    : "w-full max-w-md mx-auto flex flex-1 flex-col"
+                }
+              >
               <div className="flex items-start gap-3 mb-2">
-                {modoToten && (
+                {cardTotem && (
                   <button
                     type="button"
                     onClick={() => setEtapa(0)}
@@ -380,7 +403,7 @@ export function BemVindo() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
+              <div className={`flex flex-col gap-3 ${cardTotem ? "" : "mt-auto pt-6"}`}>
                 <button
                   type="button"
                   onClick={() => irParaConsumo(false)}
@@ -405,6 +428,7 @@ export function BemVindo() {
                   indisponíveis.
                 </p>
               </div>
+              </div>
             </motion.div>
           )}
 
@@ -414,12 +438,15 @@ export function BemVindo() {
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
-              className={
-                modoToten
-                  ? "w-full max-w-md bg-white/95 dark:bg-[#181a1b]/95 backdrop-blur-md rounded-[2rem] p-6 md:p-8 shadow-2xl border border-white/20 dark:border-[#2a2c30]"
-                  : "w-full min-h-screen bg-white dark:bg-[#181a1b] p-6 md:p-8 flex flex-col justify-start *:w-full *:max-w-md *:mx-auto"
-              }
+              className={classeEtapaFormulario}
             >
+              <div
+                className={
+                  cardTotem
+                    ? undefined
+                    : "w-full max-w-md mx-auto flex flex-1 flex-col"
+                }
+              >
               <div className="flex items-start gap-3 mb-6">
                 <button
                   type="button"
@@ -440,7 +467,7 @@ export function BemVindo() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
+              <div className={`flex flex-col gap-3 ${cardTotem ? "" : "mt-auto"}`}>
                 <button
                   type="button"
                   onClick={() => void selecionarConsumo("loja")}
@@ -476,6 +503,7 @@ export function BemVindo() {
                     </span>
                   </span>
                 </button>
+              </div>
               </div>
             </motion.div>
           )}

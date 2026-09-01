@@ -15,13 +15,16 @@ import {
   LayoutGrid,
   MessageCircle,
   Package,
+  Percent,
   PlusCircle,
   Printer,
   QrCode,
   Settings2,
   ShoppingCart,
   Ticket,
+  Timer,
   Users,
+  UtensilsCrossed,
   Wallet,
   Warehouse,
 } from "lucide-react";
@@ -39,7 +42,7 @@ export type SecaoNavAdmin = {
   itens: readonly ItemNavAdmin[];
 };
 
-/** Atalhos sempre visíveis no topo do painel. */
+/** @deprecated Atalhos passam a ser favoritos do usuário (estrela no menu). */
 export const ATALHOS_NAV_ADMIN: readonly ItemNavAdmin[] = [
   { to: "/admin/pedidos", rotulo: "KDS", icone: LayoutGrid },
   { to: "/admin/novo-pedido", rotulo: "Novo", icone: PlusCircle },
@@ -47,9 +50,85 @@ export const ATALHOS_NAV_ADMIN: readonly ItemNavAdmin[] = [
   { to: "/admin/lista-compras", rotulo: "Compras", icone: ShoppingCart },
 ] as const;
 
+export const MAX_FAVORITOS_NAV_ADMIN = 6;
+
+const LS_FAVORITOS_NAV = "admin-nav-favoritos";
+const LS_SECAO_ABERTA = "admin-nav-secao-aberta";
+
+export function lerSecaoAbertaNav(): string | null {
+  try {
+    return localStorage.getItem(LS_SECAO_ABERTA);
+  } catch {
+    return null;
+  }
+}
+
+export function salvarSecaoAbertaNav(secaoId: string | null) {
+  try {
+    if (secaoId) localStorage.setItem(LS_SECAO_ABERTA, secaoId);
+    else localStorage.removeItem(LS_SECAO_ABERTA);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function lerFavoritosNavAdmin(): string[] {
+  try {
+    const raw = localStorage.getItem(LS_FAVORITOS_NAV);
+    if (!raw) return [];
+    const paths = JSON.parse(raw) as string[];
+    if (!Array.isArray(paths)) return [];
+    const validos = new Set(itensNavAdminFlat().map((i) => i.to));
+    return paths.filter((p) => validos.has(p)).slice(0, MAX_FAVORITOS_NAV_ADMIN);
+  } catch {
+    return [];
+  }
+}
+
+function salvarFavoritosNavAdmin(paths: string[]) {
+  try {
+    localStorage.setItem(
+      LS_FAVORITOS_NAV,
+      JSON.stringify(paths.slice(0, MAX_FAVORITOS_NAV_ADMIN)),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+export function resolverItensFavoritos(paths: string[]): ItemNavAdmin[] {
+  const mapa = new Map(itensNavAdminFlat().map((i) => [i.to, i]));
+  return paths
+    .map((p) => mapa.get(p))
+    .filter((i): i is ItemNavAdmin => Boolean(i));
+}
+
+export function alternarFavoritoNavAdmin(path: string): {
+  favoritos: string[];
+  adicionado: boolean;
+  limiteAtingido: boolean;
+} {
+  const atuais = lerFavoritosNavAdmin();
+  const idx = atuais.indexOf(path);
+  if (idx >= 0) {
+    const favoritos = atuais.filter((p) => p !== path);
+    salvarFavoritosNavAdmin(favoritos);
+    return { favoritos, adicionado: false, limiteAtingido: false };
+  }
+  if (atuais.length >= MAX_FAVORITOS_NAV_ADMIN) {
+    return { favoritos: atuais, adicionado: false, limiteAtingido: true };
+  }
+  const favoritos = [...atuais, path];
+  salvarFavoritosNavAdmin(favoritos);
+  return { favoritos, adicionado: true, limiteAtingido: false };
+}
+
+export function ehFavoritoNavAdmin(path: string, favoritos: string[]): boolean {
+  return favoritos.includes(path);
+}
+
 /**
- * Navegação por seções (rail de ícones).
- * Cada seção mostra só os itens dela — menos scroll, mais fácil de achar.
+ * Navegação por seções com subitens (accordion no sidebar).
  */
 export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
   {
@@ -84,6 +163,7 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
       { to: "/admin/adicionais", rotulo: "Adicionais", icone: IceCream },
       { to: "/admin/combos", rotulo: "Combos", icone: Layers },
       { to: "/admin/estoque", rotulo: "Estoque cardápio", icone: Package },
+      { to: "/admin/encomenda", rotulo: "Encomenda", icone: Timer },
       { to: "/admin/mesas", rotulo: "Mesas", icone: QrCode },
     ],
   },
@@ -97,6 +177,11 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
         to: "/admin/fichas-tecnicas",
         rotulo: "Fichas técnicas",
         icone: ClipboardList,
+      },
+      {
+        to: "/admin/calculadora-preco",
+        rotulo: "Calculadora de preço",
+        icone: Calculator,
       },
       {
         to: "/admin/lista-compras",
@@ -126,6 +211,7 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
     icone: Wallet,
     itens: [
       { to: "/admin/despesas", rotulo: "Despesas", icone: Wallet },
+      { to: "/admin/precificacao", rotulo: "Precificação", icone: Percent },
     ],
   },
   {
@@ -134,6 +220,7 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
     icone: Settings2,
     itens: [
       { to: "/admin/integracoes", rotulo: "Integrações", icone: KeyRound },
+      { to: "/admin/ifood", rotulo: "iFood", icone: UtensilsCrossed },
       { to: "/admin/impressao", rotulo: "Cupom de impressão", icone: Printer },
     ],
   },

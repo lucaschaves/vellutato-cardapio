@@ -84,7 +84,47 @@ npx supabase functions deploy send-sms --project-ref uhaapfxdxivmwhvnuyie
 npx supabase functions deploy notificar-status-pedido --project-ref uhaapfxdxivmwhvnuyie
 npx supabase functions deploy webhook-whatsapp --project-ref uhaapfxdxivmwhvnuyie
 npx supabase functions deploy confirmar-pagamento-asaas --project-ref uhaapfxdxivmwhvnuyie
+npx supabase functions deploy ifood-poll-pedidos --project-ref uhaapfxdxivmwhvnuyie
+npx supabase functions deploy ifood-admin --project-ref uhaapfxdxivmwhvnuyie
 ```
+
+## iFood (Merchant API — V1)
+
+Importa pedidos via polling (~30s), baixa estoque/fichas, upsert de cliente e auto-confirma. Sem sync KDS ↔ status iFood (V2).
+
+| Secret | Descrição |
+|--------|-----------|
+| `IFOOD_CLIENT_ID` | App no [developer.ifood.com.br](https://developer.ifood.com.br) |
+| `IFOOD_CLIENT_SECRET` | Secret do app |
+| `IFOOD_MERCHANT_ID` | UUID da loja |
+| `IFOOD_POLL_SECRET` | Token inventado; header `x-ifood-poll-secret` |
+| `IFOOD_AUTO_CONFIRM` | `true` (padrão) ou `false` |
+
+```bash
+npx supabase secrets set --project-ref uhaapfxdxivmwhvnuyie \
+  IFOOD_CLIENT_ID="..." \
+  IFOOD_CLIENT_SECRET="..." \
+  IFOOD_MERCHANT_ID="..." \
+  IFOOD_POLL_SECRET="um-token-secreto" \
+  IFOOD_AUTO_CONFIRM="true"
+```
+
+Migration: `20260823210000_ifood_integracao.sql`
+
+**Cron** (a cada ~30s):
+
+pg_cron chama a function a cada **1 minuto** com `?duplo=1` (duas passadas com ~28s de intervalo).
+
+Requisito: gravar `IFOOD_POLL_SECRET` também em **Admin → Integrações** (tabela `integracoes_config`), pois o cron lê dali.
+
+```bash
+curl -s "https://uhaapfxdxivmwhvnuyie.supabase.co/functions/v1/ifood-poll-pedidos?duplo=1" \
+  -H "x-ifood-poll-secret: SEU_TOKEN"
+```
+
+Ping: `...?acao=ping` com o mesmo header.
+
+**Mapeamento:** `externalCode` no iFood = UUID do produto/adicional, ou tabela `ifood_mapeamentos`.
 
 ## Notificações (Web Push + WhatsApp)
 

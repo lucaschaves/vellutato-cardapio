@@ -5,125 +5,263 @@ import {
   Receipt,
   Search,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdminPageShell } from "../../components/AdminPageShell";
 import { supabase } from "../../lib/supabase";
 
-// Componentes UI (Ajuste os caminhos se necessário)
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 
+const ORDEM_CANAIS = [
+  "mesa",
+  "balcao",
+  "totem",
+  "delivery",
+  "ifood",
+] as const;
+
+const ROTULO_CANAL: Record<string, string> = {
+  mesa: "Mesa",
+  balcao: "Balcão",
+  totem: "Totem",
+  delivery: "Delivery",
+  ifood: "iFood",
+};
+
+const FUSO_LOJA = "America/Sao_Paulo";
+
 interface PedidoCaixa {
   id: string;
-  cliente_nome: string;
-  cliente_celular: string;
+  origem: string;
   identificador: string;
+  cliente_nome: string | null;
   total: number;
   status: string;
 }
 
-interface ContaAgrupada {
+interface GrupoIdentificador {
   identificador: string;
-  cliente_nome: string;
-  cliente_celular: string;
   pedidos: PedidoCaixa[];
   totalGeral: number;
 }
 
+interface ContaCanal {
+  origem: string;
+  label: string;
+  grupos: GrupoIdentificador[];
+  totalGeral: number;
+  qtdPedidos: number;
+}
+
+function rotuloCanal(origem: string): string {
+  return ROTULO_CANAL[origem] ?? origem;
+}
+
+function horaMinutoSp(ref = new Date()): { hora: number; minuto: number } {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: FUSO_LOJA,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(ref);
+  return {
+    hora: Number(partes.find((p) => p.type === "hour")?.value ?? 0),
+    minuto: Number(partes.find((p) => p.type === "minute")?.value ?? 0),
+  };
+}
+
+function agruparPorCanal(pedidos: PedidoCaixa[]): ContaCanal[] {
+  const porCanal = pedidos.reduce(
+    (acc: Record<string, Record<string, GrupoIdentificador>>, pedido) => {
+      const origem = pedido.origem || "balcao";
+      const chaveId = pedido.identificador?.trim() || rotuloCanal(origem);
+
+      if (!acc[origem]) acc[origem] = {};
+      if (!acc[origem][chaveId]) {
+        acc[origem][chaveId] = {
+          identificador: chaveId,
+          pedidos: [],
+          totalGeral: 0,
+        };
+      }
+
+      acc[origem][chaveId].pedidos.push(pedido);
+      acc[origem][chaveId].totalGeral += Number(pedido.total);
+      return acc;
+    },
+    {},
+  );
+
+  const extras = Object.keys(porCanal).filter(
+    (c) => !ORDEM_CANAIS.includes(c as (typeof ORDEM_CANAIS)[number]),
+  );
+  return [...ORDEM_CANAIS.filter((c) => porCanal[c]), ...extras].map(
+    (origem) => {
+      const grupos = Object.values(porCanal[origem]).sort(
+        (a, b) => b.totalGeral - a.totalGeral,
+      );
+      const qtdPedidos = grupos.reduce((s, g) => s + g.pedidos.length, 0);
+      return {
+        origem,
+        label: rotuloCanal(origem),
+        grupos,
+        totalGeral: grupos.reduce((s, g) => s + g.totalGeral, 0),
+        qtdPedidos,
+      };
+    });
+}
+
 export function GestaoCaixa() {
-  const [contas, setContas] = useState<ContaAgrupada[]>([]);
+  const [contas, setContas] = useState<ContaCanal[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [termoBusca, setTermoBusca] = useState("");
-  const [processandoMesa, setProcessandoMesa] = useState<string | null>(null);
+  const [processandoChave, setProcessandoChave] = useState<string | null>(null);
+  const [fechandoAutomatico, setFechandoAutomatico] = useState(false);
+  const fechamentoDiarioRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    carregarContasAbertas();
-  }, []);
-
-  const carregarContasAbertas = async () => {
+  const carregarContasAbertas = useCallback(async () => {
     try {
       setCarregando(true);
-      // Busca todos os pedidos que AINDA NÃO FORAM PAGOS nem CANCELADOS
       const { data, error } = await supabase
         .from("pedidos")
-        .select(
-          "id, cliente_nome, cliente_celular, identificador, total, status",
-        )
+        .select("id, origem, identificador, cliente_nome, total, status")
         .not("status", "in", '("pago","cancelado")');
 
       if (error) throw error;
 
-      // Lógica de Agrupamento (Reduce) - Agrupa pela Mesa (identificador)
-      const agrupamento = (data || []).reduce(
-        (acc: Record<string, ContaAgrupada>, pedido) => {
-          const chave = pedido.identificador || "Balcão";
-
-          if (!acc[chave]) {
-            acc[chave] = {
-              identificador: chave,
-              cliente_nome: pedido.cliente_nome,
-              cliente_celular: pedido.cliente_celular,
-              pedidos: [],
-              totalGeral: 0,
-            };
-          }
-
-          acc[chave].pedidos.push(pedido);
-          acc[chave].totalGeral += Number(pedido.total);
-          return acc;
-        },
-        {},
-      );
-
-      // Converte o objeto em array e ordena pelo total (maiores contas primeiro)
-      const arrayContas = Object.values(agrupamento).sort(
-        (a, b) => b.totalGeral - a.totalGeral,
-      );
-      setContas(arrayContas);
-    } catch (erro: any) {
-      console.error("[ERRO - CAIXA]", erro.message);
+      setContas(agruparPorCanal(data || []));
+    } catch (erro: unknown) {
+      const msg = erro instanceof Error ? erro.message : "Erro desconhecido";
+      console.error("[ERRO - CAIXA]", msg);
       toast.error("Falha ao carregar as contas em aberto.");
     } finally {
       setCarregando(false);
     }
-  };
+  }, []);
 
-  // Função para "Baixar a Conta" (Muda todos os pedidos daquela mesa para 'pago')
-  const fecharConta = async (
-    identificador: string,
-    pedidosDaConta: PedidoCaixa[],
-  ) => {
-    try {
-      setProcessandoMesa(identificador);
-      const idsParaAtualizar = pedidosDaConta.map((p) => p.id);
-
+  const fecharPedidos = useCallback(
+    async (pedidos: PedidoCaixa[], mensagemSucesso: string) => {
+      const ids = pedidos.map((p) => p.id);
       const { error } = await supabase
         .from("pedidos")
         .update({ status: "pago" })
-        .in("id", idsParaAtualizar);
+        .in("id", ids);
 
       if (error) throw error;
+      toast.success(mensagemSucesso);
+      await carregarContasAbertas();
+    },
+    [carregarContasAbertas],
+  );
 
-      toast.success(`Conta da ${identificador} fechada com sucesso!`);
-      // Remove a conta da tela
-      setContas((prev) =>
-        prev.filter((c) => c.identificador !== identificador),
+  const fecharGrupo = async (
+    origem: string,
+    identificador: string,
+    pedidos: PedidoCaixa[],
+  ) => {
+    const chave = `${origem}:${identificador}`;
+    try {
+      setProcessandoChave(chave);
+      await fecharPedidos(
+        pedidos,
+        `Conta ${identificador} (${rotuloCanal(origem)}) fechada!`,
       );
-    } catch (erro: any) {
-      console.error("[ERRO - FECHAMENTO]", erro.message);
+    } catch (erro: unknown) {
+      const msg = erro instanceof Error ? erro.message : "Erro desconhecido";
+      console.error("[ERRO - FECHAMENTO]", msg);
       toast.error("Erro ao fechar a conta. Tente novamente.");
     } finally {
-      setProcessandoMesa(null);
+      setProcessandoChave(null);
     }
   };
 
-  // Filtro de busca (pode buscar por mesa ou nome do cliente)
-  const contasFiltradas = contas.filter(
-    (c) =>
-      c.identificador.toLowerCase().includes(termoBusca.toLowerCase()) ||
-      c.cliente_nome?.toLowerCase().includes(termoBusca.toLowerCase()),
-  );
+  const fecharCanalInteiro = async (conta: ContaCanal) => {
+    const chave = `canal:${conta.origem}`;
+    const todosPedidos = conta.grupos.flatMap((g) => g.pedidos);
+    try {
+      setProcessandoChave(chave);
+      await fecharPedidos(
+        todosPedidos,
+        `Canal ${conta.label}: todas as contas fechadas!`,
+      );
+    } catch (erro: unknown) {
+      const msg = erro instanceof Error ? erro.message : "Erro desconhecido";
+      console.error("[ERRO - FECHAMENTO CANAL]", msg);
+      toast.error("Erro ao fechar o canal. Tente novamente.");
+    } finally {
+      setProcessandoChave(null);
+    }
+  };
+
+  const fecharTodasContas = useCallback(async () => {
+    const hoje = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: FUSO_LOJA,
+    }).format(new Date());
+    if (fechamentoDiarioRef.current === hoje) return;
+
+    try {
+      setFechandoAutomatico(true);
+      fechamentoDiarioRef.current = hoje;
+
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("id")
+        .not("status", "in", '("pago","cancelado")');
+
+      if (error) throw error;
+      if (!data?.length) return;
+
+      const { error: updErr } = await supabase
+        .from("pedidos")
+        .update({ status: "pago" })
+        .in(
+          "id",
+          data.map((p) => p.id),
+        );
+
+      if (updErr) throw updErr;
+
+      toast.info("Fechamento automático: todas as contas foram encerradas.");
+      setContas([]);
+    } catch (erro: unknown) {
+      fechamentoDiarioRef.current = null;
+      const msg = erro instanceof Error ? erro.message : "Erro desconhecido";
+      console.error("[ERRO - FECHAMENTO AUTOMÁTICO]", msg);
+    } finally {
+      setFechandoAutomatico(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregarContasAbertas();
+  }, [carregarContasAbertas]);
+
+  useEffect(() => {
+    const verificarHorarioFechamento = () => {
+      const { hora, minuto } = horaMinutoSp();
+      if (hora === 23 && minuto === 59) {
+        void fecharTodasContas();
+      }
+    };
+
+    verificarHorarioFechamento();
+    const id = window.setInterval(verificarHorarioFechamento, 30_000);
+    return () => window.clearInterval(id);
+  }, [fecharTodasContas]);
+
+  const contasFiltradas = contas.filter((c) => {
+    const termo = termoBusca.toLowerCase();
+    if (!termo) return true;
+    if (c.label.toLowerCase().includes(termo)) return true;
+    return c.grupos.some(
+      (g) =>
+        g.identificador.toLowerCase().includes(termo) ||
+        g.pedidos.some((p) =>
+          p.cliente_nome?.toLowerCase().includes(termo),
+        ),
+    );
+  });
 
   return (
     <AdminPageShell
@@ -133,7 +271,7 @@ export function GestaoCaixa() {
           Comandas
         </h1>
       }
-      description="Fechamento de contas por mesa ou cliente."
+      description="Fechamento de contas por canal de venda. Encerramento automático às 23:59."
       actions={
         <div className="relative w-full sm:w-80">
           <Search
@@ -141,7 +279,7 @@ export function GestaoCaixa() {
             size={16}
           />
           <Input
-            placeholder="Buscar por mesa ou nome..."
+            placeholder="Buscar por canal, mesa ou cliente..."
             value={termoBusca}
             onChange={(e) => setTermoBusca(e.target.value)}
             className="pl-9 dark:bg-[#1a1815]"
@@ -150,6 +288,13 @@ export function GestaoCaixa() {
       }
       contentClassName="space-y-6"
     >
+      {fechandoAutomatico && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <Loader2 className="animate-spin" size={16} />
+          Fechamento automático do dia em andamento…
+        </div>
+      )}
+
       {carregando ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-cookie-primary" size={40} />
@@ -165,55 +310,91 @@ export function GestaoCaixa() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {contasFiltradas.map((conta) => (
             <div
-              key={conta.identificador}
+              key={conta.origem}
               className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm flex flex-col h-full"
             >
-              {/* Header do Card */}
               <div className="flex justify-between items-start border-b border-gray-100 dark:border-gray-800 pb-4 mb-4">
                 <div>
                   <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">
-                    {conta.identificador}
+                    {conta.label}
                   </h2>
                   <p className="text-sm text-gray-500 font-medium">
-                    {conta.cliente_nome}
+                    Canal de venda
                   </p>
-                  {conta.cliente_celular && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {conta.cliente_celular}
-                    </p>
-                  )}
                 </div>
                 <div className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
-                  {conta.pedidos.length}{" "}
-                  {conta.pedidos.length === 1 ? "pedido" : "pedidos"}
+                  {conta.qtdPedidos}{" "}
+                  {conta.qtdPedidos === 1 ? "pedido" : "pedidos"}
                 </div>
               </div>
 
-              {/* Lista Resumida de Pedidos */}
-              <div className="flex-1 overflow-y-auto mb-4 space-y-2">
-                {conta.pedidos.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex justify-between text-sm items-center"
-                  >
-                    <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
-                      <span
-                        className={`w-2 h-2 rounded-full ${p.status === "entregue" ? "bg-green-500" : "bg-yellow-500"}`}
-                      ></span>
-                      Pedido #{p.id.slice(0, 4)}
-                    </span>
-                    <span className="font-semibold text-gray-900 dark:text-gray-200">
-                      R$ {Number(p.total).toFixed(2).replace(".", ",")}
-                    </span>
-                  </div>
-                ))}
+              <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+                {conta.grupos.map((grupo) => {
+                  const chaveGrupo = `${conta.origem}:${grupo.identificador}`;
+                  return (
+                    <div
+                      key={chaveGrupo}
+                      className="rounded-xl border border-gray-100 dark:border-gray-800 p-3 space-y-2"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                          {grupo.identificador}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-500">
+                          R${" "}
+                          {grupo.totalGeral.toFixed(2).replace(".", ",")}
+                        </span>
+                      </div>
+
+                      {grupo.pedidos.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex justify-between text-sm items-center"
+                        >
+                          <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+                            <span
+                              className={`w-2 h-2 rounded-full ${p.status === "entregue" ? "bg-green-500" : "bg-yellow-500"}`}
+                            />
+                            {p.cliente_nome?.trim() || "Cliente"}
+                          </span>
+                          <span className="font-semibold text-gray-900 dark:text-gray-200">
+                            R${" "}
+                            {Number(p.total).toFixed(2).replace(".", ",")}
+                          </span>
+                        </div>
+                      ))}
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          fecharGrupo(
+                            conta.origem,
+                            grupo.identificador,
+                            grupo.pedidos,
+                          )
+                        }
+                        disabled={processandoChave === chaveGrupo}
+                        className="w-full mt-1 h-9 text-xs font-bold"
+                      >
+                        {processandoChave === chaveGrupo ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : (
+                          <>
+                            <CheckCircle2 className="mr-1.5" size={14} />
+                            Fechar {grupo.identificador}
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Rodapé e Fechamento */}
               <div className="pt-4 border-t border-gray-100 dark:border-gray-800 mt-auto">
                 <div className="flex justify-between items-end mb-4">
                   <span className="text-sm font-medium text-gray-500">
-                    Total a Pagar
+                    Total do canal
                   </span>
                   <span className="text-2xl font-black text-cookie-accent">
                     R$ {conta.totalGeral.toFixed(2).replace(".", ",")}
@@ -221,19 +402,16 @@ export function GestaoCaixa() {
                 </div>
 
                 <Button
-                  onClick={() =>
-                    fecharConta(conta.identificador, conta.pedidos)
-                  }
-                  disabled={processandoMesa === conta.identificador}
+                  onClick={() => fecharCanalInteiro(conta)}
+                  disabled={processandoChave === `canal:${conta.origem}`}
                   className="w-full bg-green-600 hover:bg-green-700 text-white h-12 text-base font-bold"
                 >
-                  {processandoMesa === conta.identificador ? (
+                  {processandoChave === `canal:${conta.origem}` ? (
                     <Loader2 className="animate-spin" size={20} />
                   ) : (
                     <>
-                      {" "}
-                      <CheckCircle2 className="mr-2" size={20} /> Fechar
-                      Conta{" "}
+                      <CheckCircle2 className="mr-2" size={20} />
+                      Fechar canal {conta.label}
                     </>
                   )}
                 </Button>

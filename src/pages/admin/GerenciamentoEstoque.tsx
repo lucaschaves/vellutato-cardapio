@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { ifoodSyncProdutoSilencioso } from "../../lib/ifoodAdmin";
 import { alertaMargemBaixa } from "../../lib/fichasTecnicas";
 
 // Shadcn/ui
@@ -143,6 +144,7 @@ export function GerenciamentoEstoque() {
       setProdutos(
         produtos.map((p) => (p.id === id ? { ...p, ativo: novoStatus } : p)),
       );
+      ifoodSyncProdutoSilencioso(id);
       toast.success(
         novoStatus
           ? "Produto reativado e visível no cardápio."
@@ -176,6 +178,7 @@ export function GerenciamentoEstoque() {
           p.id === id ? { ...p, quantidade_estoque: novaQuantidade } : p,
         ),
       );
+      ifoodSyncProdutoSilencioso(id);
     } catch (erro: any) {
       console.error(
         "[ERRO - ESTOQUE] Falha de atualização de quantidade:",

@@ -1,5 +1,15 @@
-import { Copy, MapPin, Ticket, Trophy } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Copy,
+  LogOut,
+  MapPin,
+  Pencil,
+  Plus,
+  Ticket,
+  Trash2,
+  Trophy,
+  X,
+} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -38,8 +48,47 @@ import {
   mensagemTelefoneInvalido,
   telefoneCelularValido,
 } from "../../lib/telefone";
+import { cn } from "../../lib/utils";
 
 const EXTRATO_INICIAL = 5;
+
+const FORM_END_VAZIO = {
+  cep: "",
+  rua: "",
+  numero: "",
+  bairro: "",
+  cidade: "",
+  uf: "",
+  complemento: "",
+  referencia: "",
+  latitude: null as number | null,
+  longitude: null as number | null,
+  padrao: true,
+};
+
+type AbaConta = "dados" | "enderecos" | "pontos";
+
+function Campo({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label
+        htmlFor={htmlFor}
+        className="block text-xs font-semibold uppercase tracking-wide text-zinc-500"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
 
 export function DeliveryConta() {
   const { cliente: clienteAuth, carregando: authLoading, sair } =
@@ -50,7 +99,7 @@ export function DeliveryConta() {
   );
   const cliente = clienteAuth || clienteLocal;
 
-  const [aba, setAba] = useState<"dados" | "enderecos" | "pontos">("dados");
+  const [aba, setAba] = useState<AbaConta>("dados");
   const [enderecos, setEnderecos] = useState<EnderecoCliente[]>([]);
   const [saldo, setSaldo] = useState(0);
   const [extrato, setExtrato] = useState<
@@ -66,19 +115,14 @@ export function DeliveryConta() {
   const [resgateCfg, setResgateCfg] = useState({ pontos: 100, valor: 5 });
   const [resgatando, setResgatando] = useState(false);
   const [extratoLimite, setExtratoLimite] = useState(EXTRATO_INICIAL);
-  const [formEnd, setFormEnd] = useState({
-    cep: "",
-    rua: "",
-    numero: "",
-    bairro: "",
-    cidade: "",
-    uf: "",
-    complemento: "",
-    referencia: "",
-    latitude: null as number | null,
-    longitude: null as number | null,
-    padrao: true,
-  });
+  const [formEnd, setFormEnd] = useState(FORM_END_VAZIO);
+  const [editandoEnderecoId, setEditandoEnderecoId] = useState<string | null>(
+    null,
+  );
+  const [mostrarFormEnd, setMostrarFormEnd] = useState(false);
+  const [salvandoEnd, setSalvandoEnd] = useState(false);
+  const [salvandoDados, setSalvandoDados] = useState(false);
+
   const [nome, setNome] = useState("");
   const [celular, setCelular] = useState("");
   const [email, setEmail] = useState("");
@@ -116,9 +160,7 @@ export function DeliveryConta() {
       return;
     }
     setNome(cliente.nome || "");
-    setCelular(
-      cliente.celular ? formatarTelefoneBr(cliente.celular) : "",
-    );
+    setCelular(cliente.celular ? formatarTelefoneBr(cliente.celular) : "");
     setEmail(cliente.email || "");
     setCpf(cliente.cpf ? formatarCpf(cliente.cpf) : "");
   }, [cliente]);
@@ -276,6 +318,9 @@ export function DeliveryConta() {
   const sairConta = async () => {
     setClienteLocal(null);
     setPrecisaCadastro(false);
+    setMostrarFormEnd(false);
+    setEditandoEnderecoId(null);
+    setFormEnd(FORM_END_VAZIO);
     salvarGuestDeliveryLocal({
       nome: "",
       telefone: "",
@@ -289,6 +334,109 @@ export function DeliveryConta() {
     }
   };
 
+  const abrirNovoEndereco = () => {
+    setEditandoEnderecoId(null);
+    setFormEnd({ ...FORM_END_VAZIO, padrao: enderecos.length === 0 });
+    setMostrarFormEnd(true);
+  };
+
+  const abrirEditarEndereco = (e: EnderecoCliente) => {
+    setEditandoEnderecoId(e.id);
+    setFormEnd({
+      cep: formatarCep(e.cep),
+      rua: e.rua,
+      numero: e.numero,
+      bairro: e.bairro,
+      cidade: e.cidade,
+      uf: e.uf,
+      complemento: e.complemento || "",
+      referencia: e.referencia || "",
+      latitude: e.latitude,
+      longitude: e.longitude,
+      padrao: e.padrao,
+    });
+    setMostrarFormEnd(true);
+  };
+
+  const fecharFormEnd = () => {
+    setMostrarFormEnd(false);
+    setEditandoEnderecoId(null);
+    setFormEnd(FORM_END_VAZIO);
+  };
+
+  const salvarFormEndereco = async () => {
+    if (!cliente?.id) return;
+    if (!formEnd.rua.trim() || !formEnd.numero.trim() || !formEnd.cep.trim()) {
+      toast.error("Preencha CEP, rua e número.");
+      return;
+    }
+    try {
+      setSalvandoEnd(true);
+      let lat = formEnd.latitude;
+      let lng = formEnd.longitude;
+      if (lat == null || lng == null) {
+        const coords = await geocodificarEndereco(formEnd);
+        if (!coords) {
+          toast.error("Não foi possível localizar o endereço.");
+          return;
+        }
+        lat = coords.latitude;
+        lng = coords.longitude;
+      }
+      await salvarEndereco({
+        id: editandoEnderecoId || undefined,
+        cliente_id: cliente.id,
+        rotulo: "Casa",
+        ...formEnd,
+        latitude: lat,
+        longitude: lng,
+      });
+      setEnderecos(await listarEnderecos(cliente.id));
+      fecharFormEnd();
+      toast.success(
+        editandoEnderecoId ? "Endereço atualizado" : "Endereço salvo",
+      );
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setSalvandoEnd(false);
+    }
+  };
+
+  const excluirEnd = async (id: string) => {
+    try {
+      await excluirEndereco(id);
+      if (editandoEnderecoId === id) fecharFormEnd();
+      setEnderecos(await listarEnderecos(cliente!.id));
+      toast.success("Endereço removido");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    }
+  };
+
+  const salvarDados = async () => {
+    try {
+      setSalvandoDados(true);
+      const atualizado = await garantirClienteCheckout({
+        nome,
+        celular,
+        email: email.trim() || null,
+      });
+      setClienteLocal(atualizado);
+      salvarGuestDeliveryLocal({
+        nome,
+        telefone: celular,
+        email: email.trim() || null,
+        clienteId: atualizado.id,
+      });
+      toast.success("Dados atualizados");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setSalvandoDados(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex justify-center py-20">
@@ -299,22 +447,18 @@ export function DeliveryConta() {
 
   if (!cliente) {
     return (
-      <div className="max-w-md mx-auto space-y-4 py-8">
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-black">Minha conta</h1>
+      <div className="max-w-md mx-auto space-y-5 py-6">
+        <div className="space-y-1">
+          <h1 className="text-xl font-bold tracking-tight text-zinc-900">
+            Minha conta
+          </h1>
           <p className="text-sm text-zinc-500">
             Informe seu telefone para ver endereços e pontos.
           </p>
         </div>
 
-        <div className="bg-white border rounded-2xl p-4 space-y-3">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="conta-tel"
-              className="text-sm font-semibold text-zinc-800"
-            >
-              Telefone / WhatsApp
-            </label>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
+          <Campo label="Telefone / WhatsApp" htmlFor="conta-tel">
             <Input
               id="conta-tel"
               placeholder="(00) 00000-0000"
@@ -327,26 +471,20 @@ export function DeliveryConta() {
                 setPrecisaCadastro(false);
               }}
             />
-            <p className="text-[11px] text-zinc-400">
-              11 dígitos: DDD + 9 + número
-            </p>
-            {loginTel.replace(/\D/g, "").length > 0 &&
-              !telefoneCelularValido(loginTel) && (
-                <p className="text-xs font-semibold text-cookie-primary">
-                  {mensagemTelefoneInvalido(loginTel)}
-                </p>
-              )}
-          </div>
+          </Campo>
+          <p className="text-[11px] text-zinc-400 -mt-1">
+            11 dígitos: DDD + 9 + número
+          </p>
+          {loginTel.replace(/\D/g, "").length > 0 &&
+            !telefoneCelularValido(loginTel) && (
+              <p className="text-xs font-semibold text-cookie-primary">
+                {mensagemTelefoneInvalido(loginTel)}
+              </p>
+            )}
 
           {precisaCadastro && (
             <>
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="conta-nome-novo"
-                  className="text-sm font-semibold text-zinc-800"
-                >
-                  Nome completo
-                </label>
+              <Campo label="Nome completo" htmlFor="conta-nome-novo">
                 <Input
                   id="conta-nome-novo"
                   placeholder="Como devemos te chamar"
@@ -354,14 +492,8 @@ export function DeliveryConta() {
                   autoComplete="name"
                   onChange={(e) => setLoginNome(e.target.value)}
                 />
-              </div>
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="conta-email-novo"
-                  className="text-sm font-semibold text-zinc-800"
-                >
-                  E-mail
-                </label>
+              </Campo>
+              <Campo label="E-mail" htmlFor="conta-email-novo">
                 <Input
                   id="conta-email-novo"
                   placeholder="seu@email.com"
@@ -370,13 +502,13 @@ export function DeliveryConta() {
                   autoComplete="email"
                   onChange={(e) => setLoginEmail(e.target.value)}
                 />
-              </div>
+              </Campo>
             </>
           )}
 
           {!precisaCadastro ? (
             <Button
-              className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
+              className="w-full h-11 bg-cookie-primary hover:bg-cookie-primary-hover"
               disabled={buscando}
               onClick={() => void entrarComTelefone()}
             >
@@ -384,7 +516,7 @@ export function DeliveryConta() {
             </Button>
           ) : (
             <Button
-              className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
+              className="w-full h-11 bg-cookie-primary hover:bg-cookie-primary-hover"
               disabled={salvando}
               onClick={() => void criarCadastroConta()}
             >
@@ -396,24 +528,45 @@ export function DeliveryConta() {
     );
   }
 
+  const primeiroNome = cliente.nome.trim().split(/\s+/)[0] || "Cliente";
+  const telefoneExibicao = cliente.celular
+    ? formatarTelefoneBr(cliente.celular)
+    : null;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black">Olá, {cliente.nome}</h1>
-          <p className="text-sm text-zinc-500">
-            {cliente.email ||
-              (cliente.celular
-                ? formatarTelefoneBr(cliente.celular)
-                : null)}
+    <div className="space-y-4 pb-6">
+      {/* Cabeçalho compacto */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+            Minha conta
           </p>
+          <h1 className="text-lg font-bold text-zinc-900 truncate leading-tight">
+            Olá, {primeiroNome}
+          </h1>
+          {telefoneExibicao && (
+            <p className="text-sm text-zinc-500 tabular-nums">
+              {telefoneExibicao}
+            </p>
+          )}
         </div>
-        <Button variant="outline" size="sm" onClick={() => void sairConta()}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-1.5 border-zinc-200 text-zinc-700"
+          onClick={() => void sairConta()}
+        >
+          <LogOut size={14} />
           Sair
         </Button>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto">
+      {/* Abas */}
+      <div
+        className="grid grid-cols-3 gap-1 rounded-xl bg-zinc-100 p-1"
+        role="tablist"
+      >
         {(
           [
             ["dados", "Dados"],
@@ -424,10 +577,15 @@ export function DeliveryConta() {
           <button
             key={id}
             type="button"
+            role="tab"
+            aria-selected={aba === id}
             onClick={() => setAba(id)}
-            className={`px-3 py-1.5 rounded-full text-sm font-semibold shrink-0 ${
-              aba === id ? "bg-zinc-900 text-white" : "bg-white border"
-            }`}
+            className={cn(
+              "rounded-lg py-2 text-sm font-semibold transition-colors",
+              aba === id
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500 hover:text-zinc-800",
+            )}
           >
             {label}
           </button>
@@ -435,263 +593,374 @@ export function DeliveryConta() {
       </div>
 
       {aba === "dados" && (
-        <div className="bg-white border rounded-2xl p-4 space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-zinc-800">Nome</label>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-zinc-800">
-              Telefone
-            </label>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3.5 shadow-sm">
+          <Campo label="Nome" htmlFor="conta-nome">
             <Input
+              id="conta-nome"
+              value={nome}
+              autoComplete="name"
+              onChange={(e) => setNome(e.target.value)}
+            />
+          </Campo>
+          <Campo label="Telefone" htmlFor="conta-celular">
+            <Input
+              id="conta-celular"
               value={celular}
+              inputMode="tel"
+              autoComplete="tel"
               onChange={(e) => setCelular(formatarTelefoneBr(e.target.value))}
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-zinc-800">
-              E-mail
-            </label>
+          </Campo>
+          <Campo label="E-mail" htmlFor="conta-email">
             <Input
+              id="conta-email"
               type="email"
               value={email}
+              autoComplete="email"
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seu@email.com"
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-zinc-800">CPF</label>
+          </Campo>
+          <Campo label="CPF" htmlFor="conta-cpf">
             <Input
+              id="conta-cpf"
               value={cpf}
+              inputMode="numeric"
+              autoComplete="off"
               onChange={(e) => setCpf(formatarCpf(e.target.value))}
+              placeholder="000.000.000-00"
             />
-          </div>
+          </Campo>
           <Button
-            className="w-full bg-cookie-primary hover:bg-cookie-primary-hover"
-            onClick={async () => {
-              try {
-                const atualizado = await garantirClienteCheckout({
-                  nome,
-                  celular,
-                  email: email.trim() || null,
-                });
-                setClienteLocal(atualizado);
-                salvarGuestDeliveryLocal({
-                  nome,
-                  telefone: celular,
-                  email: email.trim() || null,
-                  clienteId: atualizado.id,
-                });
-                toast.success("Dados atualizados");
-              } catch (e: unknown) {
-                toast.error(e instanceof Error ? e.message : "Erro");
-              }
-            }}
+            className="w-full h-11 bg-cookie-primary hover:bg-cookie-primary-hover"
+            disabled={salvandoDados}
+            onClick={() => void salvarDados()}
           >
-            Salvar
+            {salvandoDados ? "Salvando…" : "Salvar dados"}
           </Button>
         </div>
       )}
 
       {aba === "enderecos" && (
         <div className="space-y-3">
+          {enderecos.length === 0 && !mostrarFormEnd && (
+            <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center">
+              <MapPin className="mx-auto mb-2 text-zinc-300" size={28} />
+              <p className="text-sm font-medium text-zinc-700">
+                Nenhum endereço salvo
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Cadastre um endereço para agilizar o checkout.
+              </p>
+            </div>
+          )}
+
           {enderecos.map((e) => (
             <div
               key={e.id}
-              className="bg-white border rounded-2xl p-4 flex justify-between gap-2"
+              className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
             >
-              <div className="text-sm">
-                <p className="font-bold flex items-center gap-1">
-                  <MapPin size={14} /> {e.rua}, {e.numero}
-                  {e.padrao && (
-                    <span className="text-[10px] uppercase bg-zinc-100 px-1.5 rounded">
-                      padrão
-                    </span>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cookie-primary/10 text-cookie-primary">
+                  <MapPin size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-zinc-900">
+                      {e.rua}, {e.numero}
+                    </p>
+                    {e.padrao && (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                        Padrão
+                      </span>
+                    )}
+                  </div>
+                  {e.complemento?.trim() && (
+                    <p className="mt-0.5 text-xs text-zinc-600">
+                      {e.complemento}
+                    </p>
                   )}
-                </p>
-                {e.complemento?.trim() && (
-                  <p className="text-zinc-600 text-xs mt-0.5">
-                    Compl.: {e.complemento}
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    {e.bairro} · {e.cidade}/{e.uf}
+                    {e.cep ? ` · CEP ${formatarCep(e.cep)}` : ""}
                   </p>
-                )}
-                <p className="text-zinc-500">
-                  {e.bairro} — {e.cidade}/{e.uf}
-                </p>
+                  {e.referencia?.trim() && (
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Ref.: {e.referencia}
+                    </p>
+                  )}
+                </div>
               </div>
-              <button
-                type="button"
-                className="text-xs text-cookie-primary"
-                onClick={() =>
-                  void excluirEndereco(e.id).then(() =>
-                    listarEnderecos(cliente.id).then(setEnderecos),
-                  )
-                }
-              >
-                Excluir
-              </button>
+              <div className="mt-3 flex gap-2 border-t border-zinc-100 pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 gap-1.5"
+                  onClick={() => abrirEditarEndereco(e)}
+                >
+                  <Pencil size={14} />
+                  Editar
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-cookie-primary hover:bg-cookie-primary/5 hover:text-cookie-primary"
+                  onClick={() => void excluirEnd(e.id)}
+                >
+                  <Trash2 size={14} />
+                  Excluir
+                </Button>
+              </div>
             </div>
           ))}
 
-          <div className="bg-white border rounded-2xl p-4 space-y-2">
-            <p className="font-bold text-sm">Novo endereço</p>
-            <Input
-              placeholder="00000-000"
-              value={formEnd.cep}
-              inputMode="numeric"
-              autoComplete="postal-code"
-              maxLength={9}
-              onChange={(e) =>
-                setFormEnd((f) => ({ ...f, cep: formatarCep(e.target.value) }))
-              }
-              onBlur={() =>
-                void buscarCep(formEnd.cep).then((r) => {
-                  if (!r) return;
-                  setFormEnd((f) => ({
-                    ...f,
-                    rua: r.rua,
-                    bairro: r.bairro,
-                    cidade: r.cidade,
-                    uf: r.uf,
-                  }));
-                })
-              }
-            />
-            <Input
-              placeholder="Rua"
-              value={formEnd.rua}
-              onChange={(e) =>
-                setFormEnd((f) => ({ ...f, rua: e.target.value }))
-              }
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                placeholder="Número"
-                value={formEnd.numero}
-                onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, numero: e.target.value }))
-                }
-              />
-              <Input
-                placeholder="Complemento (apto, casa…)"
-                value={formEnd.complemento}
-                onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, complemento: e.target.value }))
-                }
-              />
-            </div>
-            <Input
-              placeholder="Bairro"
-              value={formEnd.bairro}
-              onChange={(e) =>
-                setFormEnd((f) => ({ ...f, bairro: e.target.value }))
-              }
-            />
-            <div className="grid grid-cols-3 gap-2">
-              <Input
-                className="col-span-2"
-                placeholder="Cidade"
-                value={formEnd.cidade}
-                onChange={(e) =>
-                  setFormEnd((f) => ({ ...f, cidade: e.target.value }))
-                }
-              />
-              <Input
-                placeholder="UF"
-                value={formEnd.uf}
-                maxLength={2}
-                onChange={(e) =>
-                  setFormEnd((f) => ({
-                    ...f,
-                    uf: e.target.value.toUpperCase(),
-                  }))
-                }
-              />
-            </div>
-            <Input
-              placeholder="Ponto de referência (opcional)"
-              value={formEnd.referencia}
-              onChange={(e) =>
-                setFormEnd((f) => ({ ...f, referencia: e.target.value }))
-              }
-            />
+          {!mostrarFormEnd ? (
             <Button
-              className="w-full"
-              onClick={async () => {
-                try {
-                  let lat = formEnd.latitude;
-                  let lng = formEnd.longitude;
-                  if (lat == null || lng == null) {
-                    const coords = await geocodificarEndereco(formEnd);
-                    if (!coords) {
-                      toast.error("Não foi possível localizar o endereço.");
-                      return;
-                    }
-                    lat = coords.latitude;
-                    lng = coords.longitude;
-                  }
-                  await salvarEndereco({
-                    cliente_id: cliente.id,
-                    rotulo: "Casa",
-                    ...formEnd,
-                    latitude: lat,
-                    longitude: lng,
-                  });
-                  setEnderecos(await listarEnderecos(cliente.id));
-                  setFormEnd({
-                    cep: "",
-                    rua: "",
-                    numero: "",
-                    bairro: "",
-                    cidade: "",
-                    uf: "",
-                    complemento: "",
-                    referencia: "",
-                    latitude: null,
-                    longitude: null,
-                    padrao: true,
-                  });
-                  toast.success("Endereço salvo");
-                } catch (e: unknown) {
-                  toast.error(e instanceof Error ? e.message : "Erro");
-                }
-              }}
+              type="button"
+              variant="outline"
+              className="w-full h-11 gap-2 border-dashed"
+              onClick={abrirNovoEndereco}
             >
-              Salvar endereço
+              <Plus size={16} />
+              Adicionar endereço
             </Button>
-          </div>
+          ) : (
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-zinc-900">
+                  {editandoEnderecoId ? "Editar endereço" : "Novo endereço"}
+                </p>
+                <button
+                  type="button"
+                  onClick={fecharFormEnd}
+                  className="rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                  aria-label="Fechar formulário"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <Campo label="CEP">
+                <Input
+                  placeholder="00000-000"
+                  value={formEnd.cep}
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  maxLength={9}
+                  onChange={(e) =>
+                    setFormEnd((f) => ({
+                      ...f,
+                      cep: formatarCep(e.target.value),
+                      latitude: null,
+                      longitude: null,
+                    }))
+                  }
+                  onBlur={() =>
+                    void buscarCep(formEnd.cep).then((r) => {
+                      if (!r) return;
+                      setFormEnd((f) => ({
+                        ...f,
+                        rua: r.rua || f.rua,
+                        bairro: r.bairro || f.bairro,
+                        cidade: r.cidade || f.cidade,
+                        uf: r.uf || f.uf,
+                        latitude: null,
+                        longitude: null,
+                      }));
+                    })
+                  }
+                />
+              </Campo>
+              <Campo label="Rua">
+                <Input
+                  placeholder="Rua"
+                  value={formEnd.rua}
+                  autoComplete="address-line1"
+                  onChange={(e) =>
+                    setFormEnd((f) => ({
+                      ...f,
+                      rua: e.target.value,
+                      latitude: null,
+                      longitude: null,
+                    }))
+                  }
+                />
+              </Campo>
+              <div className="grid grid-cols-2 gap-2">
+                <Campo label="Número">
+                  <Input
+                    placeholder="Nº"
+                    value={formEnd.numero}
+                    onChange={(e) =>
+                      setFormEnd((f) => ({
+                        ...f,
+                        numero: e.target.value,
+                        latitude: null,
+                        longitude: null,
+                      }))
+                    }
+                  />
+                </Campo>
+                <Campo label="Complemento">
+                  <Input
+                    placeholder="Apto, casa…"
+                    value={formEnd.complemento}
+                    onChange={(e) =>
+                      setFormEnd((f) => ({
+                        ...f,
+                        complemento: e.target.value,
+                      }))
+                    }
+                  />
+                </Campo>
+              </div>
+              <Campo label="Bairro">
+                <Input
+                  placeholder="Bairro"
+                  value={formEnd.bairro}
+                  onChange={(e) =>
+                    setFormEnd((f) => ({
+                      ...f,
+                      bairro: e.target.value,
+                      latitude: null,
+                      longitude: null,
+                    }))
+                  }
+                />
+              </Campo>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <Campo label="Cidade">
+                    <Input
+                      placeholder="Cidade"
+                      value={formEnd.cidade}
+                      onChange={(e) =>
+                        setFormEnd((f) => ({
+                          ...f,
+                          cidade: e.target.value,
+                          latitude: null,
+                          longitude: null,
+                        }))
+                      }
+                    />
+                  </Campo>
+                </div>
+                <Campo label="UF">
+                  <Input
+                    placeholder="UF"
+                    value={formEnd.uf}
+                    maxLength={2}
+                    onChange={(e) =>
+                      setFormEnd((f) => ({
+                        ...f,
+                        uf: e.target.value.toUpperCase(),
+                        latitude: null,
+                        longitude: null,
+                      }))
+                    }
+                  />
+                </Campo>
+              </div>
+              <Campo label="Referência (opcional)">
+                <Input
+                  placeholder="Próximo a…"
+                  value={formEnd.referencia}
+                  onChange={(e) =>
+                    setFormEnd((f) => ({
+                      ...f,
+                      referencia: e.target.value,
+                    }))
+                  }
+                />
+              </Campo>
+
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  className="rounded border-zinc-300"
+                  checked={formEnd.padrao}
+                  onChange={(e) =>
+                    setFormEnd((f) => ({ ...f, padrao: e.target.checked }))
+                  }
+                />
+                Usar como endereço padrão
+              </label>
+
+              <div className="flex gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={fecharFormEnd}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 bg-cookie-primary hover:bg-cookie-primary-hover"
+                  disabled={salvandoEnd}
+                  onClick={() => void salvarFormEndereco()}
+                >
+                  {salvandoEnd
+                    ? "Salvando…"
+                    : editandoEnderecoId
+                      ? "Atualizar"
+                      : "Salvar"}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {aba === "pontos" && (
         <div className="space-y-3">
-          <div className="bg-white border rounded-2xl p-4 flex items-center gap-3">
-            <Trophy className="text-amber-500" />
-            <div>
-              <p className="text-2xl font-black">{saldo}</p>
-              <p className="text-xs text-zinc-500">pontos</p>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+                <Trophy size={22} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-2xl font-black tabular-nums leading-none">
+                  {saldo}
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-500">pontos disponíveis</p>
+              </div>
+              <Button
+                className="shrink-0"
+                variant="outline"
+                disabled={saldo < resgateCfg.pontos || resgatando}
+                onClick={() => void resgatar()}
+              >
+                {resgatando
+                  ? "Resgatando…"
+                  : `Resgatar (${resgateCfg.pontos} pts)`}
+              </Button>
             </div>
-            <Button
-              className="ml-auto"
-              variant="outline"
-              disabled={saldo < resgateCfg.pontos || resgatando}
-              onClick={() => void resgatar()}
-            >
-              {resgatando
-                ? "Resgatando…"
-                : `Resgatar (${resgateCfg.pontos} pts)`}
-            </Button>
+            <p className="text-sm text-zinc-600 leading-snug rounded-xl bg-zinc-50 px-3 py-2.5">
+              Ao resgatar, seus pontos viram um cupom de desconto de{" "}
+              <span className="font-semibold text-zinc-800">
+                R$ {resgateCfg.valor.toFixed(2).replace(".", ",")}
+              </span>{" "}
+              para usar no próximo pedido. São necessários{" "}
+              <span className="font-semibold text-zinc-800">
+                {resgateCfg.pontos} pontos
+              </span>{" "}
+              por resgate.
+            </p>
           </div>
 
           {cupons.length > 0 && (
-            <div className="bg-white border rounded-2xl p-4 space-y-2">
-              <p className="font-bold text-sm flex items-center gap-1">
-                <Ticket size={14} /> Seus cupons
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-2.5 shadow-sm">
+              <p className="text-sm font-bold flex items-center gap-1.5 text-zinc-900">
+                <Ticket size={15} className="text-cookie-primary" /> Seus cupons
               </p>
               {cupons.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-zinc-100 px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5"
                 >
                   <div className="min-w-0">
                     <p className="font-mono text-sm font-bold">{c.codigo}</p>
@@ -720,26 +989,29 @@ export function DeliveryConta() {
             </div>
           )}
 
-          <div className="bg-white border rounded-2xl p-4 space-y-2">
-            <p className="font-bold text-sm">Extrato</p>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-1 shadow-sm">
+            <p className="mb-2 text-sm font-bold text-zinc-900">Extrato</p>
             {extrato.length === 0 ? (
-              <p className="text-sm text-zinc-500">Sem movimentos ainda.</p>
+              <p className="text-sm text-zinc-500 py-2">
+                Sem movimentos ainda.
+              </p>
             ) : (
               <>
                 {extrato.slice(0, extratoLimite).map((x) => (
                   <div
                     key={x.id}
-                    className="flex justify-between text-sm border-b border-zinc-50 py-1"
+                    className="flex justify-between gap-3 text-sm border-b border-zinc-50 py-2 last:border-0"
                   >
-                    <span className="text-zinc-600">
+                    <span className="text-zinc-600 min-w-0">
                       {x.descricao || x.tipo}
                     </span>
                     <span
-                      className={
+                      className={cn(
+                        "font-semibold tabular-nums shrink-0",
                         x.pontos >= 0
                           ? "text-emerald-600"
-                          : "text-cookie-primary"
-                      }
+                          : "text-cookie-primary",
+                      )}
                     >
                       {x.pontos >= 0 ? "+" : ""}
                       {x.pontos}
@@ -749,19 +1021,19 @@ export function DeliveryConta() {
                 {extrato.length > extratoLimite && (
                   <button
                     type="button"
-                    className="w-full pt-1 text-center text-sm font-semibold text-cookie-primary"
+                    className="w-full pt-2 text-center text-sm font-semibold text-cookie-primary"
                     onClick={() =>
                       setExtratoLimite((n) => n + EXTRATO_INICIAL)
                     }
                   >
-                    Ler mais
+                    Ver mais
                   </button>
                 )}
                 {extratoLimite > EXTRATO_INICIAL &&
                   extratoLimite >= extrato.length && (
                     <button
                       type="button"
-                      className="w-full pt-1 text-center text-sm font-semibold text-zinc-500"
+                      className="w-full pt-2 text-center text-sm font-semibold text-zinc-500"
                       onClick={() => setExtratoLimite(EXTRATO_INICIAL)}
                     >
                       Ver menos

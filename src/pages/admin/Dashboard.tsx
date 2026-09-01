@@ -60,7 +60,7 @@ interface PedidoDashboard {
   cupom_id: string | null;
   cliente_id: string | null;
   cupons: { codigo: string } | null;
-  clientes: { nome: string } | null;
+  clientes: { nome: string; eh_teste: boolean | null } | null;
   pedido_itens: ItemDashboard[];
 }
 
@@ -131,6 +131,11 @@ function calcularVariacao(atual: number, anterior: number): number | null {
   return ((atual - anterior) / anterior) * 100;
 }
 
+/** Pedidos de clientes marcados como teste não entram nas métricas. */
+function pedidoContaNaDashboard(pedido: PedidoDashboard): boolean {
+  return !pedido.clientes?.eh_teste;
+}
+
 function DeltaBadge({ variacao }: { variacao: number | null }) {
   if (variacao == null) return null;
   const subiu = variacao >= 0;
@@ -195,7 +200,7 @@ export function Dashboard() {
           id, status, total, desconto_aplicado, origem, criado_em,
           cupom_id, cliente_id,
           cupons!cupom_id ( codigo ),
-          clientes ( nome ),
+          clientes ( nome, eh_teste ),
           pedido_itens (
             quantidade, preco_unitario,
             produtos ( nome )
@@ -213,6 +218,7 @@ export function Dashboard() {
         supabase
           .from("clientes")
           .select("nome, total_pedidos, valor_gasto")
+          .eq("eh_teste", false)
           .order("valor_gasto", { ascending: false, nullsFirst: false })
           .limit(8),
         buscarResumoFinanceiroPeriodo(inicioAtual).catch((err: unknown) => {
@@ -226,7 +232,8 @@ export function Dashboard() {
 
       setResumoFinanceiro(resFin);
 
-      const todos = (resPedidos.data as unknown as PedidoDashboard[]) || [];
+      const todos = ((resPedidos.data as unknown as PedidoDashboard[]) || [])
+        .filter(pedidoContaNaDashboard);
 
       if (inicioAtual) {
         const corte = new Date(inicioAtual).getTime();

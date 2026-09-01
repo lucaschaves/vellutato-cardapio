@@ -1,12 +1,25 @@
 import { Check, Gift, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { produtoEstaEsgotado } from "../../lib/estoque";
+import { produtoEstaEsgotado, obterQuantidadeMaxima } from "../../lib/estoque";
+import { AvisoEncomenda } from "../../components/AvisoEncomenda";
+import {
+  buscarDisponibilidadeEncomenda,
+  type DisponibilidadeEncomenda,
+} from "../../lib/encomendaProgramada";
 import { TagMedidaProduto } from "../../components/TagMedidaProduto";
 import { supabase } from "../../lib/supabase";
 import { track } from "../../lib/analytics";
-import { adicionalCompativelComModo } from "../../lib/disponibilidadeProduto";
+import {
+  adicionalCompativelComModo,
+  lerTipoConsumo,
+  produtoCompativelComModo,
+  type ModoConsumoItem,
+} from "../../lib/disponibilidadeProduto";
+import { lerContextoCardapio } from "../../lib/modoCardapio";
+import { urlCardapio } from "../../lib/urlCardapio";
+import { urlDelivery } from "../../lib/urlDelivery";
 import {
   buscarOfertasVendaCruzada,
   calcularPrecoComDescontoVendaCruzada,
@@ -29,6 +42,7 @@ import {
   type ComboGrupo,
   type EscolhaCombo,
 } from "../../lib/combos";
+import { precoCanalBase, precoEfetivoCanal } from "../../lib/precificacao";
 
 interface Adicional {
   id: string;
@@ -43,6 +57,8 @@ interface ProdutoItem {
   nome: string;
   descricao: string | null;
   preco: number;
+  preco_delivery?: number | null;
+  preco_ifood?: number | null;
   preco_promocional: number | null;
   em_promocao: boolean | null;
   imagem_url: string | null;
@@ -52,6 +68,9 @@ interface ProdutoItem {
   medida_valor?: number | null;
   medida_unidade?: string | null;
   tipo?: "simples" | "combo" | null;
+  encomenda_programada?: boolean | null;
+  controlar_estoque?: boolean | null;
+  quantidade_estoque?: number | null;
 }
 
 function precosOferta(oferta: OfertaVendaCruzada) {
@@ -75,6 +94,15 @@ function precosOferta(oferta: OfertaVendaCruzada) {
 export function DeliveryItem() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const contextoCardapio = lerContextoCardapio(location.search);
+  const ehMesa = contextoCardapio.tipo === "mesa";
+  const modoConsumo: ModoConsumoItem = ehMesa
+    ? (lerTipoConsumo() ?? "loja")
+    : "levar";
+  const urlInicio = ehMesa
+    ? urlCardapio("", location.search)
+    : urlDelivery();
   const adicionarItem = useCartStore((s) => s.adicionarItem);
 
   const [produto, setProduto] = useState<ProdutoItem | null>(null);
@@ -87,6 +115,9 @@ export function DeliveryItem() {
   const [gruposCombo, setGruposCombo] = useState<ComboGrupo[]>([]);
   const [escolhasCombo, setEscolhasCombo] = useState<EscolhaCombo[]>([]);
   const [carregandoCombo, setCarregandoCombo] = useState(false);
+  const [dispEncomenda, setDispEncomenda] = useState<DisponibilidadeEncomenda | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!id) return;
@@ -99,7 +130,7 @@ export function DeliveryItem() {
           supabase
             .from("produtos")
             .select(
-              "id, nome, descricao, preco, preco_promocional, em_promocao, imagem_url, adicional_obrigatorio, adicional_maximo, disponibilidade, medida_valor, medida_unidade, tipo",
+              "id, nome, descricao, preco, preco_delivery, preco_ifood, preco_promocional, em_promocao, imagem_url, adicional_obrigatorio, adicional_maximo, disponibilidade, medida_valor, medida_unidade, tipo, encomenda_programada, controlar_estoque, quantidade_estoque",
             )
             .eq("id", id)
             .single(),
@@ -113,19 +144,30 @@ export function DeliveryItem() {
         if (cancelado) return;
         if (prodRes.error) throw prodRes.error;
         const prod = prodRes.data as ProdutoItem;
-        if (
-          prod.disponibilidade !== "levar" &&
-          prod.disponibilidade !== "ambos"
-        ) {
-          toast.error("Este produto não está disponível no delivery.");
-          navigate("/");
+        if (!produtoCompativelComModo(prod.disponibilidade, modoConsumo)) {
+          toast.error(
+            ehMesa
+              ? "Este produto não está disponível para o modo escolhido."
+              : "Este produto não está disponível no delivery.",
+          );
+          navigate(urlInicio);
           return;
         }
         setProduto(prod);
+        if (prod.encomenda_programada) {
+          try {
+            const disp = await buscarDisponibilidadeEncomenda(prod.id);
+            if (!cancelado) setDispEncomenda(disp);
+          } catch {
+            if (!cancelado) setDispEncomenda(null);
+          }
+        } else {
+          setDispEncomenda(null);
+        }
         track("product_view", {
-          canal: "delivery",
+          canal: ehMesa ? "mesa" : "delivery",
           produtoId: prod.id,
-          props: { nome: prod.nome },
+          props: { nome: prod.nome, mesa: contextoCardapio.mesa },
         });
 
         const listaAdc = (adcRes.data || [])
@@ -135,16 +177,19 @@ export function DeliveryItem() {
             return Array.isArray(raw) ? raw : [raw];
           })
           .filter((a) => a.disponivel)
-          .filter((a) => adicionalCompativelComModo(a.disponibilidade, "levar"))
+          .filter((a) =>
+            adicionalCompativelComModo(a.disponibilidade, modoConsumo),
+          )
           .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
         setAdicionais(listaAdc);
         setOfertas(
           ofertasRes.filter(
             (o) =>
               !produtoEstaEsgotado(o.produto_alvo) &&
-              (o.produto_alvo.disponibilidade === "levar" ||
-                o.produto_alvo.disponibilidade === "ambos" ||
-                !o.produto_alvo.disponibilidade),
+              produtoCompativelComModo(
+                o.produto_alvo.disponibilidade,
+                modoConsumo,
+              ),
           ),
         );
         setSelecionados([]);
@@ -186,7 +231,7 @@ export function DeliveryItem() {
       } catch (e) {
         console.error(e);
         toast.error("Produto não encontrado");
-        navigate("/");
+        navigate(urlInicio);
       } finally {
         if (!cancelado) setCarregando(false);
       }
@@ -195,7 +240,7 @@ export function DeliveryItem() {
     return () => {
       cancelado = true;
     };
-  }, [id, navigate]);
+  }, [contextoCardapio.mesa, ehMesa, id, modoConsumo, navigate, urlInicio]);
 
   const ofertasAtivas = useMemo(
     () => ofertas.filter((o) => ofertasSelecionadas.includes(o.id)),
@@ -210,13 +255,8 @@ export function DeliveryItem() {
     );
   }
 
-  const promo =
-    produto.em_promocao &&
-    produto.preco_promocional != null &&
-    produto.preco_promocional > 0;
-  const precoBase = promo
-    ? Number(produto.preco_promocional)
-    : Number(produto.preco);
+  const canalPreco = ehMesa ? "loja" : "delivery";
+  const precoBase = precoEfetivoCanal(produto, canalPreco);
   const precoAdicionais = selecionados.reduce((s, a) => s + a.preco, 0);
   const precoCombo = somarDeltasCombo(escolhasCombo);
   const precoCruzadas = ofertasAtivas.reduce(
@@ -225,6 +265,12 @@ export function DeliveryItem() {
   );
   const total = (precoBase + precoAdicionais + precoCombo) * qtd + precoCruzadas;
   const ehCombo = produto.tipo === "combo";
+  const esgotado = produtoEstaEsgotado(produto, dispEncomenda ?? undefined);
+  const qtdMax = obterQuantidadeMaxima(produto, dispEncomenda ?? undefined);
+  const modoEncomenda =
+    dispEncomenda?.modo === "pronto" || dispEncomenda?.modo === "encomenda"
+      ? dispEncomenda.modo
+      : undefined;
 
   const alternarAdicional = (adc: Adicional) => {
     const max = maxAdicionaisProduto(produto?.adicional_maximo);
@@ -303,7 +349,7 @@ export function DeliveryItem() {
     });
   };
 
-  const voltar = () => navigate("/");
+  const voltar = () => navigate(urlInicio);
 
   const adicionar = () => {
     if (ehCombo) {
@@ -327,18 +373,29 @@ export function DeliveryItem() {
       return;
     }
 
+    if (esgotado) {
+      toast.error("Produto indisponível no momento.");
+      return;
+    }
+    if (qtdMax != null && qtd > qtdMax) {
+      toast.error(`Quantidade máxima disponível: ${qtdMax}.`);
+      return;
+    }
+
     adicionarItem({
       produtoId: produto.id,
       nome: produto.nome,
       descricao: produto.descricao || undefined,
       precoBase,
-      originalPrice: Number(produto.preco),
+      originalPrice: precoCanalBase(produto, canalPreco),
       quantidade: qtd,
       adicionais: selecionados,
       escolhasCombo: ehCombo ? escolhasCombo : undefined,
       imagem: produto.imagem_url || undefined,
-      disponibilidade: "levar",
-      modoConsumo: "levar",
+      disponibilidade: modoConsumo,
+      modoConsumo,
+      modoEncomenda,
+      retiradaEncomenda: dispEncomenda?.retirada_em ?? null,
     });
 
     for (const oferta of ofertasAtivas) {
@@ -354,8 +411,8 @@ export function DeliveryItem() {
         imagem: alvo.imagem_url || undefined,
         adicionais: [],
         ehBrinde: oferta.tipo === "brinde",
-        disponibilidade: "levar",
-        modoConsumo: "levar",
+        disponibilidade: modoConsumo,
+        modoConsumo,
       });
     }
 
@@ -383,6 +440,7 @@ export function DeliveryItem() {
       </div>
 
       <div className="mt-4 space-y-1">
+        {dispEncomenda && <AvisoEncomenda disp={dispEncomenda} className="mb-3" />}
         <h1 className="text-2xl font-black leading-tight">{produto.nome}</h1>
         <TagMedidaProduto
           valor={produto.medida_valor}
@@ -644,8 +702,9 @@ export function DeliveryItem() {
           <div className="flex items-center gap-1 rounded-2xl border border-zinc-200 bg-zinc-50 p-1">
             <button
               type="button"
-              className="h-11 w-11 rounded-xl bg-white shadow-sm flex items-center justify-center"
+              className="h-11 w-11 rounded-xl bg-white shadow-sm flex items-center justify-center disabled:opacity-40"
               onClick={() => setQtd((q) => Math.max(1, q - 1))}
+              disabled={esgotado}
               aria-label="Diminuir"
             >
               <Minus size={18} />
@@ -653,8 +712,13 @@ export function DeliveryItem() {
             <span className="font-black w-8 text-center text-base">{qtd}</span>
             <button
               type="button"
-              className="h-11 w-11 rounded-xl bg-white shadow-sm flex items-center justify-center"
-              onClick={() => setQtd((q) => q + 1)}
+              className="h-11 w-11 rounded-xl bg-white shadow-sm flex items-center justify-center disabled:opacity-40"
+              onClick={() =>
+                setQtd((q) =>
+                  qtdMax != null ? Math.min(qtdMax, q + 1) : q + 1,
+                )
+              }
+              disabled={esgotado || (qtdMax != null && qtd >= qtdMax)}
               aria-label="Aumentar"
             >
               <Plus size={18} />
@@ -663,10 +727,13 @@ export function DeliveryItem() {
           <button
             type="button"
             onClick={adicionar}
-            className="flex-1 h-14 rounded-2xl bg-cookie-primary hover:bg-cookie-primary-hover active:scale-[0.98] transition text-white font-bold text-base flex items-center justify-between px-5 shadow-lg shadow-cookie-primary/25"
+            disabled={esgotado}
+            className="flex-1 h-14 rounded-2xl bg-cookie-primary hover:bg-cookie-primary-hover active:scale-[0.98] transition text-white font-bold text-base flex items-center justify-between px-5 shadow-lg shadow-cookie-primary/25 disabled:opacity-50 disabled:pointer-events-none"
           >
-            <span>Adicionar</span>
-            <span>R$ {total.toFixed(2).replace(".", ",")}</span>
+            <span>{esgotado ? "Indisponível" : "Adicionar"}</span>
+            {!esgotado && (
+              <span>R$ {total.toFixed(2).replace(".", ",")}</span>
+            )}
           </button>
         </div>
       </div>

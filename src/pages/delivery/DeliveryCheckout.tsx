@@ -6,12 +6,13 @@ import { ModalConfirmacao } from "../../components/ModalConfirmacao";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useDeliveryCliente } from "../../hooks/useDeliveryCliente";
+import { useRevalidarCupomCarrinho } from "../../hooks/useRevalidarCupomCarrinho";
 import {
   buscarCuponsDoCliente,
   rotuloCupomResumo,
   type CupomCliente,
 } from "../../lib/clientes";
-import { anexarCuponsPedido, validarCupom } from "../../lib/cupons";
+import { anexarCuponsPedido, revalidarCuponsAplicados, validarCupom } from "../../lib/cupons";
 import {
   buscarCep,
   buscarClienteDeliveryPorCelular,
@@ -50,6 +51,10 @@ import {
   type ModalidadeDelivery,
 } from "../../lib/deliveryPedido";
 import { produtoEstaEsgotado } from "../../lib/estoque";
+import {
+  buscarDisponibilidadeEncomendaLote,
+  resumoItensEncomenda,
+} from "../../lib/encomendaProgramada";
 import {
   listarSlotsAgendamentoHoje,
   rotuloSlot,
@@ -202,10 +207,15 @@ export function DeliveryCheckout() {
   >([]);
   const [sugestoes, setSugestoes] = useState<SugestaoCheckout[]>([]);
   const [confirmarLimparSacola, setConfirmarLimparSacola] = useState(false);
+  const [confirmarEncomendaAberto, setConfirmarEncomendaAberto] = useState(false);
+  const [textoConfirmarEncomenda, setTextoConfirmarEncomenda] = useState("");
+  const confirmarEncomendaRef = useRef(false);
   const freteTrackRef = useRef<string>("");
 
   const subtotal = obterSubtotal();
   const desconto = obterDescontoCupom();
+
+  useRevalidarCupomCarrinho(guestTelefone, guestNome, true);
   const idsNoCarrinho = useMemo(
     () => new Set(itens.map((i) => i.produtoId)),
     [itens],
@@ -901,22 +911,42 @@ export function DeliveryCheckout() {
       return;
     }
 
+    const itensEncomenda = itens.filter((i) => i.modoEncomenda === "encomenda");
+    if (itensEncomenda.length > 0 && !confirmarEncomendaRef.current) {
+      const linhas = resumoItensEncomenda(itensEncomenda);
+      setTextoConfirmarEncomenda(
+        linhas.length > 0
+          ? `Seu pedido inclui produto(s) sob encomenda:\n\n${linhas.join("\n")}\n\nDeseja confirmar?`
+          : "Seu pedido inclui produto(s) sob encomenda. Deseja confirmar?",
+      );
+      setConfirmarEncomendaAberto(true);
+      return;
+    }
+    confirmarEncomendaRef.current = false;
+
     // Revalida estoque antes de criar o pedido
     try {
       const ids = [...new Set(itens.map((i) => i.produtoId))];
       const { data: prods, error: errEstoque } = await supabase
         .from("produtos")
         .select(
-          "id, nome, ativo, controlar_estoque, quantidade_estoque",
+          "id, nome, ativo, controlar_estoque, quantidade_estoque, encomenda_programada",
         )
         .in("id", ids);
       if (errEstoque) throw new Error(errEstoque.message);
+      const idsEnc = (prods || [])
+        .filter((p) => p.encomenda_programada)
+        .map((p) => p.id as string);
+      const dispMap =
+        idsEnc.length > 0
+          ? await buscarDisponibilidadeEncomendaLote(idsEnc)
+          : {};
       const mapa = new Map(
         (prods || []).map((p) => [p.id as string, p]),
       );
       for (const item of itens) {
         const p = mapa.get(item.produtoId);
-        if (!p || !p.ativo || produtoEstaEsgotado(p)) {
+        if (!p || !p.ativo || produtoEstaEsgotado(p, dispMap[item.produtoId])) {
           toast.error(
             `${item.nome} está indisponível. Remova da sacola para continuar.`,
           );
@@ -985,6 +1015,39 @@ export function DeliveryCheckout() {
     const statusPagamento =
       modalidade === "retirada" && pagarNaLoja ? "na_loja" : "aguardando";
 
+    let descontoFinal = desconto;
+    if (cuponsAplicados.length > 0) {
+      const rev = await revalidarCuponsAplicados(
+        cuponsAplicados,
+        subtotal,
+        guestClienteId || cliente?.id,
+      );
+      if (!rev.ok) {
+        const invalido = rev.codigo
+          ? cuponsAplicados.find((c) => c.codigo === rev.codigo)
+          : null;
+        if (invalido) removerCupom(invalido.id);
+        toast.error(
+          rev.codigo
+            ? `Cupom ${rev.codigo} removido: ${rev.erro}`
+            : rev.erro,
+        );
+        return;
+      }
+      for (const c of [...cuponsAplicados]) removerCupom(c.id);
+      for (const c of rev.cupons) {
+        const aplicado = aplicarCupom(c);
+        if (!aplicado.ok) {
+          toast.error(aplicado.erro);
+          return;
+        }
+      }
+      descontoFinal = useCartStore.getState().obterDescontoCupom();
+    }
+
+    const totalFinal =
+      Math.max(0, subtotal - descontoFinal) + taxaEntregaFinal;
+
     if (!telefoneDigitosCompleto(guestTelefone)) {
       toast.error("Informe um telefone válido com DDD.");
       return;
@@ -1004,8 +1067,6 @@ export function DeliveryCheckout() {
       toast.error("Informe um CPF válido para o pagamento (obrigatório).");
       return;
     }
-
-    const totalFinal = Math.max(0, subtotal - desconto) + taxaEntregaFinal;
 
     try {
       setEnviando(true);
@@ -1033,7 +1094,7 @@ export function DeliveryCheckout() {
         cliente_celular: clienteCelular,
         cliente_id: clienteId,
         cupom_id: cuponsAplicados[0]?.id || cupomAplicado?.id || null,
-        desconto,
+        desconto: descontoFinal,
         identificador: modalidade === "entrega" ? "DELIVERY" : "RETIRADA",
         total: totalFinal,
         valor_total: totalFinal,
@@ -1043,6 +1104,7 @@ export function DeliveryCheckout() {
           preco_unitario: item.precoBase,
           observacoes: item.observacoes || null,
           modo_consumo: "levar",
+          modo_encomenda: item.modoEncomenda ?? null,
           adicionais: item.adicionais.map((a) => ({
             adicional_id: a.id,
             preco_aplicado: a.preco,
@@ -1434,7 +1496,7 @@ export function DeliveryCheckout() {
                             {rotuloCupomResumo(c)}
                             {c.acumulativo ? " · acumulativo" : ""}
                             {c.valor_minimo
-                              ? ` · mín. R$ ${c.valor_minimo.toFixed(2).replace(".", ",")}`
+                              ? ` · mín. R$ ${c.valor_minimo.toFixed(2).replace(".", ",")} em produtos`
                               : ""}
                             {c.validade
                               ? ` · válido até ${new Date(c.validade).toLocaleDateString("pt-BR")}`
@@ -1536,7 +1598,7 @@ export function DeliveryCheckout() {
             </div>
             {desconto > 0 && (
               <div className="flex justify-between text-emerald-700">
-                <span>Desconto</span>
+                <span>Desconto (produtos)</span>
                 <span>- R$ {desconto.toFixed(2).replace(".", ",")}</span>
               </div>
             )}
@@ -2047,7 +2109,7 @@ export function DeliveryCheckout() {
             </div>
             {desconto > 0 && (
               <div className="flex justify-between text-emerald-700">
-                <span>Desconto</span>
+                <span>Desconto (produtos)</span>
                 <span>- R$ {desconto.toFixed(2).replace(".", ",")}</span>
               </div>
             )}
@@ -2118,6 +2180,20 @@ export function DeliveryCheckout() {
           )}
         </div>
       </div>
+
+      <ModalConfirmacao
+        aberto={confirmarEncomendaAberto}
+        titulo="Confirmar encomenda"
+        mensagem={textoConfirmarEncomenda}
+        textoConfirmar="Sim, confirmar pedido"
+        textoCancelar="Revisar sacola"
+        aoCancelar={() => setConfirmarEncomendaAberto(false)}
+        aoConfirmar={() => {
+          setConfirmarEncomendaAberto(false);
+          confirmarEncomendaRef.current = true;
+          void finalizar();
+        }}
+      />
 
       <ModalConfirmacao
         aberto={confirmarLimparSacola}

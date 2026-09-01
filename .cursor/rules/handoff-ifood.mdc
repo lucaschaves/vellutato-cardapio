@@ -1,0 +1,56 @@
+---
+description: Handoff — Integração iFood V1 (pedidos, estoque, clientes)
+globs:
+alwaysApply: false
+---
+
+# iFood V1 (em implementação)
+
+**Escopo V1:** polling de pedidos, importação local, baixa de estoque/fichas, clientes, auto-confirm.  
+**Fora da V1:** KDS em tempo real / sync de status de preparo com o iFood.
+
+## Já feito
+
+- Migration `supabase/migrations/20260823210000_ifood_integracao.sql`
+  - enum `origem = ifood`
+  - `pedidos.ifood_order_id`
+  - `ifood_eventos`, `ifood_pedidos`, `ifood_mapeamentos`, `ifood_oauth_cache`
+  - embalagem/estoque: iFood tratado como delivery; estoque cardápio pode ficar negativo
+- Edge Function `ifood-poll-pedidos` + `_shared/ifood.ts`
+- Catálogo Admin → Integrações (chaves iFood)
+- Badge iFood no Painel de Pedidos / comanda
+
+## Falta fazer (ops)
+
+1. Rodar migration no projeto Supabase
+2. Secrets: `IFOOD_CLIENT_ID`, `IFOOD_CLIENT_SECRET`, `IFOOD_MERCHANT_ID`, `IFOOD_POLL_SECRET`, `IFOOD_AUTO_CONFIRM=true`
+3. Deploy: `npx supabase functions deploy ifood-poll-pedidos --project-ref uhaapfxdxivmwhvnuyie`
+4. Testar `?acao=ping` (merchant na lista)
+5. Cron: migration `20260823220000_ifood_cron_polling.sql` (pg_cron 1 min + `duplo=1`)
+   - **Obrigatório:** `IFOOD_POLL_SECRET` em `integracoes_config` (Admin → Integrações)
+6. No catálogo iFood, `externalCode` = UUID do produto (ou popular `ifood_mapeamentos`)
+7. Gerar pedido de teste no portal e validar import + baixa de insumos
+
+## Próximas features (ainda V1 / V1.5)
+
+- ~~Tela admin de mapeamento produto ↔ iFood~~ (Admin → iFood)
+- ~~Pausar item no iFood quando estoque zerar~~ (sync automático estoque/catálogo)
+- ~~Abrir/fechar loja (Merchant interruptions)~~
+- ~~Sync preço~~
+- ~~Motivos de cancelamento no KDS~~
+
+## Já feito (V1.5)
+
+- Edge Function `ifood-admin` (status/pausa loja, catálogo, sync, cancel)
+- Página `/admin/ifood`
+- `ifood_mapeamentos.ifood_item_id`
+- Pausa rápida da loja também pausa iFood
+- Cancelamento iFood no KDS com motivos da API
+
+## V2
+
+- KDS: `startPreparation` / `readyToPickup` / `dispatch` a partir do painel
+
+## Ao concluir V1 estável
+
+Remover esta rule ou arquivar.

@@ -6,6 +6,7 @@ export interface ItemPedidoCompleto {
   preco_unitario: number;
   observacoes: string | null;
   modo_consumo: string;
+  modo_encomenda?: "pronto" | "encomenda" | null;
   adicionais: Array<{ adicional_id: string; preco_aplicado: number }>;
   combo_escolhas: Array<{
     grupo_id: string;
@@ -27,6 +28,8 @@ export interface NovoPedidoCompleto {
   total: number;
   valor_total: number;
   itens: ItemPedidoCompleto[];
+  /** Retirada mínima quando há itens encomenda (mesa/balcão). */
+  agendado_para?: string | null;
 }
 
 /** Erro de negócio (loja fechada, estoque etc.): a mensagem é amigável e pode ir direto pro cliente. */
@@ -50,14 +53,19 @@ export async function criarPedidoCompleto(
     p_total: pedido.total,
     p_valor_total: pedido.valor_total,
     p_itens: pedido.itens,
+    p_agendado_para: pedido.agendado_para || null,
   });
 
   if (error) {
     // Prefixos usados pela função SQL para erros esperados de negócio
     const ehNegocio =
-      /^(LOJA_FECHADA|LOJA_CHEIA):/.test(error.message) ||
-      error.message.includes("Estoque insuficiente");
-    const mensagem = error.message.replace(/^(LOJA_FECHADA|LOJA_CHEIA):\s*/, "");
+      /^(LOJA_FECHADA|LOJA_CHEIA|ENCOMENDA_INDISPONIVEL|ENCOMENDA_INVALIDA):/.test(error.message) ||
+      error.message.includes("Estoque insuficiente") ||
+      error.message.includes("Estoque pronto insuficiente");
+    const mensagem = error.message.replace(
+      /^(LOJA_FECHADA|LOJA_CHEIA|ENCOMENDA_INDISPONIVEL|ENCOMENDA_INVALIDA):\s*/,
+      "",
+    );
     if (ehNegocio) throw new ErroNegocioCheckout(mensagem);
     throw new Error(mensagem);
   }

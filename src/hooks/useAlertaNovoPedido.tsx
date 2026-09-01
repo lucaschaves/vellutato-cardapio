@@ -18,9 +18,11 @@ function pagamentoLiberaAlerta(statusPagamento: string | null | undefined) {
 function deveAlertarPedido(pedido: {
   status?: string;
   status_pagamento?: string | null;
+  agendado_para?: string | null;
 }): boolean {
-  if (pedido.status !== "pendente") return false;
-  return pagamentoLiberaAlerta(pedido.status_pagamento);
+  if (!pagamentoLiberaAlerta(pedido.status_pagamento)) return false;
+  if (pedido.agendado_para) return pedido.status === "pendente";
+  return pedido.status === "em_producao";
 }
 
 export type UseAlertaNovoPedidoOpts = {
@@ -151,6 +153,7 @@ export function useAlertaNovoPedido(opts: UseAlertaNovoPedidoOpts = {}) {
       status?: string;
       status_pagamento?: string | null;
       sequencia_pedido?: number;
+      agendado_para?: string | null;
     }) => {
       if (!ativoRef.current) return;
       if (!pedido.id) return;
@@ -242,8 +245,8 @@ export function useAlertaNovoPedido(opts: UseAlertaNovoPedidoOpts = {}) {
     void (async () => {
       const { data, error } = await supabase
         .from("pedidos")
-        .select("id, status, status_pagamento, sequencia_pedido")
-        .eq("status", "pendente");
+        .select("id, status, status_pagamento, sequencia_pedido, agendado_para")
+        .in("status", ["pendente", "em_producao"]);
       if (error || sincronizacao !== sincronizacaoRef.current || !data) return;
 
       if (primeiraSincronizacaoRef.current) {
@@ -273,6 +276,7 @@ export function useAlertaNovoPedido(opts: UseAlertaNovoPedidoOpts = {}) {
           status?: string;
           status_pagamento?: string | null;
           sequencia_pedido?: number;
+          agendado_para?: string | null;
         },
       );
     });

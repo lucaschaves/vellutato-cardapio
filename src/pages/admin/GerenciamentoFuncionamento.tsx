@@ -1,10 +1,12 @@
-import { Clock, Loader2, PauseCircle, Save } from "lucide-react";
+import { Clock, Loader2, PauseCircle, Save, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
+  aberturaTemporariaEfetiva,
   buscarConfigLoja,
   buscarHorariosLoja,
   buscarStatusLoja,
+  MINUTOS_ABERTURA_RAPIDA_LOJA,
   NOMES_DIAS_SEMANA,
   salvarConfigLoja,
   salvarHorarioLoja,
@@ -87,6 +89,29 @@ export function GerenciamentoFuncionamento() {
       setSalvando(true);
       await salvarConfigLoja(config);
       await Promise.all(horarios.map((h) => salvarHorarioLoja(h)));
+
+      try {
+        const { ifoodPausarLoja, ifoodReabrirLoja } = await import(
+          "../../lib/ifoodAdmin"
+        );
+        if (config.pausado) {
+          const minutos = config.pausado_ate
+            ? Math.max(
+              1,
+              Math.round(
+                (new Date(config.pausado_ate).getTime() - Date.now()) /
+                  60_000,
+              ),
+            )
+            : 60;
+          await ifoodPausarLoja(minutos, config.mensagem_pausa || "Loja pausada");
+        } else {
+          await ifoodReabrirLoja();
+        }
+      } catch (e) {
+        console.warn("[funcionamento] iFood:", e);
+      }
+
       setStatus(await buscarStatusLoja());
       toast.success("Horário de funcionamento salvo!");
     } catch (erro: unknown) {
@@ -115,7 +140,7 @@ export function GerenciamentoFuncionamento() {
           Funcionamento
         </span>
       }
-      description="Horários da loja, pausa temporária e limite de pedidos. Fora do horário, o checkout é bloqueado automaticamente."
+      description="Horários da loja, abertura/pausa temporária e limite de pedidos. Fora do horário, o checkout é bloqueado automaticamente."
       actions={
         status ? (
           <span
@@ -147,6 +172,72 @@ export function GerenciamentoFuncionamento() {
       }
       contentClassName="space-y-6"
     >
+      {/* Abertura temporária */}
+      <section className="rounded-2xl border border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-bold text-gray-950 dark:text-white flex items-center gap-2">
+              <Store size={18} className="text-[#6b1d2a]" />
+              Abertura temporária
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Abre a loja fora do horário cadastrado, sem alterar a grade semanal.
+              A pausa temporária tem prioridade e bloqueia pedidos mesmo com abertura ativa.
+            </p>
+            {config.abertura_temporaria &&
+              config.abertura_temporaria_ate &&
+              new Date(config.abertura_temporaria_ate).getTime() > Date.now() && (
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400">
+                  Aberta até{" "}
+                  {new Date(config.abertura_temporaria_ate).toLocaleTimeString(
+                    "pt-BR",
+                    { hour: "2-digit", minute: "2-digit" },
+                  )}
+                  .
+                </p>
+              )}
+            {aberturaTemporariaEfetiva(config) &&
+              !config.abertura_temporaria_ate && (
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400">
+                  Aberta manualmente até você desligar.
+                </p>
+              )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="font-semibold"
+              onClick={() => {
+                setConfig({
+                  ...config,
+                  abertura_temporaria: true,
+                  abertura_temporaria_ate: new Date(
+                    Date.now() + MINUTOS_ABERTURA_RAPIDA_LOJA * 60 * 1000,
+                  ).toISOString(),
+                  pausado: false,
+                  pausado_ate: null,
+                });
+              }}
+            >
+              Abrir por {MINUTOS_ABERTURA_RAPIDA_LOJA / 60}h
+            </Button>
+            <Switch
+              checked={config.abertura_temporaria}
+              onCheckedChange={(abertura_temporaria) =>
+                setConfig({
+                  ...config,
+                  abertura_temporaria,
+                  abertura_temporaria_ate: abertura_temporaria
+                    ? config.abertura_temporaria_ate
+                    : null,
+                })
+              }
+            />
+          </div>
+        </div>
+      </section>
+
       {/* Pausa temporária */}
       <section className="rounded-2xl border border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] p-5 space-y-4">
         <div className="flex items-center justify-between gap-4">

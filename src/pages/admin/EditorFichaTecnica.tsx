@@ -465,6 +465,11 @@ export function EditorFichaTecnica() {
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-muted-foreground">
+                <strong>Item</strong>: caixa/embalagem por produto (delivery /
+                viagem / levar). <strong>Pedido</strong>: sacola/caixa do delivery
+                ou serviço da loja (prato/talheres; capacidade N na lista de fichas).
+              </p>
             </div>
           )}
           <div className="space-y-1.5 sm:col-span-2">

@@ -207,10 +207,15 @@ export function perfilEmbalagemItem(args: {
   modoConsumo?: string | null;
 }): PerfilEmbalagemItem | null {
   if (args.modoConsumo === "loja") return null;
-  if (args.origem === "delivery" && args.modalidade === "entrega") {
+  if (
+    (args.origem === "delivery" || args.origem === "ifood") &&
+    args.modalidade === "entrega"
+  ) {
     return "delivery";
   }
-  if (args.origem === "delivery") return "levar_rapido";
+  if (args.origem === "delivery" || args.origem === "ifood") {
+    return "levar_rapido";
+  }
   if (
     (args.origem === "balcao" || args.origem === "totem") &&
     args.modoConsumo === "levar"

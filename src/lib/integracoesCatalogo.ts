@@ -181,6 +181,46 @@ export const CATALOGO_INTEGRACOES: GrupoIntegracao[] = [
       "Em Authentication → Providers → Google, informe Client ID e Client Secret do Google Cloud Console. Adicione a URL de redirect /auth/callback.",
     campos: [],
   },
+  {
+    id: "ifood",
+    titulo: "iFood (Merchant API)",
+    descricao:
+      "Importa pedidos, baixa estoque/fichas e confirma automaticamente (V1 sem KDS).",
+    campos: [
+      {
+        chave: "IFOOD_CLIENT_ID",
+        label: "Client ID",
+        ajuda: "App no developer.ifood.com.br",
+      },
+      {
+        chave: "IFOOD_CLIENT_SECRET",
+        label: "Client Secret",
+        secreto: true,
+      },
+      {
+        chave: "IFOOD_MERCHANT_ID",
+        label: "Merchant ID",
+        ajuda: "UUID da loja vinculada ao app",
+      },
+      {
+        chave: "IFOOD_POLL_SECRET",
+        label: "Secret do polling",
+        secreto: true,
+        ajuda:
+          "Token inventado por você. Header x-ifood-poll-secret na Edge Function ifood-poll-pedidos.",
+      },
+      {
+        chave: "IFOOD_AUTO_CONFIRM",
+        label: "Auto-confirmar pedidos",
+        tipo: "select",
+        opcoes: [
+          { valor: "true", label: "Sim (recomendado na V1)" },
+          { valor: "false", label: "Não" },
+        ],
+        ajuda: "Se Sim, chama POST /orders/{id}/confirm após importar.",
+      },
+    ],
+  },
 ];
 
 export function todasChavesIntegracoes(): string[] {

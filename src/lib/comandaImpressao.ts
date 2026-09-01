@@ -237,6 +237,7 @@ function rotuloLocal(
   if (origem === "totem") return "Totem";
   if (origem === "mesa") return "Mesa";
   if (origem === "delivery") return "Delivery";
+  if (origem === "ifood") return "iFood";
   return "Balcão";
 }
 
@@ -252,6 +253,8 @@ export function rotuloOrigemComanda(
       return "TOTEM";
     case "delivery":
       return "DELIVERY";
+    case "ifood":
+      return "IFOOD";
     default:
       return (origem || "BALCAO").toUpperCase();
   }

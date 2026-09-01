@@ -133,6 +133,16 @@ describe("calcularFreteBairroHibrido (faixa → chuva → desconto)", () => {
     expect(escolhido?.desconto).toBe(10);
   });
 
+  it("desconto fixo no frete exige subtotal de itens, não total com frete", () => {
+    const descontos = [
+      { id: "d1", pedido_minimo: 40, ate_km: 5, tipo: "fixo" as const, valor: 5 },
+    ];
+    // R$ 35 em produtos + R$ 10 de frete = R$ 45 total, mas não qualifica
+    expect(selecionarDescontoBairro(descontos, 35, 2, 10)).toBeNull();
+    // R$ 40 em produtos qualifica
+    expect(selecionarDescontoBairro(descontos, 40, 2, 10)?.desconto).toBe(5);
+  });
+
   it("bloqueia além do raio do bairro", () => {
     const r = calcularFreteBairroHibrido(bairroPantanal(), 6, 50, 0);
     expect(r.ok).toBe(false);

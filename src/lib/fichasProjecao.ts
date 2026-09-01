@@ -95,8 +95,10 @@ export function projetarConsumoInsumos(args: {
   >;
   fichaEmbPedidoDeliveryId: string | null;
   fichaEmbPedidoRetiradaId: string | null;
+  fichaEmbPedidoLojaId?: string | null;
   capacidadeDelivery: number;
   capacidadeRetirada: number;
+  capacidadeLoja?: number;
   coberturaDias?: number;
 }): LinhaProjecaoInsumo[] {
   const {
@@ -112,8 +114,10 @@ export function projetarConsumoInsumos(args: {
     insumos,
     fichaEmbPedidoDeliveryId,
     fichaEmbPedidoRetiradaId,
+    fichaEmbPedidoLojaId = null,
     capacidadeDelivery,
     capacidadeRetirada,
+    capacidadeLoja = 1,
     coberturaDias = PROJECAO_COBERTURA_DIAS,
   } = args;
 
@@ -122,6 +126,7 @@ export function projetarConsumoInsumos(args: {
   const acc = new Map<string, number>();
   const pedidosPorId = new Map(pedidos.map((p) => [p.id, p]));
   const embalaveisPorPedido = new Map<string, number>();
+  const lojaPorPedido = new Map<string, number>();
 
   const explodeId = (fichaId: string | null, porcoes: number) => {
     if (!fichaId) return;
@@ -140,7 +145,12 @@ export function projetarConsumoInsumos(args: {
       modalidade: pedido.modalidade,
       modoConsumo: item.modo_consumo,
     });
-    if (perfil) {
+    if (item.modo_consumo === "loja") {
+      lojaPorPedido.set(
+        pedido.id,
+        (lojaPorPedido.get(pedido.id) ?? 0) + item.quantidade,
+      );
+    } else if (perfil) {
       embalaveisPorPedido.set(
         pedido.id,
         (embalaveisPorPedido.get(pedido.id) ?? 0) + item.quantidade,
@@ -166,12 +176,16 @@ export function projetarConsumoInsumos(args: {
 
   for (const pedido of pedidos) {
     const qtd = embalaveisPorPedido.get(pedido.id) ?? 0;
-    if (qtd <= 0) continue;
-    if (pedido.origem !== "delivery") continue;
-    const entrega = pedido.modalidade === "entrega";
-    const n = entrega ? capacidadeDelivery : capacidadeRetirada;
-    const fichaId = entrega ? fichaEmbPedidoDeliveryId : fichaEmbPedidoRetiradaId;
-    explodeId(fichaId, sacolasPedido(qtd, n));
+    if (qtd > 0 && pedido.origem === "delivery") {
+      const entrega = pedido.modalidade === "entrega";
+      const n = entrega ? capacidadeDelivery : capacidadeRetirada;
+      const fichaId = entrega ? fichaEmbPedidoDeliveryId : fichaEmbPedidoRetiradaId;
+      explodeId(fichaId, sacolasPedido(qtd, n));
+    }
+    const qtdLoja = lojaPorPedido.get(pedido.id) ?? 0;
+    if (qtdLoja > 0) {
+      explodeId(fichaEmbPedidoLojaId, sacolasPedido(qtdLoja, capacidadeLoja));
+    }
   }
 
   return insumos

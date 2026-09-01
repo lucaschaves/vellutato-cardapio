@@ -234,6 +234,7 @@ export type Database = {
           celular: string
           cpf: string | null
           created_at: string | null
+          eh_teste: boolean
           email: string | null
           id: string
           nome: string
@@ -246,6 +247,7 @@ export type Database = {
           celular: string
           cpf?: string | null
           created_at?: string | null
+          eh_teste?: boolean
           email?: string | null
           id?: string
           nome: string
@@ -258,6 +260,7 @@ export type Database = {
           celular?: string
           cpf?: string | null
           created_at?: string | null
+          eh_teste?: boolean
           email?: string | null
           id?: string
           nome?: string
@@ -1212,11 +1215,15 @@ export type Database = {
           atualizado_em: string
           capacidade_embalagem_pedido_delivery: number
           capacidade_embalagem_pedido_retirada: number
+          capacidade_embalagem_pedido_loja: number
           ficha_embalagem_pedido_delivery_id: string | null
           ficha_embalagem_pedido_retirada_id: string | null
+          ficha_embalagem_pedido_loja_id: string | null
           id: number
           limite_pedidos_ativos: number | null
           mensagem_pausa: string | null
+          abertura_temporaria: boolean
+          abertura_temporaria_ate: string | null
           pausado: boolean
           pausado_ate: string | null
           tempo_preparo_min: number
@@ -1226,11 +1233,15 @@ export type Database = {
           atualizado_em?: string
           capacidade_embalagem_pedido_delivery?: number
           capacidade_embalagem_pedido_retirada?: number
+          capacidade_embalagem_pedido_loja?: number
           ficha_embalagem_pedido_delivery_id?: string | null
           ficha_embalagem_pedido_retirada_id?: string | null
+          ficha_embalagem_pedido_loja_id?: string | null
           id?: number
           limite_pedidos_ativos?: number | null
           mensagem_pausa?: string | null
+          abertura_temporaria?: boolean
+          abertura_temporaria_ate?: string | null
           pausado?: boolean
           pausado_ate?: string | null
           tempo_preparo_min?: number
@@ -1240,11 +1251,15 @@ export type Database = {
           atualizado_em?: string
           capacidade_embalagem_pedido_delivery?: number
           capacidade_embalagem_pedido_retirada?: number
+          capacidade_embalagem_pedido_loja?: number
           ficha_embalagem_pedido_delivery_id?: string | null
           ficha_embalagem_pedido_retirada_id?: string | null
+          ficha_embalagem_pedido_loja_id?: string | null
           id?: number
           limite_pedidos_ativos?: number | null
           mensagem_pausa?: string | null
+          abertura_temporaria?: boolean
+          abertura_temporaria_ate?: string | null
           pausado?: boolean
           pausado_ate?: string | null
           tempo_preparo_min?: number
@@ -1261,6 +1276,13 @@ export type Database = {
           {
             foreignKeyName: "loja_config_ficha_embalagem_pedido_retirada_id_fkey"
             columns: ["ficha_embalagem_pedido_retirada_id"]
+            isOneToOne: false
+            referencedRelation: "fichas_tecnicas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loja_config_ficha_embalagem_pedido_loja_id_fkey"
+            columns: ["ficha_embalagem_pedido_loja_id"]
             isOneToOne: false
             referencedRelation: "fichas_tecnicas"
             referencedColumns: ["id"]
@@ -1524,6 +1546,7 @@ export type Database = {
           criado_em: string
           id: string
           modo_consumo: string
+          modo_encomenda: string | null
           observacoes: string | null
           pedido_id: string
           preco_unitario: number
@@ -1534,6 +1557,7 @@ export type Database = {
           criado_em?: string
           id?: string
           modo_consumo?: string
+          modo_encomenda?: string | null
           observacoes?: string | null
           pedido_id: string
           preco_unitario: number
@@ -1544,6 +1568,7 @@ export type Database = {
           criado_em?: string
           id?: string
           modo_consumo?: string
+          modo_encomenda?: string | null
           observacoes?: string | null
           pedido_id?: string
           preco_unitario?: number
@@ -1687,6 +1712,60 @@ export type Database = {
           },
         ]
       }
+      precificacao_config: {
+        Row: {
+          atualizado_em: string
+          contribuicao_modo: string
+          contribuicao_pct: number
+          contribuicao_rs_unidade: number
+          descontos_volume: Json
+          faturamento_esperado_mensal: number
+          id: number
+          margem_lucro_delivery_pct: number
+          margem_lucro_ifood_pct: number
+          margem_lucro_loja_pct: number
+          margem_lucro_pct: number
+          qtd_itens_esperada_mensal: number
+          taxa_cartao_pct: number
+          taxa_delivery_pct: number
+          taxa_ifood_pct: number
+        }
+        Insert: {
+          atualizado_em?: string
+          contribuicao_modo?: string
+          contribuicao_pct?: number
+          contribuicao_rs_unidade?: number
+          descontos_volume?: Json
+          faturamento_esperado_mensal?: number
+          id?: number
+          margem_lucro_delivery_pct?: number
+          margem_lucro_ifood_pct?: number
+          margem_lucro_loja_pct?: number
+          margem_lucro_pct?: number
+          qtd_itens_esperada_mensal?: number
+          taxa_cartao_pct?: number
+          taxa_delivery_pct?: number
+          taxa_ifood_pct?: number
+        }
+        Update: {
+          atualizado_em?: string
+          contribuicao_modo?: string
+          contribuicao_pct?: number
+          contribuicao_rs_unidade?: number
+          descontos_volume?: Json
+          faturamento_esperado_mensal?: number
+          id?: number
+          margem_lucro_delivery_pct?: number
+          margem_lucro_ifood_pct?: number
+          margem_lucro_loja_pct?: number
+          margem_lucro_pct?: number
+          qtd_itens_esperada_mensal?: number
+          taxa_cartao_pct?: number
+          taxa_delivery_pct?: number
+          taxa_ifood_pct?: number
+        }
+        Relationships: []
+      }
       pontos_extrato: {
         Row: {
           cliente_id: string
@@ -1774,6 +1853,8 @@ export type Database = {
           destaque: boolean
           disponibilidade: Database["public"]["Enums"]["disponibilidade_produto"]
           em_promocao: boolean
+          encomenda_programada: boolean
+          encomenda_template_id: string | null
           ficha_embalagem_delivery_id: string | null
           ficha_embalagem_levar_rapido_id: string | null
           ficha_embalagem_viagem_id: string | null
@@ -1787,6 +1868,8 @@ export type Database = {
           nome: string
           ordem: number
           preco: number
+          preco_delivery: number | null
+          preco_ifood: number | null
           preco_promocional: number | null
           quantidade_estoque: number
           tipo: Database["public"]["Enums"]["tipo_produto"]
@@ -1803,6 +1886,8 @@ export type Database = {
           destaque?: boolean
           disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           em_promocao?: boolean
+          encomenda_programada?: boolean
+          encomenda_template_id?: string | null
           ficha_embalagem_delivery_id?: string | null
           ficha_embalagem_levar_rapido_id?: string | null
           ficha_embalagem_viagem_id?: string | null
@@ -1816,6 +1901,8 @@ export type Database = {
           nome: string
           ordem?: number
           preco: number
+          preco_delivery?: number | null
+          preco_ifood?: number | null
           preco_promocional?: number | null
           quantidade_estoque?: number
           tipo?: Database["public"]["Enums"]["tipo_produto"]
@@ -1832,6 +1919,8 @@ export type Database = {
           destaque?: boolean
           disponibilidade?: Database["public"]["Enums"]["disponibilidade_produto"]
           em_promocao?: boolean
+          encomenda_programada?: boolean
+          encomenda_template_id?: string | null
           ficha_embalagem_delivery_id?: string | null
           ficha_embalagem_levar_rapido_id?: string | null
           ficha_embalagem_viagem_id?: string | null
@@ -1845,6 +1934,8 @@ export type Database = {
           nome?: string
           ordem?: number
           preco?: number
+          preco_delivery?: number | null
+          preco_ifood?: number | null
           preco_promocional?: number | null
           quantidade_estoque?: number
           tipo?: Database["public"]["Enums"]["tipo_produto"]
@@ -2078,7 +2169,7 @@ export type Database = {
         Returns: Json
       }
       atualizar_stats_cliente_pedido: {
-        Args: { p_cliente_id: string; p_delta_pedidos: number; p_valor: number }
+        Args: { p_cliente_id: string; p_valor: number; p_delta_pedidos: number }
         Returns: undefined
       }
       atualizar_taxa_bairro_frete: {
@@ -2137,6 +2228,7 @@ export type Database = {
       }
       criar_pedido_completo: {
         Args: {
+          p_agendado_para?: string | null
           p_cliente_celular: string
           p_cliente_id: string
           p_cliente_nome: string
@@ -2149,6 +2241,18 @@ export type Database = {
           p_valor_total: number
         }
         Returns: Json
+      }
+      calcular_disponibilidade_encomenda: {
+        Args: { p_agora?: string; p_produto_id: string }
+        Returns: Json
+      }
+      calcular_disponibilidade_encomenda_lote: {
+        Args: { p_agora?: string; p_produto_ids: string[] }
+        Returns: Json
+      }
+      produto_disponivel_ifood: {
+        Args: { p_produto_id: string }
+        Returns: boolean
       }
       criar_pedido_delivery: {
         Args: {
@@ -2282,7 +2386,7 @@ export type Database = {
     Enums: {
       disponibilidade_produto: "loja" | "levar" | "ambos"
       tipo_modalidade_pedido: "entrega" | "retirada"
-      tipo_origem_pedido: "mesa" | "balcao" | "delivery" | "totem"
+      tipo_origem_pedido: "mesa" | "balcao" | "delivery" | "totem" | "ifood"
       tipo_produto: "simples" | "combo"
       tipo_status_pagamento:
         | "nao_aplicavel"
@@ -2429,7 +2533,7 @@ export const Constants = {
     Enums: {
       disponibilidade_produto: ["loja", "levar", "ambos"],
       tipo_modalidade_pedido: ["entrega", "retirada"],
-      tipo_origem_pedido: ["mesa", "balcao", "delivery", "totem"],
+      tipo_origem_pedido: ["mesa", "balcao", "delivery", "totem", "ifood"],
       tipo_produto: ["simples", "combo"],
       tipo_status_pagamento: [
         "nao_aplicavel",

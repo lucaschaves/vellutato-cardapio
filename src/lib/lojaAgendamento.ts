@@ -94,6 +94,18 @@ export type SlotsAgendamento = {
   motivoSemSlots: string | null;
 };
 
+/** Slots de 15 min do instante atual até 23:45 (SP) — abertura temporária fora da grade. */
+function gerarSlotsRestanteDoDia(ref: Date, preparoMin: number): string[] {
+  const p = partesAgoraSp(ref);
+  const agoraMin = p.hora * 60 + p.minuto;
+  const minInicio = Math.ceil((agoraMin + Math.max(0, preparoMin)) / 15) * 15;
+  const slots: string[] = [];
+  for (let m = minInicio; m < 24 * 60; m += 15) {
+    slots.push(isoSlotHojeSp(Math.floor(m / 60), m % 60, ref));
+  }
+  return slots;
+}
+
 /**
  * Gera slots de 15 min para hoje, dentro do horário da loja.
  * Início = max(agora + tempo_preparo, abertura + atraso_primeiro_agendamento).
@@ -112,8 +124,20 @@ export async function listarSlotsAgendamentoHoje(
     0,
     status?.atraso_primeiro_agendamento_min ?? 15,
   );
+  const lojaAbertaAgora = Boolean(status?.aberta);
 
   if (!horarioHoje || !horarioHoje.aberto) {
+    if (lojaAbertaAgora) {
+      const slots = gerarSlotsRestanteDoDia(ref, preparo);
+      return {
+        status,
+        horarioHoje,
+        abreHoje: true,
+        slots,
+        motivoSemSlots:
+          slots.length === 0 ? "Sem horários restantes hoje." : null,
+      };
+    }
     return {
       status,
       horarioHoje,
@@ -150,6 +174,18 @@ export async function listarSlotsAgendamentoHoje(
     }
   }
 
+  if (slots.length === 0 && lojaAbertaAgora) {
+    const fallback = gerarSlotsRestanteDoDia(ref, preparo);
+    return {
+      status,
+      horarioHoje,
+      abreHoje: true,
+      slots: fallback,
+      motivoSemSlots:
+        fallback.length === 0 ? "Sem horários restantes hoje." : null,
+    };
+  }
+
   return {
     status,
     horarioHoje,
@@ -157,7 +193,7 @@ export async function listarSlotsAgendamentoHoje(
     slots,
     motivoSemSlots:
       slots.length === 0
-        ? status?.aberta
+        ? lojaAbertaAgora
           ? "Não há horários disponíveis hoje."
           : (status?.motivo ?? "Não há horários disponíveis hoje.")
         : null,

@@ -39,6 +39,9 @@ export interface ItemCarrinho {
   ehBrinde?: boolean;
   disponibilidade: DisponibilidadeProduto;
   modoConsumo: ModoConsumoItem;
+  /** pronto = estoque do dia; encomenda = produção programada */
+  modoEncomenda?: "pronto" | "encomenda";
+  retiradaEncomenda?: string | null;
 }
 
 function custoExtrasItem(item: ItemCarrinho): number {
@@ -108,6 +111,8 @@ function chaveItemIgual(
     | "observacoes"
     | "ehBrinde"
     | "modoConsumo"
+    | "modoEncomenda"
+    | "retiradaEncomenda"
   >,
 ): string {
   const adicionais = [...(a.adicionais || [])]
@@ -126,6 +131,8 @@ function chaveItemIgual(
     a.observacoes || "",
     a.ehBrinde ? "1" : "0",
     a.modoConsumo || "",
+    a.modoEncomenda || "",
+    a.retiradaEncomenda || "",
   ].join("|");
 }
 

@@ -1,5 +1,5 @@
 import { Check, CheckCheck, Send } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -73,13 +73,43 @@ export function ChatThread({
   vazio = "Nenhuma mensagem ainda.",
 }: Props) {
   const itens = useMemo(() => mensagens, [mensagens]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const estavaEnviando = useRef(false);
+
+  const focarInput = () => {
+    inputRef.current?.focus();
+  };
+
+  const dispararEnvio = () => {
+    if (enviando || !texto.trim()) return;
+    onEnviar();
+    // Clique no botão tira o foco; devolve na hora.
+    queueMicrotask(focarInput);
+  };
+
+  // Quando o envio termina (enviando true → false), garante o foco de volta.
+  useEffect(() => {
+    if (estavaEnviando.current && !enviando) {
+      focarInput();
+    }
+    estavaEnviando.current = enviando;
+  }, [enviando]);
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
-      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+      <MessageScrollerProvider
+        autoScroll
+        defaultScrollPosition="end"
+        scrollPreviousItemPeek={0}
+      >
         <MessageScroller className="min-h-0 flex-1 bg-muted/30">
           <MessageScrollerViewport>
-            <MessageScrollerContent className="gap-3 p-4">
+            <MessageScrollerContent
+              className={cn(
+                "gap-3 p-4",
+                itens.length === 0 && "justify-center",
+              )}
+            >
               {itens.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   {vazio}
@@ -96,11 +126,7 @@ export function ChatThread({
                   const enviadaPropria =
                     perspectiva === "admin" && propria;
                   return (
-                    <MessageScrollerItem
-                      key={m.id}
-                      messageId={m.id}
-                      scrollAnchor={propria}
-                    >
+                    <MessageScrollerItem key={m.id} messageId={m.id}>
                       <Message align={propria ? "end" : "start"}>
                         <MessageAvatar>
                           <Avatar size="sm">
@@ -161,28 +187,28 @@ export function ChatThread({
               )}
             </MessageScrollerContent>
           </MessageScrollerViewport>
-          <MessageScrollerButton direction="end" />
+          {itens.length > 0 && <MessageScrollerButton direction="end" />}
         </MessageScroller>
       </MessageScrollerProvider>
 
       <div className="flex shrink-0 items-center gap-2 border-t bg-background p-3">
         <Input
+          ref={inputRef}
           value={texto}
           onChange={(e) => onTextoChange(e.target.value)}
           placeholder={placeholder}
-          disabled={enviando}
           className="flex-1"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              onEnviar();
+              dispararEnvio();
             }
           }}
         />
         <Button
           type="button"
           disabled={enviando || !texto.trim()}
-          onClick={onEnviar}
+          onClick={dispararEnvio}
           aria-label="Enviar"
         >
           <Send data-icon="inline-start" />

@@ -13,6 +13,7 @@ import { estaEmModoStandalone } from "../lib/pwaInstalacao";
 
 // Páginas
 import { AdminNovoPedido } from "@/pages/admin/AdminNovoPedido";
+import { CalculadoraPreco } from "@/pages/admin/CalculadoraPreco";
 import { Dashboard } from "@/pages/admin/Dashboard";
 import { DetalheCliente } from "@/pages/admin/DetalheCliente";
 import { GerenciamentoAdicionais } from "@/pages/admin/GerenciamentoAdicionais";
@@ -24,10 +25,13 @@ import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
 import { GerenciamentoDespesas } from "@/pages/admin/GerenciamentoDespesas";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
+import { GerenciamentoIfood } from "@/pages/admin/GerenciamentoIfood";
 import { GerenciamentoImpressao } from "@/pages/admin/GerenciamentoImpressao";
 import { GerenciamentoIntegracoes } from "@/pages/admin/GerenciamentoIntegracoes";
 import { GerenciamentoMensagens } from "@/pages/admin/GerenciamentoMensagens";
 import { GerenciamentoMesas } from "@/pages/admin/GerenciamentoMesas";
+import { GerenciamentoPrecificacao } from "@/pages/admin/GerenciamentoPrecificacao";
+import { GerenciamentoEncomenda } from "@/pages/admin/GerenciamentoEncomenda";
 import { GerenciamentoVendasCruzadas } from "@/pages/admin/GerenciamentoVendasCruzadas";
 import { GestaoCaixa } from "@/pages/admin/GestaoCaixa";
 import { HistoricoPedidos } from "@/pages/admin/HistoricoPedidos";
@@ -40,12 +44,13 @@ import { GerenciamentoFichasTecnicas } from "../pages/admin/GerenciamentoFichasT
 import { GerenciamentoInsumos } from "../pages/admin/GerenciamentoInsumos";
 import { ListaCompras } from "../pages/admin/ListaCompras";
 import { PainelPedidos } from "../pages/admin/PainelPedidos";
+import { CardapioItem } from "../pages/client/CardapioItem";
+import { CardapioShell } from "../pages/client/CardapioShell";
 import { ConfirmacaoPedido } from "../pages/client/ConfirmacaoPedido";
 import { FeedProdutos } from "../pages/client/FeedProdutos";
 import { ListaErros } from "../pages/client/ListaErros";
 import { MeusPedidos } from "../pages/client/MeusPedidos";
 import { Perfil } from "../pages/client/Perfil";
-import { VisualizadorReels } from "../pages/client/VisualizadorReels";
 import { DeliveryAuthCallback } from "../pages/delivery/DeliveryAuthCallback";
 import { DeliveryCadastro } from "../pages/delivery/DeliveryCadastro";
 import { DeliveryChat } from "../pages/delivery/DeliveryChat";
@@ -111,7 +116,7 @@ const RotaProtegida = () => {
 };
 
 const rotasFilhasCardapio = [
-  { path: "item/:id", element: <VisualizadorReels /> },
+  { path: "item/:id", element: <CardapioItem /> },
   { path: "pedido-enviado", element: <ConfirmacaoPedido /> },
   { path: "meus-pedidos", element: <MeusPedidos /> },
   { path: "perfil", element: <Perfil /> },
@@ -135,8 +140,14 @@ const router = createBrowserRouter([
   { path: "/inicio", element: <BemVindo /> },
   {
     path: "/cardapio",
-    element: <FeedProdutos />,
-    children: rotasFilhasCardapio,
+    element: <CardapioShell />,
+    children: [
+      {
+        path: "",
+        element: <FeedProdutos />,
+        children: rotasFilhasCardapio,
+      },
+    ],
   },
 
   // Delivery na raiz
@@ -173,6 +184,7 @@ const router = createBrowserRouter([
       { path: "/admin/categorias", element: <GerenciamentoCategorias /> },
       { path: "/admin/mesas", element: <GerenciamentoMesas /> },
       { path: "/admin/estoque", element: <GerenciamentoEstoque /> },
+      { path: "/admin/encomenda", element: <GerenciamentoEncomenda /> },
       { path: "/admin/insumos", element: <GerenciamentoInsumos /> },
       {
         path: "/admin/fichas-tecnicas",
@@ -181,6 +193,7 @@ const router = createBrowserRouter([
       { path: "/admin/fichas-tecnicas/nova", element: <EditorFichaTecnica /> },
       { path: "/admin/fichas-tecnicas/:id", element: <EditorFichaTecnica /> },
       { path: "/admin/lista-compras", element: <ListaCompras /> },
+      { path: "/admin/calculadora-preco", element: <CalculadoraPreco /> },
       { path: "/admin/adicionais", element: <GerenciamentoAdicionais /> },
       { path: "/admin/combos", element: <GerenciamentoCombos /> },
       { path: "/admin/clientes", element: <GerenciamentoClientes /> },
@@ -193,6 +206,7 @@ const router = createBrowserRouter([
       },
       { path: "/admin/delivery", element: <GerenciamentoDelivery /> },
       { path: "/admin/integracoes", element: <GerenciamentoIntegracoes /> },
+      { path: "/admin/ifood", element: <GerenciamentoIfood /> },
       { path: "/admin/impressao", element: <GerenciamentoImpressao /> },
       { path: "/admin/chat", element: <GerenciamentoChatDelivery /> },
       {
@@ -201,6 +215,7 @@ const router = createBrowserRouter([
       },
       { path: "/admin/caixa", element: <GestaoCaixa /> },
       { path: "/admin/despesas", element: <GerenciamentoDespesas /> },
+      { path: "/admin/precificacao", element: <GerenciamentoPrecificacao /> },
       { path: "/admin", element: <Navigate to="/admin/dashboard" replace /> },
     ],
   },
@@ -215,7 +230,7 @@ export function AppRoutes() {
       <RouterProvider router={router} />
       <Toaster
         richColors
-        position={isMobile ? "top-center" : "top-right"}
+        position={isMobile ? "bottom-left" : "top-left"}
         expand={false}
         closeButton
         toastOptions={{ style: { fontFamily: "inherit" } }}
