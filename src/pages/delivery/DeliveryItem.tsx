@@ -126,6 +126,7 @@ export function DeliveryItem() {
     void (async () => {
       try {
         setCarregando(true);
+        setDispEncomenda(null);
         const [prodRes, adcRes, ofertasRes] = await Promise.all([
           supabase
             .from("produtos")
@@ -265,12 +266,15 @@ export function DeliveryItem() {
   );
   const total = (precoBase + precoAdicionais + precoCombo) * qtd + precoCruzadas;
   const ehCombo = produto.tipo === "combo";
+  const ehEncomendaProg = Boolean(produto.encomenda_programada);
   const esgotado = produtoEstaEsgotado(produto, dispEncomenda ?? undefined);
   const qtdMax = obterQuantidadeMaxima(produto, dispEncomenda ?? undefined);
-  const modoEncomenda =
+  const modoEncomenda: "pronto" | "encomenda" | undefined =
     dispEncomenda?.modo === "pronto" || dispEncomenda?.modo === "encomenda"
       ? dispEncomenda.modo
-      : undefined;
+      : ehEncomendaProg
+        ? "encomenda"
+        : undefined;
 
   const alternarAdicional = (adc: Adicional) => {
     const max = maxAdicionaisProduto(produto?.adicional_maximo);
@@ -374,11 +378,19 @@ export function DeliveryItem() {
     }
 
     if (esgotado) {
-      toast.error("Produto indisponível no momento.");
+      toast.error(
+        ehEncomendaProg
+          ? dispEncomenda?.mensagem || "Encomenda indisponível no momento."
+          : "Produto indisponível no momento.",
+      );
       return;
     }
     if (qtdMax != null && qtd > qtdMax) {
-      toast.error(`Quantidade máxima disponível: ${qtdMax}.`);
+      toast.error(
+        ehEncomendaProg && modoEncomenda === "encomenda"
+          ? `Limite de encomendas de hoje: ${qtdMax}.`
+          : `Quantidade máxima disponível: ${qtdMax}.`,
+      );
       return;
     }
 

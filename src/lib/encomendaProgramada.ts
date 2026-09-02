@@ -374,3 +374,24 @@ export function resumoItensEncomenda(
         `${i.nome}: retirada prevista ${formatarRetiradaEncomenda(i.retiradaEncomenda)}`,
     );
 }
+
+/** Maior `retirada_em` entre itens sob encomenda — horário mínimo do pedido. */
+export function minimoRetiradaEncomendaCarrinho(
+  itens: Array<{
+    modoEncomenda?: ModoEncomendaItem;
+    retiradaEncomenda?: string | null;
+  }>,
+): string | null {
+  let maxMs = 0;
+  let maxIso: string | null = null;
+  for (const i of itens) {
+    if (i.modoEncomenda !== "encomenda" || !i.retiradaEncomenda) continue;
+    const t = new Date(i.retiradaEncomenda).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (t > maxMs) {
+      maxMs = t;
+      maxIso = i.retiradaEncomenda;
+    }
+  }
+  return maxIso;
+}

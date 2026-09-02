@@ -6,6 +6,16 @@ export interface ProdutoComEstoque {
   encomenda_programada?: boolean | null;
 }
 
+function ehProdutoEncomenda(
+  produto: ProdutoComEstoque,
+  disp?: DisponibilidadeEncomenda,
+): boolean {
+  return (
+    Boolean(produto.encomenda_programada) ||
+    Boolean(disp?.encomenda_programada)
+  );
+}
+
 /** Estoque clássico ou unidades prontas hoje (encomenda). */
 export function produtoControlaQuantidade(
   produto: ProdutoComEstoque,
@@ -30,11 +40,16 @@ export function rotuloQuantidadeEstoque(produto: ProdutoComEstoque): string {
   return produto.encomenda_programada ? "prontas hoje" : "em estoque";
 }
 
+/**
+ * Produto de encomenda programada NÃO usa quantidade_estoque.
+ * Só fica esgotado se a RPC disser modo "indisponivel".
+ * Sem disponibilidade carregada, libera (não bloqueia pelo estoque clássico).
+ */
 export function produtoEstaEsgotado(
   produto: ProdutoComEstoque,
   disp?: DisponibilidadeEncomenda,
 ): boolean {
-  if (produto.encomenda_programada) {
+  if (ehProdutoEncomenda(produto, disp)) {
     if (!disp) return false;
     return disp.modo === "indisponivel";
   }
@@ -44,19 +59,24 @@ export function produtoEstaEsgotado(
   );
 }
 
+/**
+ * Limite de quantidade ao adicionar.
+ * Encomenda: pronto → estoque do dia; encomenda → vagas do dia; nunca quantidade_estoque.
+ */
 export function obterQuantidadeMaxima(
   produto: ProdutoComEstoque,
   disp?: DisponibilidadeEncomenda,
 ): number | null {
-  if (produto.encomenda_programada) {
+  if (ehProdutoEncomenda(produto, disp)) {
     if (!disp) return null;
-    if (disp.modo === "pronto" && disp.estoque_pronto != null) {
-      return Math.max(disp.estoque_pronto, 0);
-    }
-    if (disp.modo === "encomenda" && disp.encomendas_restantes != null) {
-      return Math.max(disp.encomendas_restantes, 0);
-    }
     if (disp.modo === "indisponivel") return 0;
+    if (disp.modo === "pronto") {
+      return Math.max(Number(disp.estoque_pronto ?? 0), 0);
+    }
+    if (disp.modo === "encomenda") {
+      if (disp.encomendas_restantes == null) return null;
+      return Math.max(Number(disp.encomendas_restantes) || 0, 0);
+    }
     return null;
   }
   if (!produto.controlar_estoque) return null;

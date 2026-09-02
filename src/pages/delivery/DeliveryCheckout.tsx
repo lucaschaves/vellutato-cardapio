@@ -53,6 +53,8 @@ import {
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import {
   buscarDisponibilidadeEncomendaLote,
+  formatarRetiradaEncomenda,
+  minimoRetiradaEncomendaCarrinho,
   resumoItensEncomenda,
 } from "../../lib/encomendaProgramada";
 import {
@@ -252,14 +254,22 @@ export function DeliveryCheckout() {
   useEffect(() => {
     let cancelado = false;
     void (async () => {
-      const r = await listarSlotsAgendamentoHoje();
+      const minEncomenda = minimoRetiradaEncomendaCarrinho(itens);
+      const r = await listarSlotsAgendamentoHoje(new Date(), {
+        naoAntesDe: minEncomenda,
+      });
       if (cancelado) return;
       setStatusLoja(r.status);
       setSlotsHoje(r.slots);
       setMotivoSemSlots(r.motivoSemSlots);
       setAbreHoje(r.abreHoje);
-      if (r.status?.aberta) {
-        // Aberto: padrão = o quanto antes
+      if (minEncomenda) {
+        // Encomenda: horário da agenda é o mínimo — escolhe o 1º slot válido.
+        setAgendadoPara((atual) => {
+          if (atual && r.slots.includes(atual)) return atual;
+          return r.slots[0] ?? null;
+        });
+      } else if (r.status?.aberta) {
         setAgendadoPara(null);
       } else if (r.slots[0]) {
         setAgendadoPara(r.slots[0]);
@@ -270,7 +280,13 @@ export function DeliveryCheckout() {
     return () => {
       cancelado = true;
     };
-  }, []);
+  }, [itens]);
+
+  const minRetiradaEncomenda = useMemo(
+    () => minimoRetiradaEncomendaCarrinho(itens),
+    [itens],
+  );
+  const temEncomendaAgendada = Boolean(minRetiradaEncomenda);
 
   useEffect(() => {
     if (searchParams.get("cancelado") === "1") {
@@ -811,12 +827,14 @@ export function DeliveryCheckout() {
   );
 
   const lojaAberta = Boolean(statusLoja?.aberta);
-  const precisaAgendar = !lojaAberta;
-  const agendamentoOk = abreHoje
-    ? lojaAberta
-      ? true
-      : Boolean(agendadoPara) && slotsHoje.length > 0
-    : false;
+  const precisaAgendar = !lojaAberta || temEncomendaAgendada;
+  const agendamentoOk = temEncomendaAgendada
+    ? Boolean(agendadoPara) && slotsHoje.length > 0
+    : abreHoje
+      ? lojaAberta
+        ? true
+        : Boolean(agendadoPara) && slotsHoje.length > 0
+      : false;
 
   const podePagar =
     !enviando && enderecoEntregaOk && dadosClienteOk && agendamentoOk;
@@ -907,7 +925,22 @@ export function DeliveryCheckout() {
       return;
     }
     if (precisaAgendar && !agendadoPara) {
-      toast.error("Escolha um horário para receber ou retirar o pedido.");
+      toast.error(
+        temEncomendaAgendada
+          ? "Escolha um horário a partir do mínimo da encomenda."
+          : "Escolha um horário para receber ou retirar o pedido.",
+      );
+      return;
+    }
+    if (
+      temEncomendaAgendada &&
+      agendadoPara &&
+      minRetiradaEncomenda &&
+      new Date(agendadoPara).getTime() < new Date(minRetiradaEncomenda).getTime() - 1000
+    ) {
+      toast.error(
+        `Horário mínimo da encomenda: ${formatarRetiradaEncomenda(minRetiradaEncomenda)}.`,
+      );
       return;
     }
 
@@ -2016,7 +2049,15 @@ export function DeliveryCheckout() {
                     ? "Horário de retirada"
                     : "Horário de entrega"}
                 </h2>
-                {!lojaAberta ? (
+                {temEncomendaAgendada && minRetiradaEncomenda ? (
+                  <p className="mt-0.5 text-xs text-amber-700">
+                    Seu pedido tem item sob encomenda. Horário mínimo:{" "}
+                    <strong>
+                      {formatarRetiradaEncomenda(minRetiradaEncomenda)}
+                    </strong>
+                    . Você pode escolher um horário posterior.
+                  </p>
+                ) : !lojaAberta ? (
                   <p className="mt-0.5 text-xs text-amber-700">
                     {statusLoja?.motivo || "Loja fechada no momento."} Escolha
                     um horário de hoje.
@@ -2036,7 +2077,7 @@ export function DeliveryCheckout() {
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {lojaAberta && (
+                {lojaAberta && !temEncomendaAgendada && (
                   <button
                     type="button"
                     onClick={() => setAgendadoPara(null)}
