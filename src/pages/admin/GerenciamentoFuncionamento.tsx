@@ -1,4 +1,4 @@
-import { Clock, Loader2, PauseCircle, Save, Store } from "lucide-react";
+import { Clock, DoorClosed, Loader2, PauseCircle, Save, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -6,6 +6,8 @@ import {
   buscarConfigLoja,
   buscarHorariosLoja,
   buscarStatusLoja,
+  fecharLojaManualmente,
+  MENSAGEM_FECHAMENTO_PADRAO,
   MINUTOS_ABERTURA_RAPIDA_LOJA,
   NOMES_DIAS_SEMANA,
   salvarConfigLoja,
@@ -30,6 +32,8 @@ export function GerenciamentoFuncionamento() {
   const [config, setConfig] = useState<LojaConfig | null>(null);
   const [horarios, setHorarios] = useState<LojaHorario[]>([]);
   const [status, setStatus] = useState<StatusLoja | null>(null);
+
+  const [fechando, setFechando] = useState(false);
 
   useEffect(() => {
     void carregarTudo();
@@ -94,7 +98,7 @@ export function GerenciamentoFuncionamento() {
         const { ifoodPausarLoja, ifoodReabrirLoja } = await import(
           "../../lib/ifoodAdmin"
         );
-        if (config.pausado) {
+        if (config.pausado || config.fechado_manual) {
           const minutos = config.pausado_ate
             ? Math.max(
               1,
@@ -103,8 +107,13 @@ export function GerenciamentoFuncionamento() {
                   60_000,
               ),
             )
-            : 60;
-          await ifoodPausarLoja(minutos, config.mensagem_pausa || "Loja pausada");
+            : config.fechado_manual
+              ? 480
+              : 60;
+          const descricao = config.pausado
+            ? config.mensagem_pausa || "Loja pausada"
+            : config.mensagem_fechamento || "Loja fechada";
+          await ifoodPausarLoja(minutos, descricao);
         } else {
           await ifoodReabrirLoja();
         }
@@ -120,6 +129,29 @@ export function GerenciamentoFuncionamento() {
       toast.error("Erro ao salvar as configurações.");
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const fecharAgora = async () => {
+    if (!config) return;
+    try {
+      setFechando(true);
+      const mensagem =
+        config.mensagem_fechamento?.trim() || MENSAGEM_FECHAMENTO_PADRAO;
+      await fecharLojaManualmente(mensagem);
+      const [cfg, st] = await Promise.all([
+        buscarConfigLoja(),
+        buscarStatusLoja(),
+      ]);
+      setConfig(cfg);
+      setStatus(st);
+      toast.success("Loja fechada. Novos pedidos estão bloqueados.");
+    } catch (erro: unknown) {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[ERRO - FUNCIONAMENTO] Falha ao fechar:", mensagem);
+      toast.error("Não foi possível fechar a loja.");
+    } finally {
+      setFechando(false);
     }
   };
 
@@ -140,7 +172,7 @@ export function GerenciamentoFuncionamento() {
           Funcionamento
         </span>
       }
-      description="Horários da loja, abertura/pausa temporária e limite de pedidos. Fora do horário, o checkout é bloqueado automaticamente."
+      description="Horários da loja, abertura/pausa/fechamento manual e limite de pedidos. Fora do horário, o checkout é bloqueado automaticamente."
       actions={
         status ? (
           <span
@@ -217,6 +249,8 @@ export function GerenciamentoFuncionamento() {
                   ).toISOString(),
                   pausado: false,
                   pausado_ate: null,
+                  fechado_manual: false,
+                  mensagem_fechamento: null,
                 });
               }}
             >
@@ -231,6 +265,12 @@ export function GerenciamentoFuncionamento() {
                   abertura_temporaria_ate: abertura_temporaria
                     ? config.abertura_temporaria_ate
                     : null,
+                  fechado_manual: abertura_temporaria
+                    ? false
+                    : config.fechado_manual,
+                  mensagem_fechamento: abertura_temporaria
+                    ? null
+                    : config.mensagem_fechamento,
                 })
               }
             />
@@ -286,6 +326,77 @@ export function GerenciamentoFuncionamento() {
                 setConfig({ ...config, mensagem_pausa: e.target.value })
               }
               placeholder="Ex.: Pausa rápida! Voltamos às 15h."
+              className="mt-1"
+            />
+          </div>
+        )}
+      </section>
+
+      {/* Fechamento manual */}
+      <section className="rounded-2xl border border-gray-200 dark:border-[#2a2c30] bg-white dark:bg-[#181a1b] p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-bold text-gray-950 dark:text-white flex items-center gap-2">
+              <DoorClosed size={18} className="text-[#6b1d2a]" />
+              Fechar loja
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Encerra os pedidos imediatamente, mesmo dentro do horário cadastrado.
+              Permanece fechada até você desligar manualmente — ideal quando
+              fecham mais cedo por imprevisto.
+            </p>
+            {config.fechado_manual && (
+              <p className="text-xs font-semibold text-red-700 dark:text-red-400">
+                Loja fechada manualmente até você reabrir.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="font-semibold border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
+              disabled={fechando || config.fechado_manual}
+              onClick={() => void fecharAgora()}
+            >
+              {fechando ? (
+                <Loader2 className="animate-spin" size={18} />
+              ) : (
+                "Fechar agora"
+              )}
+            </Button>
+            <Switch
+              checked={config.fechado_manual}
+              onCheckedChange={(fechado_manual) =>
+                setConfig({
+                  ...config,
+                  fechado_manual,
+                  mensagem_fechamento: fechado_manual
+                    ? config.mensagem_fechamento || MENSAGEM_FECHAMENTO_PADRAO
+                    : null,
+                  abertura_temporaria: fechado_manual
+                    ? false
+                    : config.abertura_temporaria,
+                  abertura_temporaria_ate: fechado_manual
+                    ? null
+                    : config.abertura_temporaria_ate,
+                })
+              }
+            />
+          </div>
+        </div>
+
+        {config.fechado_manual && (
+          <div>
+            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Mensagem exibida ao cliente
+            </label>
+            <Input
+              value={config.mensagem_fechamento ?? ""}
+              onChange={(e) =>
+                setConfig({ ...config, mensagem_fechamento: e.target.value })
+              }
+              placeholder={MENSAGEM_FECHAMENTO_PADRAO}
               className="mt-1"
             />
           </div>

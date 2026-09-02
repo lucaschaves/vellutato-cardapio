@@ -38,10 +38,10 @@ export function GradeRegrasEncomenda({
                 encomenda de hoje até este horário
               </span>
             </th>
-            <th className="px-3 py-2 font-semibold min-w-[5rem]">
+            <th className="px-3 py-2 font-semibold min-w-[7rem]">
               Retirada
               <span className="block font-normal normal-case text-[0.65rem]">
-                pedido + X horas
+                prazo após o pedido / limite
               </span>
             </th>
             <th className="px-3 py-2 font-semibold min-w-[5rem]">
@@ -96,18 +96,13 @@ export function GradeRegrasEncomenda({
               </td>
               <td className="px-3 py-2">
                 <input
-                  type="number"
-                  min={0}
-                  max={48}
-                  value={r.horas_ate_retirada}
+                  type="time"
+                  value={r.tempo_retirada}
                   disabled={somenteLeitura || !r.ativo}
                   onChange={(e) =>
                     onChange(
                       atualizarDia(regras, r.dia_semana, {
-                        horas_ate_retirada: Math.max(
-                          0,
-                          Math.min(48, Number(e.target.value) || 0),
-                        ),
+                        tempo_retirada: e.target.value || "02:00",
                       }),
                     )
                   }

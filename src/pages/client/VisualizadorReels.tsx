@@ -6,10 +6,15 @@ import { toast } from "sonner";
 import { supabase } from "../../lib/supabase";
 import { track } from "../../lib/analytics";
 import { ModalOfertaPosAdicionar } from "../../components/ModalOfertaPosAdicionar";
+import { AvisoEncomenda } from "../../components/AvisoEncomenda";
 import {
   obterQuantidadeMaxima,
   produtoEstaEsgotado,
 } from "../../lib/estoque";
+import {
+  buscarDisponibilidadeEncomenda,
+  type DisponibilidadeEncomenda,
+} from "../../lib/encomendaProgramada";
 import { renderizarDescricaoComQuebras } from "../../lib/descricaoProduto.tsx";
 import {
   lerTipoConsumo,
@@ -54,6 +59,7 @@ interface ProdutoDetalhe {
   ativo: boolean;
   controlar_estoque?: boolean;
   quantidade_estoque?: number;
+  encomenda_programada?: boolean;
   tipo?: "simples" | "combo";
   disponibilidade?: DisponibilidadeProduto;
   adicional_obrigatorio?: boolean;
@@ -318,6 +324,9 @@ export function VisualizadorReels() {
     [],
   );
   const [modalPosAdicionarAberto, setModalPosAdicionarAberto] = useState(false);
+  const [dispEncomenda, setDispEncomenda] = useState<DisponibilidadeEncomenda | null>(
+    null,
+  );
   const [cabecalhoColado, setCabecalhoColado] = useState(false);
   const painelScrollRef = useRef<HTMLDivElement>(null);
   const midiaTabletRef = useRef<HTMLDivElement>(null);
@@ -355,6 +364,7 @@ export function VisualizadorReels() {
     setCarregandoAdicionais(true);
     setCarregandoOfertas(true);
     setCarregandoCombo(false);
+    setDispEncomenda(null);
 
     async function carregarProduto() {
       try {
@@ -367,6 +377,16 @@ export function VisualizadorReels() {
         if (cancelado) return;
         if (errProd) throw errProd;
         setProduto(prod);
+        if (prod.encomenda_programada) {
+          try {
+            const disp = await buscarDisponibilidadeEncomenda(prod.id);
+            if (!cancelado) setDispEncomenda(disp);
+          } catch {
+            if (!cancelado) setDispEncomenda(null);
+          }
+        } else if (!cancelado) {
+          setDispEncomenda(null);
+        }
         track("product_view", {
           produtoId: prod.id,
           props: { nome: prod.nome },
@@ -584,8 +604,16 @@ export function VisualizadorReels() {
       deltaCombo) *
     quantidade;
 
-  const esgotado = produto ? produtoEstaEsgotado(produto) : false;
-  const quantidadeMaxima = produto ? obterQuantidadeMaxima(produto) : null;
+  const esgotado = produto
+    ? produtoEstaEsgotado(produto, dispEncomenda ?? undefined)
+    : false;
+  const quantidadeMaxima = produto
+    ? obterQuantidadeMaxima(produto, dispEncomenda ?? undefined)
+    : null;
+  const modoEncomenda =
+    dispEncomenda?.modo === "pronto" || dispEncomenda?.modo === "encomenda"
+      ? dispEncomenda.modo
+      : undefined;
   const ehCombo = produto?.tipo === "combo";
 
   const confirmarPedido = () => {
@@ -616,6 +644,14 @@ export function VisualizadorReels() {
       toast.error(`Escolha no máximo ${maxAdc} adicional(is).`);
       return;
     }
+    if (quantidadeMaxima != null && quantidade > quantidadeMaxima) {
+      toast.error(
+        quantidadeMaxima === 0
+          ? "Produto indisponível no momento."
+          : `Quantidade máxima disponível: ${quantidadeMaxima}.`,
+      );
+      return;
+    }
     adicionarAoCarrinho({
       produtoId: produto.id,
       nome: produto.nome,
@@ -627,6 +663,8 @@ export function VisualizadorReels() {
       adicionais: adicionaisSelecionados,
       escolhasCombo: ehCombo ? escolhasCombo : undefined,
       disponibilidade: normalizarDisponibilidade(produto.disponibilidade),
+      modoEncomenda,
+      retiradaEncomenda: dispEncomenda?.retirada_em ?? null,
     });
     toast.success("Produto adicionado ao seu pedido!");
 
@@ -822,6 +860,10 @@ export function VisualizadorReels() {
                     )}
                   </div>
                 </div>
+
+                {dispEncomenda && (
+                  <AvisoEncomenda disp={dispEncomenda} className="mb-4" />
+                )}
 
                 <p className="text-gray-600 dark:text-gray-400 text-sm md:landscape:text-base leading-relaxed mb-8 transition-colors">
                   {renderizarDescricaoComQuebras(produto.descricao)}
@@ -1136,7 +1178,7 @@ export function VisualizadorReels() {
                         ) {
                           toast.error(
                             quantidadeMaxima === 0
-                              ? "Produto esgotado."
+                              ? "Produto indisponível no momento."
                               : `Máximo disponível: ${quantidadeMaxima}`,
                           );
                           return q;

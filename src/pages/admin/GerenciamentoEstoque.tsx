@@ -15,6 +15,15 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { ifoodSyncProdutoSilencioso } from "../../lib/ifoodAdmin";
 import { alertaMargemBaixa } from "../../lib/fichasTecnicas";
+import {
+  buscarEstoqueProntoHojeLote,
+  salvarEstoqueProntoHoje,
+} from "../../lib/encomendaProgramada";
+import {
+  produtoControlaQuantidade,
+  quantidadeEstoqueLista,
+  rotuloQuantidadeEstoque,
+} from "../../lib/estoque";
 
 // Shadcn/ui
 import { toast } from "sonner";
@@ -49,6 +58,7 @@ interface ProdutoEstoque {
   ativo: boolean;
   controlar_estoque: boolean;
   quantidade_estoque: number;
+  encomenda_programada?: boolean;
   categoria_id: string;
   video_url: string | null;
   adicional_obrigatorio: boolean;
@@ -87,6 +97,10 @@ export function GerenciamentoEstoque() {
   const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoque | null>(
     null,
   );
+  /** Unidades prontas hoje (produtos encomenda_programada). */
+  const [estoqueProntoHoje, setEstoqueProntoHoje] = useState<
+    Record<string, number>
+  >({});
 
   useEffect(() => {
     carregarProdutos();
@@ -100,7 +114,8 @@ export function GerenciamentoEstoque() {
         .select(
           `
           id, nome, descricao, imagem_url, preco, preco_promocional, em_promocao,
-          ativo, controlar_estoque, quantidade_estoque, categoria_id, video_url,
+          ativo, controlar_estoque, quantidade_estoque, encomenda_programada,
+          categoria_id, video_url,
           adicional_obrigatorio, adicional_maximo, ordem, tipo, ficha_produto_id,
           categorias ( nome, ordem )
         `,
@@ -109,7 +124,18 @@ export function GerenciamentoEstoque() {
         .order("nome", { ascending: true });
 
       if (error) throw new Error(error.message);
-      setProdutos((data as unknown as ProdutoEstoque[]) || []);
+      const lista = (data as unknown as ProdutoEstoque[]) || [];
+      setProdutos(lista);
+
+      const idsEncomenda = lista
+        .filter((p) => p.encomenda_programada)
+        .map((p) => p.id);
+      setEstoqueProntoHoje(
+        idsEncomenda.length > 0
+          ? await buscarEstoqueProntoHojeLote(idsEncomenda)
+          : {},
+      );
+
       const { data: fichas } = await supabase
         .from("fichas_tecnicas")
         .select("id, custo_calculado");
@@ -163,21 +189,34 @@ export function GerenciamentoEstoque() {
     }
   };
 
-  const atualizarQuantidade = async (id: string, novaQuantidade: number) => {
+  const quantidadeExibida = (produto: ProdutoEstoque): number =>
+    quantidadeEstoqueLista(produto, estoqueProntoHoje[produto.id] ?? 0);
+
+  const atualizarQuantidade = async (
+    produto: ProdutoEstoque,
+    novaQuantidade: number,
+  ) => {
     if (novaQuantidade < 0) return;
+    const id = produto.id;
     try {
       setProcessandoId(id);
-      const { error } = await supabase
-        .from("produtos")
-        .update({ quantidade_estoque: novaQuantidade })
-        .eq("id", id);
-      if (error) throw new Error(error.message);
 
-      setProdutos(
-        produtos.map((p) =>
-          p.id === id ? { ...p, quantidade_estoque: novaQuantidade } : p,
-        ),
-      );
+      if (produto.encomenda_programada) {
+        await salvarEstoqueProntoHoje(id, novaQuantidade);
+        setEstoqueProntoHoje((prev) => ({ ...prev, [id]: novaQuantidade }));
+      } else {
+        const { error } = await supabase
+          .from("produtos")
+          .update({ quantidade_estoque: novaQuantidade })
+          .eq("id", id);
+        if (error) throw new Error(error.message);
+        setProdutos((prev) =>
+          prev.map((p) =>
+            p.id === id ? { ...p, quantidade_estoque: novaQuantidade } : p,
+          ),
+        );
+      }
+
       ifoodSyncProdutoSilencioso(id);
     } catch (erro: any) {
       console.error(
@@ -602,6 +641,14 @@ export function GerenciamentoEstoque() {
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium">{produto.nome}</span>
+                            {produto.encomenda_programada && (
+                              <Badge
+                                variant="outline"
+                                className="text-[0.625rem] text-amber-800 border-amber-400 dark:text-amber-300"
+                              >
+                                Encomenda
+                              </Badge>
+                            )}
                             {produto.em_promocao && (
                               <Badge className="bg-[#6b1d2a] hover:bg-[#6b1d2a] text-white text-[0.625rem]">
                                 PROMO
@@ -641,6 +688,12 @@ export function GerenciamentoEstoque() {
                               {produto.descricao}
                             </span>
                           )}
+                          {produtoControlaQuantidade(produto) && (
+                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 mt-0.5">
+                              {quantidadeExibida(produto)}{" "}
+                              {rotuloQuantidadeEstoque(produto)}
+                            </span>
+                          )}
                           <span className="text-xs text-cookie-accent font-semibold mt-1">
                             R$ {produto.preco.toFixed(2).replace(".", ",")}
                             {produto.em_promocao &&
@@ -657,42 +710,49 @@ export function GerenciamentoEstoque() {
                       </TableCell>
 
                       <TableCell className="text-center">
-                        {produto.controlar_estoque ? (
-                          <div className="flex items-center justify-center gap-3">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() =>
-                                atualizarQuantidade(
-                                  produto.id,
-                                  produto.quantidade_estoque - 1,
-                                )
-                              }
-                              disabled={
-                                processandoId === produto.id ||
-                                produto.quantidade_estoque <= 0
-                              }
-                            >
-                              <Minus size={14} />
-                            </Button>
-                            <span className="w-8 text-center font-bold text-lg">
-                              {produto.quantidade_estoque}
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() =>
-                                atualizarQuantidade(
-                                  produto.id,
-                                  produto.quantidade_estoque + 1,
-                                )
-                              }
-                              disabled={processandoId === produto.id}
-                            >
-                              <Plus size={14} />
-                            </Button>
+                        {produtoControlaQuantidade(produto) ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center justify-center gap-3">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() =>
+                                  atualizarQuantidade(
+                                    produto,
+                                    quantidadeExibida(produto) - 1,
+                                  )
+                                }
+                                disabled={
+                                  processandoId === produto.id ||
+                                  quantidadeExibida(produto) <= 0
+                                }
+                              >
+                                <Minus size={14} />
+                              </Button>
+                              <span className="w-8 text-center font-bold text-lg tabular-nums">
+                                {quantidadeExibida(produto)}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() =>
+                                  atualizarQuantidade(
+                                    produto,
+                                    quantidadeExibida(produto) + 1,
+                                  )
+                                }
+                                disabled={processandoId === produto.id}
+                              >
+                                <Plus size={14} />
+                              </Button>
+                            </div>
+                            {produto.encomenda_programada && (
+                              <span className="text-[0.625rem] text-amber-700 dark:text-amber-400 font-semibold">
+                                prontas hoje
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <Badge

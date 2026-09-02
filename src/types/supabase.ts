@@ -1222,6 +1222,8 @@ export type Database = {
           id: number
           limite_pedidos_ativos: number | null
           mensagem_pausa: string | null
+          fechado_manual: boolean
+          mensagem_fechamento: string | null
           abertura_temporaria: boolean
           abertura_temporaria_ate: string | null
           pausado: boolean
@@ -1240,6 +1242,8 @@ export type Database = {
           id?: number
           limite_pedidos_ativos?: number | null
           mensagem_pausa?: string | null
+          fechado_manual?: boolean
+          mensagem_fechamento?: string | null
           abertura_temporaria?: boolean
           abertura_temporaria_ate?: string | null
           pausado?: boolean
@@ -1258,6 +1262,8 @@ export type Database = {
           id?: number
           limite_pedidos_ativos?: number | null
           mensagem_pausa?: string | null
+          fechado_manual?: boolean
+          mensagem_fechamento?: string | null
           abertura_temporaria?: boolean
           abertura_temporaria_ate?: string | null
           pausado?: boolean

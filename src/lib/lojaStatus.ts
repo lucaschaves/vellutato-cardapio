@@ -14,6 +14,9 @@ export interface LojaConfig {
   /** ISO; se no futuro, a loja reabre sozinha neste instante. */
   pausado_ate: string | null;
   mensagem_pausa: string | null;
+  /** Força loja fechada até desligar manualmente, mesmo dentro do horário. */
+  fechado_manual: boolean;
+  mensagem_fechamento: string | null;
   /** Força loja aberta fora do horário cadastrado. */
   abertura_temporaria: boolean;
   /** ISO; se no futuro, a abertura temporária encerra neste instante. */
@@ -29,6 +32,8 @@ export interface LojaConfig {
 
 export const MINUTOS_PAUSA_RAPIDA_LOJA = 10;
 export const MINUTOS_ABERTURA_RAPIDA_LOJA = 120;
+export const MENSAGEM_FECHAMENTO_PADRAO =
+  "Fechamos mais cedo hoje. Voltamos no próximo horário de funcionamento.";
 
 export function pausaLojaEfetiva(
   config: Pick<LojaConfig, "pausado" | "pausado_ate">,
@@ -78,7 +83,7 @@ export async function buscarConfigLoja(): Promise<LojaConfig> {
   const { data, error } = await supabase
     .from("loja_config")
     .select(
-      "pausado, pausado_ate, mensagem_pausa, abertura_temporaria, abertura_temporaria_ate, tempo_preparo_min, atraso_primeiro_agendamento_min, limite_pedidos_ativos",
+      "pausado, pausado_ate, mensagem_pausa, fechado_manual, mensagem_fechamento, abertura_temporaria, abertura_temporaria_ate, tempo_preparo_min, atraso_primeiro_agendamento_min, limite_pedidos_ativos",
     )
     .eq("id", 1)
     .single();
@@ -86,6 +91,7 @@ export async function buscarConfigLoja(): Promise<LojaConfig> {
   const row = data as LojaConfig;
   return {
     ...row,
+    fechado_manual: Boolean(row.fechado_manual),
     abertura_temporaria: Boolean(row.abertura_temporaria),
     abertura_temporaria_ate: row.abertura_temporaria_ate ?? null,
     atraso_primeiro_agendamento_min: Number(
@@ -103,6 +109,10 @@ export async function salvarConfigLoja(config: LojaConfig): Promise<void> {
         ? config.pausado_ate
         : null,
       mensagem_pausa: config.mensagem_pausa?.trim() || null,
+      fechado_manual: config.fechado_manual,
+      mensagem_fechamento: config.fechado_manual
+        ? config.mensagem_fechamento?.trim() || null
+        : null,
       abertura_temporaria: config.abertura_temporaria,
       abertura_temporaria_ate: config.abertura_temporaria
         ? config.abertura_temporaria_ate
@@ -158,6 +168,8 @@ export async function abrirLojaPorMinutos(minutos: number): Promise<void> {
       abertura_temporaria_ate: ate,
       pausado: false,
       pausado_ate: null,
+      fechado_manual: false,
+      mensagem_fechamento: null,
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", 1);
@@ -189,6 +201,8 @@ export async function reabrirLoja(): Promise<void> {
     .update({
       pausado: false,
       pausado_ate: null,
+      fechado_manual: false,
+      mensagem_fechamento: null,
       atualizado_em: new Date().toISOString(),
     })
     .eq("id", 1);
@@ -199,6 +213,29 @@ export async function reabrirLoja(): Promise<void> {
     await ifoodReabrirLoja();
   } catch (e) {
     console.warn("[loja] reabrir iFood:", e);
+  }
+}
+
+export async function fecharLojaManualmente(
+  mensagem = MENSAGEM_FECHAMENTO_PADRAO,
+): Promise<void> {
+  const { error } = await supabase
+    .from("loja_config")
+    .update({
+      fechado_manual: true,
+      mensagem_fechamento: mensagem.trim() || MENSAGEM_FECHAMENTO_PADRAO,
+      abertura_temporaria: false,
+      abertura_temporaria_ate: null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq("id", 1);
+  if (error) throw new Error(error.message);
+
+  try {
+    const { ifoodPausarLoja } = await import("./ifoodAdmin");
+    await ifoodPausarLoja(480, mensagem || "Loja fechada (admin)");
+  } catch (e) {
+    console.warn("[loja] fechamento iFood:", e);
   }
 }
 

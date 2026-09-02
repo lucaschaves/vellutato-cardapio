@@ -225,7 +225,9 @@ export function GerenciamentoCatalogo() {
           data.preco_promocional != null ? String(data.preco_promocional) : "",
         );
         setCategoriaId(data.categoria_id);
-        setControlarEstoque(data.controlar_estoque);
+        setControlarEstoque(
+          Boolean(data.encomenda_programada) || Boolean(data.controlar_estoque),
+        );
         setQuantidadeEstoque(String(data.quantidade_estoque ?? 0));
         setEmPromocao(data.em_promocao);
         setDestaque(Boolean(data.destaque));
@@ -434,10 +436,13 @@ export function GerenciamentoCatalogo() {
         categoria_id: categoriaId,
         imagem_url: imagemUrl,
         video_url: videoUrl,
-        controlar_estoque: controlarEstoque,
-        quantidade_estoque: controlarEstoque
-          ? parseInt(quantidadeEstoque, 10)
-          : 0,
+        controlar_estoque:
+          controlarEstoque ||
+          (tipo === "simples" && encomendaProgramada),
+        quantidade_estoque:
+          controlarEstoque && !encomendaProgramada
+            ? parseInt(quantidadeEstoque, 10)
+            : 0,
         ativo,
         tipo,
         disponibilidade,
@@ -942,7 +947,11 @@ export function GerenciamentoCatalogo() {
                     <input
                       type="checkbox"
                       checked={encomendaProgramada}
-                      onChange={(e) => setEncomendaProgramada(e.target.checked)}
+                      onChange={(e) => {
+                        const ativo = e.target.checked;
+                        setEncomendaProgramada(ativo);
+                        if (ativo) setControlarEstoque(true);
+                      }}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
@@ -983,7 +992,7 @@ export function GerenciamentoCatalogo() {
 
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">
-                        Unidades prontas hoje
+                        Unidades prontas hoje (controle de estoque)
                       </label>
                       <input
                         type="number"
@@ -993,6 +1002,7 @@ export function GerenciamentoCatalogo() {
                         className="w-full px-3 py-2 rounded border dark:bg-[#1a1815] dark:border-gray-700"
                       />
                       <p className="text-xs text-gray-500 mt-1">
+                        Conta como estoque na Gestão de Estoque e no cardápio.
                         Vendidas primeiro, mesmo depois do horário limite.
                       </p>
                     </div>

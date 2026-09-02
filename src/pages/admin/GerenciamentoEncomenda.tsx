@@ -130,11 +130,12 @@ export function GerenciamentoEncomenda() {
           <ul className="mt-2 space-y-1 list-disc pl-5 text-amber-900/90 dark:text-amber-100/90">
             <li>
               <strong>Horário limite:</strong> antes deste horário, a encomenda
-              vale para hoje (retirada ≈ pedido + X horas).
+              vale para hoje (retirada ≈ pedido + prazo).
             </li>
             <li>
               <strong>Depois do limite:</strong> a encomenda vai para daqui a N
-              dias (próximo dia em que a loja abre).
+              dias (próximo dia em que a loja abre). O horário de retirada é o
+              horário limite daquele dia + o prazo (ex.: 12:00 + 02:00 → 14:00).
             </li>
             <li>
               Unidades <strong>prontas hoje</strong> no catálogo sempre vendem

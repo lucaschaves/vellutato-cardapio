@@ -103,7 +103,9 @@ export interface RegraEncomendaDia {
   dia_semana: number;
   ativo: boolean | null;
   cutoff: string | null;
-  horas_ate_retirada: number | null;
+  /** Intervalo Postgres (`02:30:00`) ou legado em horas inteiras. */
+  tempo_ate_retirada?: string | null;
+  horas_ate_retirada?: number | null;
   dias_apos_cutoff: number | null;
   limite_encomendas: number | null;
 }
@@ -116,7 +118,8 @@ export interface RegraEncomendaDiaEditavel {
   dia_semana: number;
   ativo: boolean;
   horario_limite: string;
-  horas_ate_retirada: number;
+  /** Prazo até retirada no formato HH:MM (input time). */
+  tempo_retirada: string;
   dias_apos_limite: number;
   limite_encomendas: number;
 }
@@ -135,6 +138,34 @@ export function horarioLimiteParaInput(
   return valor.slice(0, 5);
 }
 
+/** Converte intervalo/horas do banco para value de `<input type="time">`. */
+export function tempoRetiradaParaInput(valor: unknown): string {
+  if (valor == null || valor === "") return "02:00";
+  if (typeof valor === "number" && Number.isFinite(valor)) {
+    const totalMin = Math.max(0, Math.round(valor * 60));
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  const s = String(valor).trim();
+  const clock = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(s);
+  if (clock) {
+    return `${String(Number(clock[1])).padStart(2, "0")}:${clock[2]}`;
+  }
+  const hours = /(\d+)\s*hours?/i.exec(s);
+  const mins = /(\d+)\s*min/i.exec(s);
+  if (hours || mins) {
+    const h = hours ? Number(hours[1]) : 0;
+    const m = mins ? Number(mins[1]) : 0;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  return "02:00";
+}
+
+export function tempoRetiradaParaBanco(hhmm: string): string {
+  return horarioLimiteParaBanco(hhmm || "02:00");
+}
+
 export function montarGradeRegras(
   regrasDb: RegraEncomendaDia[] = [],
 ): RegraEncomendaDiaEditavel[] {
@@ -144,7 +175,9 @@ export function montarGradeRegras(
       dia_semana,
       ativo: r?.ativo ?? true,
       horario_limite: horarioLimiteParaInput(r?.cutoff),
-      horas_ate_retirada: r?.horas_ate_retirada ?? 2,
+      tempo_retirada: tempoRetiradaParaInput(
+        r?.tempo_ate_retirada ?? r?.horas_ate_retirada ?? 2,
+      ),
       dias_apos_limite: r?.dias_apos_cutoff ?? 1,
       limite_encomendas: r?.limite_encomendas ?? 30,
     };
@@ -154,14 +187,20 @@ export function montarGradeRegras(
 export function regrasEditaveisParaDb(
   regras: RegraEncomendaDiaEditavel[],
 ): RegraEncomendaDia[] {
-  return regras.map((r) => ({
-    dia_semana: r.dia_semana,
-    ativo: r.ativo,
-    cutoff: horarioLimiteParaBanco(r.horario_limite),
-    horas_ate_retirada: r.horas_ate_retirada,
-    dias_apos_cutoff: r.dias_apos_limite,
-    limite_encomendas: r.limite_encomendas,
-  }));
+  return regras.map((r) => {
+    const tempo = tempoRetiradaParaBanco(r.tempo_retirada);
+    const [h] = tempo.split(":");
+    return {
+      dia_semana: r.dia_semana,
+      ativo: r.ativo,
+      cutoff: horarioLimiteParaBanco(r.horario_limite),
+      tempo_ate_retirada: tempo,
+      // Espelho legado (horas cheias) para colunas ainda existentes.
+      horas_ate_retirada: Number(h) || 0,
+      dias_apos_cutoff: r.dias_apos_limite,
+      limite_encomendas: r.limite_encomendas,
+    };
+  });
 }
 
 export async function buscarRegrasTemplate(
@@ -170,7 +209,7 @@ export async function buscarRegrasTemplate(
   const { data, error } = await supabase
     .from("encomenda_programada_template_dias")
     .select(
-      "dia_semana, ativo, cutoff, horas_ate_retirada, dias_apos_cutoff, limite_encomendas",
+      "dia_semana, ativo, cutoff, tempo_ate_retirada, horas_ate_retirada, dias_apos_cutoff, limite_encomendas",
     )
     .eq("template_id", templateId)
     .order("dia_semana");
@@ -187,6 +226,7 @@ export async function salvarRegrasTemplate(
     dia_semana: r.dia_semana,
     ativo: r.ativo ?? true,
     cutoff: r.cutoff ?? "12:00:00",
+    tempo_ate_retirada: r.tempo_ate_retirada ?? "02:00:00",
     horas_ate_retirada: r.horas_ate_retirada ?? 2,
     dias_apos_cutoff: r.dias_apos_cutoff ?? 1,
     limite_encomendas: r.limite_encomendas ?? 30,
@@ -224,29 +264,42 @@ export async function listarTemplatesEncomenda(): Promise<TemplateEncomenda[]> {
   return (data ?? []) as TemplateEncomenda[];
 }
 
+function dataReferenciaSpHoje(): string {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
 export async function buscarEstoqueProntoHoje(
   produtoId: string,
 ): Promise<number> {
-  const hoje = new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/Sao_Paulo",
-  });
+  const mapa = await buscarEstoqueProntoHojeLote([produtoId]);
+  return mapa[produtoId] ?? 0;
+}
+
+export async function buscarEstoqueProntoHojeLote(
+  produtoIds: string[],
+): Promise<Record<string, number>> {
+  if (produtoIds.length === 0) return {};
+  const hoje = dataReferenciaSpHoje();
   const { data, error } = await supabase
     .from("produto_estoque_pronto")
-    .select("quantidade")
-    .eq("produto_id", produtoId)
+    .select("produto_id, quantidade")
     .eq("referencia_data", hoje)
-    .maybeSingle();
+    .in("produto_id", produtoIds);
   if (error) throw new Error(error.message);
-  return Number(data?.quantidade ?? 0);
+  const map: Record<string, number> = {};
+  for (const row of data ?? []) {
+    map[row.produto_id as string] = Number(row.quantidade ?? 0);
+  }
+  return map;
 }
 
 export async function salvarEstoqueProntoHoje(
   produtoId: string,
   quantidade: number,
 ): Promise<void> {
-  const hoje = new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/Sao_Paulo",
-  });
+  const hoje = dataReferenciaSpHoje();
   const qtd = Math.max(0, Math.floor(quantidade));
   const { error } = await supabase.from("produto_estoque_pronto").upsert(
     {
@@ -265,7 +318,7 @@ export async function buscarRegrasEncomendaProduto(
   const { data, error } = await supabase
     .from("produto_encomenda_regras")
     .select(
-      "dia_semana, ativo, cutoff, horas_ate_retirada, dias_apos_cutoff, limite_encomendas",
+      "dia_semana, ativo, cutoff, tempo_ate_retirada, horas_ate_retirada, dias_apos_cutoff, limite_encomendas",
     )
     .eq("produto_id", produtoId)
     .order("dia_semana");
@@ -287,6 +340,7 @@ export async function salvarRegrasEncomendaProduto(
     dia_semana: r.dia_semana,
     ativo: r.ativo ?? true,
     cutoff: r.cutoff,
+    tempo_ate_retirada: r.tempo_ate_retirada,
     horas_ate_retirada: r.horas_ate_retirada,
     dias_apos_cutoff: r.dias_apos_cutoff,
     limite_encomendas: r.limite_encomendas,
