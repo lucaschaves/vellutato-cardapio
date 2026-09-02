@@ -1,4 +1,4 @@
-import { Clock, Copy, Minus, Plus, Ticket, Trash2 } from "lucide-react";
+import { Copy, Minus, Plus, Ticket, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -53,15 +53,17 @@ import {
 import { produtoEstaEsgotado } from "../../lib/estoque";
 import {
   buscarDisponibilidadeEncomendaLote,
+  carrinhoExigeAgendamentoEncomenda,
+  carrinhoTemProdutoEncomenda,
   formatarRetiradaEncomenda,
   minimoRetiradaEncomendaCarrinho,
+  modoEncomendaPorAgendamento,
+  pisoProducaoEncomendaCarrinho,
   resumoItensEncomenda,
 } from "../../lib/encomendaProgramada";
-import {
-  listarSlotsAgendamentoHoje,
-  rotuloSlot,
-} from "../../lib/lojaAgendamento";
+import { rotuloSlot } from "../../lib/lojaAgendamento";
 import type { StatusLoja } from "../../lib/lojaStatus";
+import { SeletorHorarioPedido } from "../../components/SeletorHorarioPedido";
 import { ErroNegocioCheckout } from "../../lib/pedidos";
 import { somarDeltasCombo, type EscolhaCombo } from "../../lib/combos";
 import {
@@ -191,10 +193,8 @@ export function DeliveryCheckout() {
   const [pagarNaLoja, setPagarNaLoja] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
-  const [slotsHoje, setSlotsHoje] = useState<string[]>([]);
-  const [motivoSemSlots, setMotivoSemSlots] = useState<string | null>(null);
   const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
-  const [abreHoje, setAbreHoje] = useState(true);
+  const [diasAgendaveisOk, setDiasAgendaveisOk] = useState(true);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [redirecionandoPagamento, setRedirecionandoPagamento] = useState(false);
   const [freteMsg, setFreteMsg] = useState<string | null>(null);
@@ -251,42 +251,22 @@ export function DeliveryCheckout() {
     })();
   }, []);
 
-  useEffect(() => {
-    let cancelado = false;
-    void (async () => {
-      const minEncomenda = minimoRetiradaEncomendaCarrinho(itens);
-      const r = await listarSlotsAgendamentoHoje(new Date(), {
-        naoAntesDe: minEncomenda,
-      });
-      if (cancelado) return;
-      setStatusLoja(r.status);
-      setSlotsHoje(r.slots);
-      setMotivoSemSlots(r.motivoSemSlots);
-      setAbreHoje(r.abreHoje);
-      if (minEncomenda) {
-        // Encomenda: horário da agenda é o mínimo — escolhe o 1º slot válido.
-        setAgendadoPara((atual) => {
-          if (atual && r.slots.includes(atual)) return atual;
-          return r.slots[0] ?? null;
-        });
-      } else if (r.status?.aberta) {
-        setAgendadoPara(null);
-      } else if (r.slots[0]) {
-        setAgendadoPara(r.slots[0]);
-      } else {
-        setAgendadoPara(null);
-      }
-    })();
-    return () => {
-      cancelado = true;
-    };
-  }, [itens]);
-
   const minRetiradaEncomenda = useMemo(
     () => minimoRetiradaEncomendaCarrinho(itens),
     [itens],
   );
-  const temEncomendaAgendada = Boolean(minRetiradaEncomenda);
+  const pisoProducao = useMemo(
+    () => pisoProducaoEncomendaCarrinho(itens),
+    [itens],
+  );
+  const temProdutoEncomenda = useMemo(
+    () => carrinhoTemProdutoEncomenda(itens),
+    [itens],
+  );
+  const exigeAgendamentoEncomenda = useMemo(
+    () => carrinhoExigeAgendamentoEncomenda(itens),
+    [itens],
+  );
 
   useEffect(() => {
     if (searchParams.get("cancelado") === "1") {
@@ -827,13 +807,12 @@ export function DeliveryCheckout() {
   );
 
   const lojaAberta = Boolean(statusLoja?.aberta);
-  const precisaAgendar = !lojaAberta || temEncomendaAgendada;
-  const agendamentoOk = temEncomendaAgendada
-    ? Boolean(agendadoPara) && slotsHoje.length > 0
-    : abreHoje
-      ? lojaAberta
-        ? true
-        : Boolean(agendadoPara) && slotsHoje.length > 0
+  const precisaAgendar =
+    !lojaAberta || exigeAgendamentoEncomenda || Boolean(agendadoPara);
+  const agendamentoOk = exigeAgendamentoEncomenda
+    ? Boolean(agendadoPara) && diasAgendaveisOk
+    : diasAgendaveisOk
+      ? lojaAberta || Boolean(agendadoPara)
       : false;
 
   const podePagar =
@@ -917,26 +896,23 @@ export function DeliveryCheckout() {
       return;
     }
 
-    if (!abreHoje) {
-      toast.error(
-        motivoSemSlots ||
-          "A loja não abre hoje — não é possível fazer pedidos agora.",
-      );
+    if (!diasAgendaveisOk) {
+      toast.error("Não há horários disponíveis para agendar.");
       return;
     }
     if (precisaAgendar && !agendadoPara) {
       toast.error(
-        temEncomendaAgendada
+        exigeAgendamentoEncomenda
           ? "Escolha um horário a partir do mínimo da encomenda."
           : "Escolha um horário para receber ou retirar o pedido.",
       );
       return;
     }
     if (
-      temEncomendaAgendada &&
       agendadoPara &&
       minRetiradaEncomenda &&
-      new Date(agendadoPara).getTime() < new Date(minRetiradaEncomenda).getTime() - 1000
+      new Date(agendadoPara).getTime() <
+        new Date(minRetiradaEncomenda).getTime() - 1000
     ) {
       toast.error(
         `Horário mínimo da encomenda: ${formatarRetiradaEncomenda(minRetiradaEncomenda)}.`,
@@ -944,7 +920,20 @@ export function DeliveryCheckout() {
       return;
     }
 
-    const itensEncomenda = itens.filter((i) => i.modoEncomenda === "encomenda");
+    const itensResolvidos = itens.map((i) => {
+      if (i.modoEncomenda !== "pronto" && i.modoEncomenda !== "encomenda") {
+        return i;
+      }
+      const modo = modoEncomendaPorAgendamento(agendadoPara, {
+        estoquePronto: i.modoEncomenda === "pronto" ? i.quantidade : 0,
+        quantidade: i.quantidade,
+      });
+      return { ...i, modoEncomenda: modo };
+    });
+
+    const itensEncomenda = itensResolvidos.filter(
+      (i) => i.modoEncomenda === "encomenda",
+    );
     if (itensEncomenda.length > 0 && !confirmarEncomendaRef.current) {
       const linhas = resumoItensEncomenda(itensEncomenda);
       setTextoConfirmarEncomenda(
@@ -1131,7 +1120,7 @@ export function DeliveryCheckout() {
         identificador: modalidade === "entrega" ? "DELIVERY" : "RETIRADA",
         total: totalFinal,
         valor_total: totalFinal,
-        itens: itens.map((item) => ({
+        itens: itensResolvidos.map((item) => ({
           produto_id: item.produtoId,
           quantidade: item.quantidade,
           preco_unitario: item.precoBase,
@@ -2037,76 +2026,26 @@ export function DeliveryCheckout() {
             </section>
           )}
 
-          <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
-            <div className="flex items-start gap-2">
-              <Clock
-                size={18}
-                className="mt-0.5 shrink-0 text-cookie-primary"
-              />
-              <div className="min-w-0 flex-1">
-                <h2 className="font-bold">
-                  {modalidade === "retirada"
-                    ? "Horário de retirada"
-                    : "Horário de entrega"}
-                </h2>
-                {temEncomendaAgendada && minRetiradaEncomenda ? (
-                  <p className="mt-0.5 text-xs text-amber-700">
-                    Seu pedido tem item sob encomenda. Horário mínimo:{" "}
-                    <strong>
-                      {formatarRetiradaEncomenda(minRetiradaEncomenda)}
-                    </strong>
-                    . Você pode escolher um horário posterior.
-                  </p>
-                ) : !lojaAberta ? (
-                  <p className="mt-0.5 text-xs text-amber-700">
-                    {statusLoja?.motivo || "Loja fechada no momento."} Escolha
-                    um horário de hoje.
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-xs text-zinc-500">
-                    O quanto antes, ou escolha um horário de hoje.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {!abreHoje || slotsHoje.length === 0 ? (
-              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-                {motivoSemSlots ||
-                  "Não há horários disponíveis para hoje."}
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {lojaAberta && !temEncomendaAgendada && (
-                  <button
-                    type="button"
-                    onClick={() => setAgendadoPara(null)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-                      agendadoPara == null
-                        ? "border-cookie-primary bg-cookie-primary text-white"
-                        : "border-zinc-200 bg-white text-zinc-700"
-                    }`}
-                  >
-                    O quanto antes
-                  </button>
-                )}
-                {slotsHoje.map((slot) => (
-                  <button
-                    key={slot}
-                    type="button"
-                    onClick={() => setAgendadoPara(slot)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-                      agendadoPara === slot
-                        ? "border-cookie-primary bg-cookie-primary text-white"
-                        : "border-zinc-200 bg-white text-zinc-700"
-                    }`}
-                  >
-                    {rotuloSlot(slot)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
+          <SeletorHorarioPedido
+            titulo={
+              modalidade === "retirada"
+                ? "Horário de retirada"
+                : "Horário de entrega"
+            }
+            naoAntesDe={minRetiradaEncomenda}
+            pisoProducao={pisoProducao}
+            exigirHorario={exigeAgendamentoEncomenda || !lojaAberta}
+            permitirQuantoAntes={lojaAberta && !exigeAgendamentoEncomenda}
+            value={agendadoPara}
+            onChange={setAgendadoPara}
+            onStatusLoja={setStatusLoja}
+            onDiasCarregados={(n) => setDiasAgendaveisOk(n > 0)}
+            avisoMinimo={
+              temProdutoEncomenda && !exigeAgendamentoEncomenda
+                ? "Há item com unidades prontas: pode retirar agora ou agendar (o horário vale para todo o pedido)."
+                : null
+            }
+          />
 
           <section className="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3">
             <div className="space-y-1">

@@ -6,6 +6,8 @@ export interface DisponibilidadeEncomenda {
   modo: ModoDisponibilidadeEncomenda;
   encomenda_programada: boolean;
   estoque_pronto: number | null;
+  /** Pode agendar produção (mesmo com unidades prontas). */
+  pode_agendar: boolean;
   retirada_em: string | null;
   encomendas_restantes: number | null;
   mensagem: string;
@@ -24,11 +26,17 @@ export function parseDisponibilidadeEncomenda(
 ): DisponibilidadeEncomenda {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const modo = String(o.modo ?? "indisponivel") as ModoDisponibilidadeEncomenda;
+  const modoOk = modo === "pronto" || modo === "encomenda" ? modo : "indisponivel";
+  const podeAgendar =
+    o.pode_agendar == null
+      ? modoOk === "encomenda"
+      : Boolean(o.pode_agendar);
   return {
-    modo: modo === "pronto" || modo === "encomenda" ? modo : "indisponivel",
+    modo: modoOk,
     encomenda_programada: Boolean(o.encomenda_programada),
     estoque_pronto:
       o.estoque_pronto == null ? null : Number(o.estoque_pronto),
+    pode_agendar: podeAgendar,
     retirada_em: o.retirada_em ? String(o.retirada_em) : null,
     encomendas_restantes:
       o.encomendas_restantes == null ? null : Number(o.encomendas_restantes),
@@ -375,7 +383,9 @@ export function resumoItensEncomenda(
     );
 }
 
-/** Maior `retirada_em` entre itens sob encomenda — horário mínimo do pedido. */
+/**
+ * Maior `retirada_em` entre itens já em modo encomenda — força agendar a partir daí.
+ */
 export function minimoRetiradaEncomendaCarrinho(
   itens: Array<{
     modoEncomenda?: ModoEncomendaItem;
@@ -394,4 +404,75 @@ export function minimoRetiradaEncomendaCarrinho(
     }
   }
   return maxIso;
+}
+
+/** Piso de produção (mesmo com item pronto) — usado ao agendar dia futuro. */
+export function pisoProducaoEncomendaCarrinho(
+  itens: Array<{
+    modoEncomenda?: ModoEncomendaItem;
+    retiradaEncomenda?: string | null;
+  }>,
+): string | null {
+  let maxMs = 0;
+  let maxIso: string | null = null;
+  for (const i of itens) {
+    if (!i.retiradaEncomenda) continue;
+    if (i.modoEncomenda !== "encomenda" && i.modoEncomenda !== "pronto") {
+      continue;
+    }
+    const t = new Date(i.retiradaEncomenda).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (t > maxMs) {
+      maxMs = t;
+      maxIso = i.retiradaEncomenda;
+    }
+  }
+  return maxIso;
+}
+
+/** True se o carrinho tem produto de encomenda programada (pronto ou sob encomenda). */
+export function carrinhoTemProdutoEncomenda(
+  itens: Array<{ modoEncomenda?: ModoEncomendaItem | null }>,
+): boolean {
+  return itens.some(
+    (i) => i.modoEncomenda === "pronto" || i.modoEncomenda === "encomenda",
+  );
+}
+
+/** True se algum item já exige produção sob encomenda (sem “quanto antes”). */
+export function carrinhoExigeAgendamentoEncomenda(
+  itens: Array<{ modoEncomenda?: ModoEncomendaItem | null }>,
+): boolean {
+  return itens.some((i) => i.modoEncomenda === "encomenda");
+}
+
+/**
+ * Resolve modo pelo dia do agendamento (espelha a regra SQL).
+ * Hoje + pronto → pronto; dia futuro ou sem pronto → encomenda.
+ */
+export function modoEncomendaPorAgendamento(
+  agendadoPara: string | null | undefined,
+  opts: {
+    estoquePronto?: number | null;
+    quantidade?: number;
+    podeAgendar?: boolean;
+  } = {},
+): ModoEncomendaItem {
+  const qtd = Math.max(1, opts.quantidade ?? 1);
+  const pronto = Math.max(0, Number(opts.estoquePronto ?? 0));
+  const TZ = "America/Sao_Paulo";
+  const partes = (iso?: string | null) => {
+    const d = iso ? new Date(iso) : new Date();
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return fmt.format(d);
+  };
+  const hoje = partes(null);
+  const diaAg = agendadoPara ? partes(agendadoPara) : hoje;
+  if (diaAg === hoje && pronto >= qtd) return "pronto";
+  return "encomenda";
 }

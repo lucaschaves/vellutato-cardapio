@@ -1,5 +1,4 @@
 import {
-  Clock,
   Loader2,
   Minus,
   Plus,
@@ -50,10 +49,8 @@ import {
   type ModoConsumoItem,
 } from "../../lib/disponibilidadeProduto";
 import { produtoEstaEsgotado } from "../../lib/estoque";
-import {
-  listarSlotsAgendamentoHoje,
-  rotuloSlot,
-} from "../../lib/lojaAgendamento";
+import { SeletorHorarioPedido } from "../../components/SeletorHorarioPedido";
+import { rotuloSlot } from "../../lib/lojaAgendamento";
 import {
   buscarStatusLoja,
   type StatusLoja,
@@ -171,9 +168,7 @@ export function AdminNovoPedido() {
 
   /** Delivery/retirada: null = o quanto antes. */
   const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
-  const [slotsHoje, setSlotsHoje] = useState<string[]>([]);
-  const [abreHoje, setAbreHoje] = useState(true);
-  const [motivoSemSlots, setMotivoSemSlots] = useState<string | null>(null);
+  const [diasAgendaveisOk, setDiasAgendaveisOk] = useState(true);
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
   const [statusPagamento, setStatusPagamento] =
     useState<StatusPagamentoDelivery>("pago");
@@ -189,16 +184,6 @@ export function AdminNovoPedido() {
 
   const modoItens = canal === "balcao" ? modoBalcao : modoCanal(canal);
 
-  const aplicarSlots = (r: Awaited<ReturnType<typeof listarSlotsAgendamentoHoje>>) => {
-    setStatusLoja(r.status);
-    setSlotsHoje(r.slots);
-    setMotivoSemSlots(r.motivoSemSlots);
-    setAbreHoje(r.abreHoje);
-    if (r.status?.aberta) setAgendadoPara(null);
-    else if (r.slots[0]) setAgendadoPara(r.slots[0]);
-    else setAgendadoPara(null);
-  };
-
   useEffect(() => {
     void buscarDeliveryConfig().then(setConfig);
     void supabase
@@ -207,12 +192,12 @@ export function AdminNovoPedido() {
       .eq("ativo", true)
       .order("numero")
       .then(({ data }) => setMesas((data as MesaOpt[]) || []));
-    void listarSlotsAgendamentoHoje().then(aplicarSlots);
+    void buscarStatusLoja().then(setStatusLoja);
   }, []);
 
   useEffect(() => {
     const recarregar = () => {
-      void listarSlotsAgendamentoHoje().then(aplicarSlots);
+      void buscarStatusLoja().then(setStatusLoja);
     };
     window.addEventListener("focus", recarregar);
     return () => window.removeEventListener("focus", recarregar);
@@ -243,7 +228,6 @@ export function AdminNovoPedido() {
     setBairroFreteNome(null);
     setStatusPagamento("pago");
     if (statusLoja?.aberta) setAgendadoPara(null);
-    else if (slotsHoje[0]) setAgendadoPara(slotsHoje[0]);
     else setAgendadoPara(null);
     // Só ao trocar canal — slots/status já carregados no mount
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intencional
@@ -254,7 +238,7 @@ export function AdminNovoPedido() {
   const agendamentoOk =
     !ehDeliveryCanal ||
     lojaAberta ||
-    (Boolean(agendadoPara) && slotsHoje.length > 0);
+    (Boolean(agendadoPara) && diasAgendaveisOk);
 
   const produtosFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -591,9 +575,9 @@ export function AdminNovoPedido() {
       return;
     }
 
-    const slotsAtual = await listarSlotsAgendamentoHoje();
-    aplicarSlots(slotsAtual);
-    const abertaAgora = Boolean(slotsAtual.status?.aberta);
+    const statusAtual = await buscarStatusLoja();
+    setStatusLoja(statusAtual);
+    const abertaAgora = Boolean(statusAtual?.aberta);
 
     if (ehDeliveryCanal) {
       if (!telefone.trim()) {
@@ -606,14 +590,15 @@ export function AdminNovoPedido() {
       }
       if (!abertaAgora && !agendadoPara) {
         toast.warning(
-          slotsAtual.motivoSemSlots ||
-            "Escolha um horário de entrega/retirada ou abra a loja em Funcionamento.",
+          "Escolha um horário de entrega/retirada ou abra a loja em Funcionamento.",
         );
         return;
       }
-    } else if (!abertaAgora) {
-      const st = slotsAtual.status ?? (await buscarStatusLoja());
-      toast.warning(st?.motivo || "Loja fechada. Ative a abertura temporária em Funcionamento.");
+    } else if (!abertaAgora && !agendadoPara) {
+      toast.warning(
+        statusAtual?.motivo ||
+          "Loja fechada. Agende um horário ou ative a abertura temporária.",
+      );
       return;
     } else if (telefone && !telefoneCelularValido(telefone)) {
       toast.warning(mensagemTelefoneInvalido(telefone) || "Telefone inválido");
@@ -885,68 +870,18 @@ export function AdminNovoPedido() {
       </section>
 
       {ehDeliveryCanal && (
-        <section className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-2xl p-4 space-y-3">
-          <div className="flex items-start gap-2">
-            <Clock
-              size={18}
-              className="mt-0.5 shrink-0 text-cookie-primary"
-            />
-            <div className="min-w-0 flex-1">
-              <h2 className="font-bold text-sm uppercase tracking-wider text-gray-500">
-                {canal === "retirada"
-                  ? "Horário de retirada"
-                  : "Horário de entrega"}
-              </h2>
-              {!lojaAberta ? (
-                <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
-                  {statusLoja?.motivo || "Loja fechada no momento."} Escolha um
-                  horário de hoje.
-                </p>
-              ) : (
-                <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
-                  Loja aberta (incl. abertura temporária). Pedido imediato ou
-                  agendado.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {!abreHoje && !lojaAberta && slotsHoje.length === 0 ? (
-            <p className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">
-              {motivoSemSlots || "Não há horários disponíveis para hoje."}
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {lojaAberta && (
-                <button
-                  type="button"
-                  onClick={() => setAgendadoPara(null)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-                    agendadoPara == null
-                      ? "border-cookie-primary bg-cookie-primary text-white"
-                      : "border-gray-200 dark:border-gray-700"
-                  }`}
-                >
-                  O quanto antes
-                </button>
-              )}
-              {slotsHoje.map((slot) => (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => setAgendadoPara(slot)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-                    agendadoPara === slot
-                      ? "border-cookie-primary bg-cookie-primary text-white"
-                      : "border-gray-200 dark:border-gray-700"
-                  }`}
-                >
-                  {rotuloSlot(slot)}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
+        <SeletorHorarioPedido
+          titulo={
+            canal === "retirada" ? "Horário de retirada" : "Horário de entrega"
+          }
+          exigirHorario={!lojaAberta}
+          permitirQuantoAntes={lojaAberta}
+          value={agendadoPara}
+          onChange={setAgendadoPara}
+          onStatusLoja={setStatusLoja}
+          onDiasCarregados={(n) => setDiasAgendaveisOk(n > 0)}
+          className="dark:bg-surface-dark dark:border-gray-800"
+        />
       )}
 
       {ehDeliveryCanal && (

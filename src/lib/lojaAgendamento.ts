@@ -286,3 +286,225 @@ export async function listarSlotsAgendamentoHoje(
         : null,
   };
 }
+
+export type DiaAgendavel = {
+  /** YYYY-MM-DD no calendário SP */
+  dataKey: string;
+  ano: number;
+  mes: number;
+  dia: number;
+  dow: number;
+  ehHoje: boolean;
+  rotulo: string;
+  /** Primeiro horário válido do dia (ISO), se houver. */
+  primeiroSlot: string | null;
+  /** Limites HH:MM para o input. */
+  horaMin: string | null;
+  horaMax: string | null;
+};
+
+export type OpcoesDiasAgendamento = {
+  naoAntesDe?: string | null;
+  /** Quantos dias abertos listar (default 7). */
+  maxDias?: number;
+};
+
+function dataKeySp(ano: number, mes: number, dia: number): string {
+  return `${String(ano).padStart(4, "0")}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+function adicionarDiasSp(
+  ano: number,
+  mes: number,
+  dia: number,
+  delta: number,
+): { ano: number; mes: number; dia: number; dow: number } {
+  // Meio-dia UTC-3 evita edge de DST ao andar dias
+  const base = new Date(`${dataKeySp(ano, mes, dia)}T12:00:00-03:00`);
+  base.setTime(base.getTime() + delta * 24 * 60 * 60 * 1000);
+  const p = partesAgoraSp(base);
+  return { ano: p.ano, mes: p.mes, dia: p.dia, dow: p.dow };
+}
+
+function minutosParaHhmm(m: number): string {
+  const h = Math.floor(m / 60) % 24;
+  const min = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/**
+ * Limites de horário (minutos do dia) para um dia da semana.
+ * Retorna null se a loja não abre.
+ */
+function limitesMinutosDia(opts: {
+  horario: LojaHorario | null | undefined;
+  atrasoAbertura: number;
+  preparo: number;
+  ref: Date;
+  ano: number;
+  mes: number;
+  dia: number;
+  naoAntesMs: number | null;
+}): { minInicio: number; fechaMin: number; atravessa: boolean } | null {
+  const { horario, atrasoAbertura, preparo, ref, ano, mes, dia, naoAntesMs } =
+    opts;
+  if (!horario || !horario.aberto) return null;
+
+  const abre = parseHora(horario.abre);
+  const fecha = parseHora(horario.fecha);
+  const fechaMin = fecha.h * 60 + fecha.m;
+  const atravessa = abre.h * 60 + abre.m >= fechaMin;
+  let minInicio = abre.h * 60 + abre.m + atrasoAbertura;
+
+  const pHoje = partesAgoraSp(ref);
+  const mesmoDia =
+    ano === pHoje.ano && mes === pHoje.mes && dia === pHoje.dia;
+  if (mesmoDia) {
+    minInicio = Math.max(minInicio, pHoje.hora * 60 + pHoje.minuto + preparo);
+  }
+  if (naoAntesMs != null && Number.isFinite(naoAntesMs)) {
+    const lim = partesAgoraSp(new Date(naoAntesMs));
+    if (lim.ano === ano && lim.mes === mes && lim.dia === dia) {
+      minInicio = Math.max(minInicio, lim.hora * 60 + lim.minuto);
+    }
+  }
+  minInicio = arredondarProximo15(minInicio);
+  return { minInicio, fechaMin, atravessa };
+}
+
+/** Lista até N dias com loja aberta a partir de hoje (ou do mínimo). */
+export async function listarDiasAgendamento(
+  ref = new Date(),
+  opts: OpcoesDiasAgendamento = {},
+): Promise<{
+  status: StatusLoja | null;
+  dias: DiaAgendavel[];
+  motivoSemDias: string | null;
+}> {
+  const [status, horarios] = await Promise.all([
+    buscarStatusLoja(),
+    buscarHorariosLoja(),
+  ]);
+  const preparo = Math.max(0, status?.tempo_preparo_min ?? 0);
+  const atrasoAbertura = Math.max(
+    0,
+    status?.atraso_primeiro_agendamento_min ?? 15,
+  );
+  const maxDias = Math.max(1, Math.min(opts.maxDias ?? 7, 14));
+  const naoAntesMs = opts.naoAntesDe
+    ? new Date(opts.naoAntesDe).getTime()
+    : null;
+
+  const pHoje = partesAgoraSp(ref);
+  const inicio =
+    naoAntesMs != null && Number.isFinite(naoAntesMs) && naoAntesMs > ref.getTime()
+      ? partesAgoraSp(new Date(naoAntesMs))
+      : pHoje;
+
+  const dias: DiaAgendavel[] = [];
+  for (let i = 0; i < 21 && dias.length < maxDias; i++) {
+    const start = adicionarDiasSp(inicio.ano, inicio.mes, inicio.dia, i);
+    const horario = horarios.find((h) => h.dia_semana === start.dow) ?? null;
+    const lim = limitesMinutosDia({
+      horario,
+      atrasoAbertura,
+      preparo,
+      ref,
+      ano: start.ano,
+      mes: start.mes,
+      dia: start.dia,
+      naoAntesMs,
+    });
+    if (!lim) continue;
+    if (!lim.atravessa && lim.minInicio >= lim.fechaMin) continue;
+
+    const primeiro = lim.atravessa || lim.minInicio < lim.fechaMin
+      ? isoSlotSp(
+          start.ano,
+          start.mes,
+          start.dia,
+          Math.floor(lim.minInicio / 60),
+          lim.minInicio % 60,
+        )
+      : null;
+    if (!primeiro) continue;
+
+    const ehHoje =
+      start.ano === pHoje.ano &&
+      start.mes === pHoje.mes &&
+      start.dia === pHoje.dia;
+    const rotuloData = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: TZ,
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+    }).format(new Date(primeiro));
+
+    const horaMaxMin = lim.atravessa
+      ? 23 * 60 + 45
+      : Math.max(lim.fechaMin - 15, lim.minInicio);
+
+    dias.push({
+      dataKey: dataKeySp(start.ano, start.mes, start.dia),
+      ano: start.ano,
+      mes: start.mes,
+      dia: start.dia,
+      dow: start.dow,
+      ehHoje,
+      rotulo: ehHoje ? `Hoje · ${rotuloData}` : rotuloData,
+      primeiroSlot: primeiro,
+      horaMin: minutosParaHhmm(lim.minInicio),
+      horaMax: minutosParaHhmm(horaMaxMin),
+    });
+  }
+
+  return {
+    status,
+    dias,
+    motivoSemDias:
+      dias.length === 0 ? "Não há dias disponíveis para agendar." : null,
+  };
+}
+
+/** Monta ISO a partir de dataKey (YYYY-MM-DD) + HH:MM, arredondando p/ 15 min. */
+export function montarIsoAgendamento(
+  dataKey: string,
+  horaHhmm: string,
+): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dataKey);
+  const t = /^(\d{1,2}):(\d{2})$/.exec(horaHhmm.trim());
+  if (!m || !t) return null;
+  const ano = Number(m[1]);
+  const mes = Number(m[2]);
+  const dia = Number(m[3]);
+  let hora = Number(t[1]);
+  let minuto = Number(t[2]);
+  if (!Number.isFinite(hora) || !Number.isFinite(minuto)) return null;
+  minuto = Math.round(minuto / 15) * 15;
+  if (minuto === 60) {
+    minuto = 0;
+    hora += 1;
+  }
+  if (hora > 23) return null;
+  return isoSlotSp(ano, mes, dia, hora, minuto);
+}
+
+export function hhmmDeIso(iso: string | null | undefined): string {
+  if (!iso) return "";
+  try {
+    const p = partesAgoraSp(new Date(iso));
+    return `${String(p.hora).padStart(2, "0")}:${String(p.minuto).padStart(2, "0")}`;
+  } catch {
+    return "";
+  }
+}
+
+export function dataKeyDeIso(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    const p = partesAgoraSp(new Date(iso));
+    return dataKeySp(p.ano, p.mes, p.dia);
+  } catch {
+    return null;
+  }
+}

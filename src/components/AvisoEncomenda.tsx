@@ -27,11 +27,25 @@ export function AvisoEncomenda({ disp, className = "" }: AvisoEncomendaProps) {
   }
 
   if (disp.modo === "pronto") {
+    const n = Math.max(0, Number(disp.estoque_pronto ?? 0));
     return (
       <div
         className={`${base} bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100 ${className}`}
       >
-        <span>{disp.mensagem || "Disponível agora"}</span>
+        <div>
+          <p>
+            {disp.mensagem ||
+              (n > 0
+                ? `${n} unidade(s) prontas hoje — pode retirar agora ou agendar`
+                : "Disponível agora")}
+          </p>
+          {disp.pode_agendar && disp.retirada_em && (
+            <p className="font-bold mt-1 text-amber-800 dark:text-amber-200">
+              Se agendar produção: a partir de{" "}
+              {formatarRetiradaEncomenda(disp.retirada_em)}
+            </p>
+          )}
+        </div>
       </div>
     );
   }

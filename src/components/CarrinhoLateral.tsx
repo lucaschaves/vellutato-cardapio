@@ -12,10 +12,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { InputTelaCheia } from "./InputTelaCheia";
+import { SeletorHorarioPedido } from "./SeletorHorarioPedido";
 import { useLayoutCarrinhoSplit } from "../hooks/useLayoutCarrinhoSplit";
 import { useRevalidarCupomCarrinho } from "../hooks/useRevalidarCupomCarrinho";
 import {
@@ -27,7 +28,14 @@ import {
 } from "../lib/clientes";
 import { anexarCuponsPedido, validarCupom } from "../lib/cupons";
 import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
-import { resumoItensEncomenda } from "../lib/encomendaProgramada";
+import {
+  carrinhoExigeAgendamentoEncomenda,
+  carrinhoTemProdutoEncomenda,
+  minimoRetiradaEncomendaCarrinho,
+  modoEncomendaPorAgendamento,
+  pisoProducaoEncomendaCarrinho,
+  resumoItensEncomenda,
+} from "../lib/encomendaProgramada";
 import { lembrarClienteAnalytics, track } from "../lib/analytics";
 import { buscarStatusLoja, type StatusLoja } from "../lib/lojaStatus";
 import { somarDeltasCombo } from "../lib/combos";
@@ -103,6 +111,8 @@ export function CarrinhoLateral({
   const [etapaMobile, setEtapaMobile] = useState<EtapaMobileCarrinho>("itens");
   const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
+  const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
+  const [diasAgendaveisOk, setDiasAgendaveisOk] = useState(true);
   const [clienteIdReconhecido, setClienteIdReconhecido] = useState<
     string | null
   >(null);
@@ -123,6 +133,23 @@ export function CarrinhoLateral({
   }, [aberto]);
 
   const lojaFechada = statusLoja !== null && !statusLoja.aberta;
+  const minRetirada = useMemo(
+    () => minimoRetiradaEncomendaCarrinho(itens),
+    [itens],
+  );
+  const pisoProducao = useMemo(
+    () => pisoProducaoEncomendaCarrinho(itens),
+    [itens],
+  );
+  const temProdutoEncomenda = useMemo(
+    () => carrinhoTemProdutoEncomenda(itens),
+    [itens],
+  );
+  const exigeAgendamento = useMemo(
+    () => carrinhoExigeAgendamentoEncomenda(itens) || lojaFechada,
+    [itens, lojaFechada],
+  );
+  const mostrarSeletorHorario = temProdutoEncomenda || lojaFechada;
 
   useRevalidarCupomCarrinho(celularCliente, nomeCliente, aberto);
 
@@ -294,8 +321,20 @@ export function CarrinhoLateral({
     // Revalida na hora do envio (o banco também bloqueia, isto é só UX)
     const statusAtual = await buscarStatusLoja();
     setStatusLoja(statusAtual);
-    if (statusAtual && !statusAtual.aberta) {
-      toast.error(statusAtual.motivo || "A loja está fechada no momento.");
+    const fechada = statusAtual !== null && !statusAtual.aberta;
+    if (fechada && !agendadoPara) {
+      toast.error(
+        statusAtual?.motivo ||
+          "A loja está fechada. Escolha um horário para agendar.",
+      );
+      return;
+    }
+    if (exigeAgendamento && !agendadoPara) {
+      toast.error("Escolha um horário para o pedido.");
+      return;
+    }
+    if (!diasAgendaveisOk && (temProdutoEncomenda || fechada)) {
+      toast.error("Não há horários disponíveis para agendar.");
       return;
     }
 
@@ -316,7 +355,22 @@ export function CarrinhoLateral({
       return;
     }
 
-    const itensEncomenda = itens.filter((i) => i.modoEncomenda === "encomenda");
+    const itensResolvidos = itens.map((i) => {
+      if (i.modoEncomenda !== "pronto" && i.modoEncomenda !== "encomenda") {
+        return i;
+      }
+      return {
+        ...i,
+        modoEncomenda: modoEncomendaPorAgendamento(agendadoPara, {
+          estoquePronto: i.modoEncomenda === "pronto" ? i.quantidade : 0,
+          quantidade: i.quantidade,
+        }),
+      };
+    });
+
+    const itensEncomenda = itensResolvidos.filter(
+      (i) => i.modoEncomenda === "encomenda",
+    );
     if (itensEncomenda.length > 0) {
       const linhas = resumoItensEncomenda(itensEncomenda);
       const ok = window.confirm(
@@ -359,7 +413,8 @@ export function CarrinhoLateral({
         identificador,
         total: totalPedido,
         valor_total: subtotalPedido,
-        itens: itens.map((item) => ({
+        agendado_para: agendadoPara,
+        itens: itensResolvidos.map((item) => ({
           produto_id: item.produtoId,
           quantidade: item.quantidade,
           preco_unitario: item.precoBase,
@@ -426,8 +481,9 @@ export function CarrinhoLateral({
     <div className="space-y-3">
       {lojaFechada && (
         <div className="rounded-xl bg-cookie-primary/10 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
-          Estamos fechados no momento.
-          {statusLoja?.motivo ? ` ${statusLoja.motivo}` : ""}
+          Estamos fechados no momento
+          {statusLoja?.motivo ? ` — ${statusLoja.motivo}` : ""}. Você pode
+          agendar um horário abaixo.
         </div>
       )}
       {economiaPromocional > 0 && (
@@ -719,6 +775,20 @@ export function CarrinhoLateral({
       </div>
 
       {renderCampoCupom()}
+
+      {mostrarSeletorHorario && (
+        <SeletorHorarioPedido
+          titulo="Horário do pedido"
+          naoAntesDe={minRetirada}
+          pisoProducao={pisoProducao}
+          exigirHorario={exigeAgendamento}
+          permitirQuantoAntes={!lojaFechada && !carrinhoExigeAgendamentoEncomenda(itens)}
+          value={agendadoPara}
+          onChange={setAgendadoPara}
+          onStatusLoja={setStatusLoja}
+          onDiasCarregados={(n) => setDiasAgendaveisOk(n > 0)}
+        />
+      )}
     </div>
   );
 
@@ -983,7 +1053,11 @@ export function CarrinhoLateral({
                   {renderResumoFinanceiro("grande")}
                   <button
                     type="submit"
-                    disabled={itens.length === 0 || enviando || lojaFechada}
+                    disabled={
+                      itens.length === 0 ||
+                      enviando ||
+                      (lojaFechada && !agendadoPara)
+                    }
                     className="w-full mt-4 bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                   >
                     {enviando ? (
@@ -1051,7 +1125,11 @@ export function CarrinhoLateral({
                 {renderResumoFinanceiro("grande")}
                 <button
                   type="submit"
-                  disabled={itens.length === 0 || enviando || lojaFechada}
+                  disabled={
+                    itens.length === 0 ||
+                    enviando ||
+                    (lojaFechada && !agendadoPara)
+                  }
                   className="w-full mt-4 md:landscape:mt-5 bg-[#6b1d2a] hover:bg-[#541622] disabled:bg-gray-300 dark:disabled:bg-[#2a2c30] disabled:text-gray-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg shadow-[#6b1d2a]/20"
                 >
                   {enviando ? (

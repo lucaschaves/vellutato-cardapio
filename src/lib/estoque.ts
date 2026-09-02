@@ -62,18 +62,24 @@ export function produtoEstaEsgotado(
 /**
  * Limite de quantidade ao adicionar.
  * Encomenda: pronto → estoque do dia; encomenda → vagas do dia; nunca quantidade_estoque.
+ * `forcarEncomenda`: cliente escolheu agendar mesmo com unidades prontas.
  */
 export function obterQuantidadeMaxima(
   produto: ProdutoComEstoque,
   disp?: DisponibilidadeEncomenda,
+  forcarEncomenda = false,
 ): number | null {
   if (ehProdutoEncomenda(produto, disp)) {
     if (!disp) return null;
     if (disp.modo === "indisponivel") return 0;
-    if (disp.modo === "pronto") {
+    if (!forcarEncomenda && disp.modo === "pronto") {
       return Math.max(Number(disp.estoque_pronto ?? 0), 0);
     }
-    if (disp.modo === "encomenda") {
+    // Modo encomenda ou agendar com prontas disponíveis
+    if (disp.encomendas_restantes == null && disp.modo === "encomenda") {
+      return null;
+    }
+    if (forcarEncomenda || disp.modo === "encomenda" || disp.pode_agendar) {
       if (disp.encomendas_restantes == null) return null;
       return Math.max(Number(disp.encomendas_restantes) || 0, 0);
     }

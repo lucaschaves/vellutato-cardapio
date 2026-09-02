@@ -8,6 +8,11 @@ import { track } from "../../lib/analytics";
 import { ModalOfertaPosAdicionar } from "../../components/ModalOfertaPosAdicionar";
 import { AvisoEncomenda } from "../../components/AvisoEncomenda";
 import {
+  EscolhaRetiradaEncomenda,
+  modoEncomendaDaIntencao,
+  type IntencaoRetirada,
+} from "../../components/EscolhaRetiradaEncomenda";
+import {
   obterQuantidadeMaxima,
   produtoEstaEsgotado,
 } from "../../lib/estoque";
@@ -327,6 +332,8 @@ export function VisualizadorReels() {
   const [dispEncomenda, setDispEncomenda] = useState<DisponibilidadeEncomenda | null>(
     null,
   );
+  const [intencaoRetirada, setIntencaoRetirada] =
+    useState<IntencaoRetirada>("agora");
   const [cabecalhoColado, setCabecalhoColado] = useState(false);
   const painelScrollRef = useRef<HTMLDivElement>(null);
   const midiaTabletRef = useRef<HTMLDivElement>(null);
@@ -380,7 +387,12 @@ export function VisualizadorReels() {
         if (prod.encomenda_programada) {
           try {
             const disp = await buscarDisponibilidadeEncomenda(prod.id);
-            if (!cancelado) setDispEncomenda(disp);
+            if (!cancelado) {
+              setDispEncomenda(disp);
+              setIntencaoRetirada(
+                disp.modo === "pronto" ? "agora" : "agendar",
+              );
+            }
           } catch {
             if (!cancelado) setDispEncomenda(null);
           }
@@ -608,12 +620,16 @@ export function VisualizadorReels() {
     ? produtoEstaEsgotado(produto, dispEncomenda ?? undefined)
     : false;
   const quantidadeMaxima = produto
-    ? obterQuantidadeMaxima(produto, dispEncomenda ?? undefined)
+    ? obterQuantidadeMaxima(
+        produto,
+        dispEncomenda ?? undefined,
+        intencaoRetirada === "agendar",
+      )
     : null;
-  const modoEncomenda =
-    dispEncomenda?.modo === "pronto" || dispEncomenda?.modo === "encomenda"
-      ? dispEncomenda.modo
-      : undefined;
+  const modoEncomenda = modoEncomendaDaIntencao(
+    dispEncomenda,
+    intencaoRetirada,
+  );
   const ehCombo = produto?.tipo === "combo";
 
   const confirmarPedido = () => {
@@ -863,6 +879,14 @@ export function VisualizadorReels() {
 
                 {dispEncomenda && (
                   <AvisoEncomenda disp={dispEncomenda} className="mb-4" />
+                )}
+                {dispEncomenda && (
+                  <EscolhaRetiradaEncomenda
+                    disp={dispEncomenda}
+                    value={intencaoRetirada}
+                    onChange={setIntencaoRetirada}
+                    className="mb-4"
+                  />
                 )}
 
                 <p className="text-gray-600 dark:text-gray-400 text-sm md:landscape:text-base leading-relaxed mb-8 transition-colors">

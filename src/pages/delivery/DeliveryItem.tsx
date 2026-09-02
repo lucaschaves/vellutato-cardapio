@@ -5,6 +5,11 @@ import { toast } from "sonner";
 import { produtoEstaEsgotado, obterQuantidadeMaxima } from "../../lib/estoque";
 import { AvisoEncomenda } from "../../components/AvisoEncomenda";
 import {
+  EscolhaRetiradaEncomenda,
+  modoEncomendaDaIntencao,
+  type IntencaoRetirada,
+} from "../../components/EscolhaRetiradaEncomenda";
+import {
   buscarDisponibilidadeEncomenda,
   type DisponibilidadeEncomenda,
 } from "../../lib/encomendaProgramada";
@@ -118,6 +123,8 @@ export function DeliveryItem() {
   const [dispEncomenda, setDispEncomenda] = useState<DisponibilidadeEncomenda | null>(
     null,
   );
+  const [intencaoRetirada, setIntencaoRetirada] =
+    useState<IntencaoRetirada>("agora");
 
   useEffect(() => {
     if (!id) return;
@@ -158,7 +165,12 @@ export function DeliveryItem() {
         if (prod.encomenda_programada) {
           try {
             const disp = await buscarDisponibilidadeEncomenda(prod.id);
-            if (!cancelado) setDispEncomenda(disp);
+            if (!cancelado) {
+              setDispEncomenda(disp);
+              setIntencaoRetirada(
+                disp.modo === "pronto" ? "agora" : "agendar",
+              );
+            }
           } catch {
             if (!cancelado) setDispEncomenda(null);
           }
@@ -268,13 +280,14 @@ export function DeliveryItem() {
   const ehCombo = produto.tipo === "combo";
   const ehEncomendaProg = Boolean(produto.encomenda_programada);
   const esgotado = produtoEstaEsgotado(produto, dispEncomenda ?? undefined);
-  const qtdMax = obterQuantidadeMaxima(produto, dispEncomenda ?? undefined);
+  const qtdMax = obterQuantidadeMaxima(
+    produto,
+    dispEncomenda ?? undefined,
+    intencaoRetirada === "agendar",
+  );
   const modoEncomenda: "pronto" | "encomenda" | undefined =
-    dispEncomenda?.modo === "pronto" || dispEncomenda?.modo === "encomenda"
-      ? dispEncomenda.modo
-      : ehEncomendaProg
-        ? "encomenda"
-        : undefined;
+    modoEncomendaDaIntencao(dispEncomenda, intencaoRetirada) ??
+    (ehEncomendaProg ? "encomenda" : undefined);
 
   const alternarAdicional = (adc: Adicional) => {
     const max = maxAdicionaisProduto(produto?.adicional_maximo);
@@ -453,6 +466,14 @@ export function DeliveryItem() {
 
       <div className="mt-4 space-y-1">
         {dispEncomenda && <AvisoEncomenda disp={dispEncomenda} className="mb-3" />}
+        {dispEncomenda && (
+          <EscolhaRetiradaEncomenda
+            disp={dispEncomenda}
+            value={intencaoRetirada}
+            onChange={setIntencaoRetirada}
+            className="mb-3"
+          />
+        )}
         <h1 className="text-2xl font-black leading-tight">{produto.nome}</h1>
         <TagMedidaProduto
           valor={produto.medida_valor}
