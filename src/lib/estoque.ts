@@ -1,4 +1,7 @@
-import type { DisponibilidadeEncomenda } from "./encomendaProgramada";
+import {
+  modoEncomendaPorAgendamento,
+  type DisponibilidadeEncomenda,
+} from "./encomendaProgramada";
 
 export interface ProdutoComEstoque {
   controlar_estoque?: boolean | null;
@@ -88,3 +91,55 @@ export function obterQuantidadeMaxima(
   if (!produto.controlar_estoque) return null;
   return Math.max(Number(produto.quantidade_estoque ?? 0), 0);
 }
+
+/**
+ * Máximo para um item da sacola.
+ * - Quanto antes / hoje sem forçar agendar → unidades prontas
+ * - Agendar (modo encomenda no item ou dia futuro) → vagas do dia
+ */
+export function obterQuantidadeMaximaCarrinho(
+  produto: ProdutoComEstoque,
+  disp: DisponibilidadeEncomenda | undefined,
+  opts: {
+    agendadoPara?: string | null;
+    restantesNoDia?: number | null;
+    /** Item entrou como “Agendar” ou o horário implica produção. */
+    forcarEncomenda?: boolean;
+  } = {},
+): number | null {
+  if (!ehProdutoEncomenda(produto, disp)) {
+    return obterQuantidadeMaxima(produto, disp, false);
+  }
+  if (!disp) return null;
+
+  const modo = opts.forcarEncomenda
+    ? "encomenda"
+    : modoEncomendaPorAgendamento(opts.agendadoPara ?? null, {
+        estoquePronto: disp.estoque_pronto,
+        quantidade: 1,
+      });
+
+  if (modo === "pronto") {
+    return Math.max(Number(disp.estoque_pronto ?? 0), 0);
+  }
+
+  if (opts.restantesNoDia != null) {
+    return Math.max(0, Number(opts.restantesNoDia) || 0);
+  }
+
+  return obterQuantidadeMaxima(produto, disp, true);
+}
+
+/** Soma quantidades do mesmo produto na sacola (opcionalmente excluindo uma linha). */
+export function quantidadeProdutoNoCarrinho(
+  itens: Array<{ produtoId: string; quantidade: number; idUnico?: string }>,
+  produtoId: string,
+  excluirIdUnico?: string,
+): number {
+  return itens.reduce((s, i) => {
+    if (i.produtoId !== produtoId) return s;
+    if (excluirIdUnico && i.idUnico === excluirIdUnico) return s;
+    return s + Math.max(0, i.quantidade);
+  }, 0);
+}
+

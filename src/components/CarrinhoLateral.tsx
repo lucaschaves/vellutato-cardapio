@@ -29,15 +29,26 @@ import {
 import { anexarCuponsPedido, validarCupom } from "../lib/cupons";
 import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
 import {
+  buscarDisponibilidadeEncomendaLote,
+  buscarEncomendasRestantesNoDiaLote,
   carrinhoExigeAgendamentoEncomenda,
   carrinhoTemProdutoEncomenda,
   minimoRetiradaEncomendaCarrinho,
   modoEncomendaPorAgendamento,
+  pedidoUsaVagaEncomenda,
   pisoProducaoEncomendaCarrinho,
   resumoItensEncomenda,
+  type DisponibilidadeEncomenda,
 } from "../lib/encomendaProgramada";
+import {
+  obterQuantidadeMaximaCarrinho,
+  quantidadeProdutoNoCarrinho,
+  type ProdutoComEstoque,
+} from "../lib/estoque";
 import { lembrarClienteAnalytics, track } from "../lib/analytics";
+import { dataKeyDeIso } from "../lib/lojaAgendamento";
 import { buscarStatusLoja, type StatusLoja } from "../lib/lojaStatus";
+import { supabase } from "../lib/supabase";
 import { somarDeltasCombo } from "../lib/combos";
 import {
   lerCelularLocalStorage,
@@ -113,6 +124,15 @@ export function CarrinhoLateral({
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
   const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
   const [diasAgendaveisOk, setDiasAgendaveisOk] = useState(true);
+  const [dispCarrinho, setDispCarrinho] = useState<
+    Record<string, DisponibilidadeEncomenda>
+  >({});
+  const [metaEstoque, setMetaEstoque] = useState<
+    Record<string, ProdutoComEstoque>
+  >({});
+  const [restantesDia, setRestantesDia] = useState<Record<string, number>>(
+    {},
+  );
   const [clienteIdReconhecido, setClienteIdReconhecido] = useState<
     string | null
   >(null);
@@ -150,6 +170,117 @@ export function CarrinhoLateral({
     [itens, lojaFechada],
   );
   const mostrarSeletorHorario = temProdutoEncomenda || lojaFechada;
+
+  useEffect(() => {
+    if (!aberto) return;
+    let cancelado = false;
+    void (async () => {
+      const ids = [...new Set(itens.map((i) => i.produtoId))];
+      if (ids.length === 0) {
+        setDispCarrinho({});
+        setMetaEstoque({});
+        return;
+      }
+      const { data: prods } = await supabase
+        .from("produtos")
+        .select(
+          "id, controlar_estoque, quantidade_estoque, encomenda_programada",
+        )
+        .in("id", ids);
+      if (cancelado) return;
+      const meta: Record<string, ProdutoComEstoque> = {};
+      const idsEnc: string[] = [];
+      for (const p of prods || []) {
+        meta[p.id as string] = p;
+        if (p.encomenda_programada) idsEnc.push(p.id as string);
+      }
+      setMetaEstoque(meta);
+      if (idsEnc.length === 0) {
+        setDispCarrinho({});
+        return;
+      }
+      try {
+        const map = await buscarDisponibilidadeEncomendaLote(idsEnc);
+        if (!cancelado) setDispCarrinho(map);
+      } catch {
+        if (!cancelado) setDispCarrinho({});
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [aberto, itens]);
+
+  useEffect(() => {
+    if (!aberto) return;
+    let cancelado = false;
+    void (async () => {
+      const idsEnc = Object.keys(dispCarrinho);
+      if (idsEnc.length === 0) {
+        setRestantesDia({});
+        return;
+      }
+      const precisa = idsEnc.some((id) => {
+        const modoItem = itens.find((i) => i.produtoId === id)?.modoEncomenda;
+        return pedidoUsaVagaEncomenda(agendadoPara, {
+          estoquePronto: dispCarrinho[id]?.estoque_pronto,
+          modoItem,
+        });
+      });
+      if (!precisa) {
+        setRestantesDia({});
+        return;
+      }
+      const dataKey =
+        dataKeyDeIso(agendadoPara) ||
+        dataKeyDeIso(pisoProducao) ||
+        dataKeyDeIso(new Date().toISOString());
+      if (!dataKey) {
+        setRestantesDia({});
+        return;
+      }
+      try {
+        const map = await buscarEncomendasRestantesNoDiaLote(idsEnc, dataKey);
+        if (!cancelado) setRestantesDia(map);
+      } catch {
+        if (!cancelado) setRestantesDia({});
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [aberto, agendadoPara, dispCarrinho, itens, pisoProducao]);
+
+  const maxLinhaCarrinho = (item: {
+    idUnico: string;
+    produtoId: string;
+    quantidade: number;
+    modoEncomenda?: "pronto" | "encomenda";
+  }): number | null => {
+    const meta = metaEstoque[item.produtoId] ?? {
+      encomenda_programada: Boolean(item.modoEncomenda),
+      controlar_estoque: true,
+    };
+    const disp = dispCarrinho[item.produtoId];
+    const forcarEncomenda = pedidoUsaVagaEncomenda(agendadoPara, {
+      estoquePronto: disp?.estoque_pronto,
+      modoItem: item.modoEncomenda,
+    });
+    const maxTotal = obterQuantidadeMaximaCarrinho(meta, disp, {
+      agendadoPara,
+      restantesNoDia: forcarEncomenda
+        ? (restantesDia[item.produtoId] ?? disp?.encomendas_restantes)
+        : null,
+      forcarEncomenda,
+    });
+    if (maxTotal == null) return null;
+    const outros = quantidadeProdutoNoCarrinho(
+      itens,
+      item.produtoId,
+      item.idUnico,
+    );
+    return Math.max(0, maxTotal - outros);
+  };
 
   useRevalidarCupomCarrinho(celularCliente, nomeCliente, aberto);
 
@@ -253,9 +384,22 @@ export function CarrinhoLateral({
   const economia = totalOriginal - totalFinal;
 
   const alterarQuantidadeItem = (idUnico: string, novaQuantidade: number) => {
+    const item = itens.find((i) => i.idUnico === idUnico);
+    if (!item) return;
     if (novaQuantidade <= 0) {
       removerItem(idUnico);
       return;
+    }
+    if (item.modoEncomenda === "pronto" || item.modoEncomenda === "encomenda") {
+      const maxLinha = maxLinhaCarrinho(item);
+      if (maxLinha != null && novaQuantidade > maxLinha) {
+        toast.error(
+          maxLinha <= 0
+            ? `Limite do dia atingido para ${item.nome}.`
+            : `Máximo neste horário: ${maxLinha} de ${item.nome}.`,
+        );
+        return;
+      }
     }
     alterarQuantidade(idUnico, novaQuantidade);
   };
@@ -364,6 +508,7 @@ export function CarrinhoLateral({
         modoEncomenda: modoEncomendaPorAgendamento(agendadoPara, {
           estoquePronto: i.modoEncomenda === "pronto" ? i.quantidade : 0,
           quantidade: i.quantidade,
+          forcarEncomenda: i.modoEncomenda === "encomenda",
         }),
       };
     });
@@ -898,7 +1043,17 @@ export function CarrinhoLateral({
                     onClick={() =>
                       alterarQuantidadeItem(item.idUnico, item.quantidade + 1)
                     }
-                    className="p-1.5 md:landscape:p-2 text-gray-600 dark:text-gray-300 active:scale-95"
+                    disabled={(() => {
+                      if (
+                        item.modoEncomenda !== "pronto" &&
+                        item.modoEncomenda !== "encomenda"
+                      ) {
+                        return false;
+                      }
+                      const max = maxLinhaCarrinho(item);
+                      return max != null && item.quantidade >= max;
+                    })()}
+                    className="p-1.5 md:landscape:p-2 text-gray-600 dark:text-gray-300 active:scale-95 disabled:opacity-40"
                   >
                     <Plus size={14} className="md:landscape:w-4 md:landscape:h-4" />
                   </button>

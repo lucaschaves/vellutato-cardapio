@@ -50,18 +50,26 @@ import {
   iniciarCheckoutAsaas,
   type ModalidadeDelivery,
 } from "../../lib/deliveryPedido";
-import { produtoEstaEsgotado } from "../../lib/estoque";
+import {
+  obterQuantidadeMaximaCarrinho,
+  produtoEstaEsgotado,
+  quantidadeProdutoNoCarrinho,
+  type ProdutoComEstoque,
+} from "../../lib/estoque";
 import {
   buscarDisponibilidadeEncomendaLote,
+  buscarEncomendasRestantesNoDiaLote,
   carrinhoExigeAgendamentoEncomenda,
   carrinhoTemProdutoEncomenda,
   formatarRetiradaEncomenda,
   minimoRetiradaEncomendaCarrinho,
   modoEncomendaPorAgendamento,
+  pedidoUsaVagaEncomenda,
   pisoProducaoEncomendaCarrinho,
   resumoItensEncomenda,
+  type DisponibilidadeEncomenda,
 } from "../../lib/encomendaProgramada";
-import { rotuloSlot } from "../../lib/lojaAgendamento";
+import { dataKeyDeIso, rotuloSlot } from "../../lib/lojaAgendamento";
 import type { StatusLoja } from "../../lib/lojaStatus";
 import { SeletorHorarioPedido } from "../../components/SeletorHorarioPedido";
 import { ErroNegocioCheckout } from "../../lib/pedidos";
@@ -195,6 +203,15 @@ export function DeliveryCheckout() {
   const [statusLoja, setStatusLoja] = useState<StatusLoja | null>(null);
   const [agendadoPara, setAgendadoPara] = useState<string | null>(null);
   const [diasAgendaveisOk, setDiasAgendaveisOk] = useState(true);
+  const [dispCarrinho, setDispCarrinho] = useState<
+    Record<string, DisponibilidadeEncomenda>
+  >({});
+  const [metaEstoque, setMetaEstoque] = useState<
+    Record<string, ProdutoComEstoque>
+  >({});
+  const [restantesDia, setRestantesDia] = useState<Record<string, number>>(
+    {},
+  );
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [redirecionandoPagamento, setRedirecionandoPagamento] = useState(false);
   const [freteMsg, setFreteMsg] = useState<string | null>(null);
@@ -267,6 +284,168 @@ export function DeliveryCheckout() {
     () => carrinhoExigeAgendamentoEncomenda(itens),
     [itens],
   );
+
+  useEffect(() => {
+    let cancelado = false;
+    void (async () => {
+      const ids = [...new Set(itens.map((i) => i.produtoId))];
+      if (ids.length === 0) {
+        setDispCarrinho({});
+        setMetaEstoque({});
+        return;
+      }
+      const { data: prods } = await supabase
+        .from("produtos")
+        .select(
+          "id, controlar_estoque, quantidade_estoque, encomenda_programada",
+        )
+        .in("id", ids);
+      if (cancelado) return;
+      const meta: Record<string, ProdutoComEstoque> = {};
+      const idsEnc: string[] = [];
+      for (const p of prods || []) {
+        meta[p.id as string] = p;
+        if (p.encomenda_programada) idsEnc.push(p.id as string);
+      }
+      setMetaEstoque(meta);
+      if (idsEnc.length === 0) {
+        setDispCarrinho({});
+        return;
+      }
+      try {
+        const map = await buscarDisponibilidadeEncomendaLote(idsEnc);
+        if (!cancelado) setDispCarrinho(map);
+      } catch {
+        if (!cancelado) setDispCarrinho({});
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [itens]);
+
+  useEffect(() => {
+    let cancelado = false;
+    void (async () => {
+      const idsEnc = Object.keys(dispCarrinho);
+      if (idsEnc.length === 0) {
+        setRestantesDia({});
+        return;
+      }
+      const precisaRestantes = idsEnc.some((id) => {
+        const disp = dispCarrinho[id];
+        const modoItem = itens.find((i) => i.produtoId === id)?.modoEncomenda;
+        return pedidoUsaVagaEncomenda(agendadoPara, {
+          estoquePronto: disp?.estoque_pronto,
+          modoItem,
+        });
+      });
+      if (!precisaRestantes) {
+        setRestantesDia({});
+        return;
+      }
+      // Dia do horário escolhido, ou dia da retirada mínima / hoje
+      const dataKey =
+        dataKeyDeIso(agendadoPara) ||
+        dataKeyDeIso(pisoProducao) ||
+        dataKeyDeIso(new Date().toISOString());
+      if (!dataKey) {
+        setRestantesDia({});
+        return;
+      }
+      try {
+        const map = await buscarEncomendasRestantesNoDiaLote(idsEnc, dataKey);
+        if (!cancelado) setRestantesDia(map);
+      } catch {
+        if (!cancelado) setRestantesDia({});
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [agendadoPara, dispCarrinho, itens, pisoProducao]);
+
+  const maxLinhaCarrinho = (item: {
+    idUnico: string;
+    produtoId: string;
+    quantidade: number;
+    modoEncomenda?: "pronto" | "encomenda";
+  }): number | null => {
+    const meta = metaEstoque[item.produtoId] ?? {
+      encomenda_programada: Boolean(item.modoEncomenda),
+      controlar_estoque: true,
+    };
+    const disp = dispCarrinho[item.produtoId];
+    const forcarEncomenda = pedidoUsaVagaEncomenda(agendadoPara, {
+      estoquePronto: disp?.estoque_pronto,
+      modoItem: item.modoEncomenda,
+    });
+    const maxTotal = obterQuantidadeMaximaCarrinho(meta, disp, {
+      agendadoPara,
+      restantesNoDia: forcarEncomenda
+        ? (restantesDia[item.produtoId] ?? disp?.encomendas_restantes)
+        : null,
+      forcarEncomenda,
+    });
+    if (maxTotal == null) return null;
+    const outros = quantidadeProdutoNoCarrinho(
+      itens,
+      item.produtoId,
+      item.idUnico,
+    );
+    return Math.max(0, maxTotal - outros);
+  };
+
+  const tentarAlterarQuantidade = (
+    item: {
+      idUnico: string;
+      produtoId: string;
+      quantidade: number;
+      nome: string;
+      modoEncomenda?: "pronto" | "encomenda";
+    },
+    novaQtd: number,
+  ) => {
+    if (novaQtd <= 0) {
+      removerItem(item.idUnico);
+      return;
+    }
+    const maxLinha = maxLinhaCarrinho(item);
+    if (maxLinha != null && novaQtd > maxLinha) {
+      toast.error(
+        maxLinha <= 0
+          ? `Limite do dia atingido para ${item.nome}.`
+          : `Máximo neste horário: ${maxLinha} de ${item.nome}.`,
+      );
+      if (item.quantidade > maxLinha && maxLinha > 0) {
+        alterarQuantidade(item.idUnico, maxLinha);
+      }
+      return;
+    }
+    alterarQuantidade(item.idUnico, novaQtd);
+  };
+
+  // Se o horário mudar e a qtd passar do limite do dia, ajusta.
+  useEffect(() => {
+    for (const item of itens) {
+      if (item.modoEncomenda !== "pronto" && item.modoEncomenda !== "encomenda") {
+        continue;
+      }
+      if (!dispCarrinho[item.produtoId] && !metaEstoque[item.produtoId]) {
+        continue;
+      }
+      const maxLinha = maxLinhaCarrinho(item);
+      if (maxLinha == null) continue;
+      if (item.quantidade <= maxLinha) continue;
+      if (maxLinha <= 0) {
+        toast.message(`${item.nome}: sem vagas neste horário — remova ou troque o dia.`);
+        continue;
+      }
+      alterarQuantidade(item.idUnico, maxLinha);
+      toast.message(`${item.nome}: quantidade ajustada ao limite do dia (${maxLinha}).`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reage a horário/limites
+  }, [agendadoPara, restantesDia, dispCarrinho]);
 
   useEffect(() => {
     if (searchParams.get("cancelado") === "1") {
@@ -927,6 +1106,7 @@ export function DeliveryCheckout() {
       const modo = modoEncomendaPorAgendamento(agendadoPara, {
         estoquePronto: i.modoEncomenda === "pronto" ? i.quantidade : 0,
         quantidade: i.quantidade,
+        forcarEncomenda: i.modoEncomenda === "encomenda",
       });
       return { ...i, modoEncomenda: modo };
     });
@@ -966,11 +1146,37 @@ export function DeliveryCheckout() {
       const mapa = new Map(
         (prods || []).map((p) => [p.id as string, p]),
       );
+      const produtosChecados = new Set<string>();
       for (const item of itens) {
         const p = mapa.get(item.produtoId);
         if (!p || !p.ativo || produtoEstaEsgotado(p, dispMap[item.produtoId])) {
           toast.error(
             `${item.nome} está indisponível. Remova da sacola para continuar.`,
+          );
+          return;
+        }
+        if (produtosChecados.has(item.produtoId)) continue;
+        produtosChecados.add(item.produtoId);
+        const forcarEncomenda = pedidoUsaVagaEncomenda(agendadoPara, {
+          estoquePronto: dispMap[item.produtoId]?.estoque_pronto,
+          modoItem: item.modoEncomenda,
+        });
+        const maxTotal = obterQuantidadeMaximaCarrinho(
+          p,
+          dispMap[item.produtoId],
+          {
+            agendadoPara,
+            restantesNoDia: forcarEncomenda
+              ? (restantesDia[item.produtoId] ??
+                dispMap[item.produtoId]?.encomendas_restantes)
+              : null,
+            forcarEncomenda,
+          },
+        );
+        const qtdProduto = quantidadeProdutoNoCarrinho(itens, item.produtoId);
+        if (maxTotal != null && qtdProduto > maxTotal) {
+          toast.error(
+            `${item.nome}: no máximo ${maxTotal} para o horário escolhido (há ${qtdProduto} na sacola).`,
           );
           return;
         }
@@ -1347,9 +1553,7 @@ export function DeliveryCheckout() {
                         type="button"
                         className="h-8 w-8 rounded-lg bg-white flex items-center justify-center"
                         onClick={() =>
-                          i.quantidade <= 1
-                            ? removerItem(i.idUnico)
-                            : alterarQuantidade(i.idUnico, i.quantidade - 1)
+                          tentarAlterarQuantidade(i, i.quantidade - 1)
                         }
                       >
                         {i.quantidade <= 1 ? (
@@ -1363,14 +1567,35 @@ export function DeliveryCheckout() {
                       </span>
                       <button
                         type="button"
-                        className="h-8 w-8 rounded-lg bg-white flex items-center justify-center"
+                        className="h-8 w-8 rounded-lg bg-white flex items-center justify-center disabled:opacity-40"
+                        disabled={(() => {
+                          const max = maxLinhaCarrinho(i);
+                          return max != null && i.quantidade >= max;
+                        })()}
                         onClick={() =>
-                          alterarQuantidade(i.idUnico, i.quantidade + 1)
+                          tentarAlterarQuantidade(i, i.quantidade + 1)
                         }
                       >
                         <Plus size={14} />
                       </button>
                     </div>
+                    {(i.modoEncomenda === "pronto" ||
+                      i.modoEncomenda === "encomenda") && (
+                      <p className="text-[11px] text-zinc-500">
+                        {(() => {
+                          const usaVaga = pedidoUsaVagaEncomenda(agendadoPara, {
+                            estoquePronto:
+                              dispCarrinho[i.produtoId]?.estoque_pronto,
+                            modoItem: i.modoEncomenda,
+                          });
+                          const max = maxLinhaCarrinho(i);
+                          if (max == null) return null;
+                          return usaVaga
+                            ? `Máx. ${max} (vagas do dia)`
+                            : `Máx. ${max} (prontas hoje)`;
+                        })()}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

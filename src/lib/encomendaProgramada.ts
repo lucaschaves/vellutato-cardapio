@@ -71,6 +71,36 @@ export async function buscarDisponibilidadeEncomendaLote(
   return map;
 }
 
+/** Vagas de encomenda restantes numa data (YYYY-MM-DD, calendário da loja). */
+export async function buscarEncomendasRestantesNoDia(
+  produtoId: string,
+  dataKey: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("encomendas_restantes_no_dia", {
+    p_produto_id: produtoId,
+    p_data: dataKey,
+  });
+  if (error) throw new Error(error.message);
+  return Math.max(0, Number(data) || 0);
+}
+
+export async function buscarEncomendasRestantesNoDiaLote(
+  produtoIds: string[],
+  dataKey: string,
+): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  await Promise.all(
+    produtoIds.map(async (id) => {
+      try {
+        out[id] = await buscarEncomendasRestantesNoDia(id, dataKey);
+      } catch {
+        out[id] = 0;
+      }
+    }),
+  );
+  return out;
+}
+
 export function formatarRetiradaEncomenda(iso: string | null | undefined): string {
   if (!iso) return "";
   try {
@@ -449,6 +479,7 @@ export function carrinhoExigeAgendamentoEncomenda(
 /**
  * Resolve modo pelo dia do agendamento (espelha a regra SQL).
  * Hoje + pronto → pronto; dia futuro ou sem pronto → encomenda.
+ * `forcarEncomenda`: cliente escolheu Agendar (mesmo com prontas / mesmo dia).
  */
 export function modoEncomendaPorAgendamento(
   agendadoPara: string | null | undefined,
@@ -456,8 +487,10 @@ export function modoEncomendaPorAgendamento(
     estoquePronto?: number | null;
     quantidade?: number;
     podeAgendar?: boolean;
+    forcarEncomenda?: boolean;
   } = {},
 ): ModoEncomendaItem {
+  if (opts.forcarEncomenda) return "encomenda";
   const qtd = Math.max(1, opts.quantidade ?? 1);
   const pronto = Math.max(0, Number(opts.estoquePronto ?? 0));
   const TZ = "America/Sao_Paulo";
@@ -475,4 +508,21 @@ export function modoEncomendaPorAgendamento(
   const diaAg = agendadoPara ? partes(agendadoPara) : hoje;
   if (diaAg === hoje && pronto >= qtd) return "pronto";
   return "encomenda";
+}
+
+/** True se o horário escolhido (ou a intenção do item) consome vaga de encomenda. */
+export function pedidoUsaVagaEncomenda(
+  agendadoPara: string | null | undefined,
+  opts: {
+    estoquePronto?: number | null;
+    modoItem?: ModoEncomendaItem | null;
+  } = {},
+): boolean {
+  if (opts.modoItem === "encomenda") return true;
+  return (
+    modoEncomendaPorAgendamento(agendadoPara, {
+      estoquePronto: opts.estoquePronto,
+      quantidade: 1,
+    }) === "encomenda"
+  );
 }
