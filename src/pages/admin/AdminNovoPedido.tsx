@@ -310,6 +310,7 @@ export function AdminNovoPedido() {
         enderecoAtivo.latitude,
         enderecoAtivo.longitude,
         subtotal,
+        { bairroHint: enderecoAtivo.bairro },
       );
       if (!ativo) return;
       if (!r.ok) {
@@ -381,6 +382,8 @@ export function AdminNovoPedido() {
         bairro: dados.bairro || f.bairro,
         cidade: dados.cidade || f.cidade,
         uf: dados.uf || f.uf,
+        latitude: dados.latitude ?? f.latitude,
+        longitude: dados.longitude ?? f.longitude,
       }));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "CEP inválido");
@@ -627,6 +630,7 @@ export function AdminNovoPedido() {
         enderecoAtivo.latitude,
         enderecoAtivo.longitude,
         subtotal,
+        { bairroHint: enderecoAtivo.bairro },
       );
       if (!avaliacao.ok) {
         setFreteMsg(avaliacao.erro);

@@ -370,7 +370,10 @@ export function DeliveryHome() {
     }
     let cancelado = false;
     void (async () => {
-      const r = await avaliarEntregaDelivery(config, lat, lng, 0);
+      const r = await avaliarEntregaDelivery(config, lat, lng, 0, {
+        bairroHint:
+          endereco && "bairro" in endereco ? endereco.bairro : undefined,
+      });
       if (cancelado) return;
       if (!r.ok) {
         setFreteInfo({ ok: false, texto: r.erro });
@@ -506,6 +509,8 @@ export function DeliveryHome() {
           bairro: dados.bairro,
           cidade: dados.cidade,
           uf: dados.uf,
+          latitude: dados.latitude,
+          longitude: dados.longitude,
         },
       });
     } catch {

@@ -766,8 +766,8 @@ export function DeliveryConta() {
                         bairro: r.bairro || f.bairro,
                         cidade: r.cidade || f.cidade,
                         uf: r.uf || f.uf,
-                        latitude: null,
-                        longitude: null,
+                        latitude: r.latitude,
+                        longitude: r.longitude,
                       }));
                     })
                   }

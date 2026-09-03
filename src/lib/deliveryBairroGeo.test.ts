@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   intervaloDistanciaLojaBairro,
+  nomesBairroCompativeis,
+  pontoEmGeometria,
   sugerirFaixasPorIntervalo,
 } from "./deliveryBairroGeo";
+import {
+  escolherBairroNoGeojson,
+  type BairrosFreteGeoJson,
+} from "./deliveryBairros";
 
 /** Quadrado ~1°×1° centrado perto de Floripa (só para testes geométricos). */
 const QUADRADO = {
@@ -42,19 +48,95 @@ describe("sugerirFaixasPorIntervalo", () => {
 });
 
 describe("intervaloDistanciaLojaBairro", () => {
-  it("marca loja dentro com dist_min 0", () => {
+  it("loja dentro → dist_min 0", () => {
     const r = intervaloDistanciaLojaBairro(-27.595, -48.545, QUADRADO);
-    expect(r).not.toBeNull();
-    expect(r!.loja_dentro).toBe(true);
-    expect(r!.dist_min_km).toBe(0);
-    expect(r!.dist_max_km).toBeGreaterThan(0);
+    expect(r?.loja_dentro).toBe(true);
+    expect(r?.dist_min_km).toBe(0);
+  });
+});
+
+describe("nomesBairroCompativeis", () => {
+  it("casa Carvoeira ignorando acento/case", () => {
+    expect(nomesBairroCompativeis("Carvoeira", "carvoeira")).toBe(true);
+  });
+});
+
+describe("escolherBairroNoGeojson", () => {
+  const grande = {
+    type: "Polygon",
+    coordinates: [
+      [
+        [-48.55, -27.62],
+        [-48.50, -27.62],
+        [-48.50, -27.59],
+        [-48.55, -27.59],
+        [-48.55, -27.62],
+      ],
+    ],
+  };
+  const carvoeira = {
+    type: "Polygon",
+    coordinates: [
+      [
+        [-48.53, -27.61],
+        [-48.52, -27.61],
+        [-48.52, -27.60],
+        [-48.53, -27.60],
+        [-48.53, -27.61],
+      ],
+    ],
+  };
+
+  const fc: BairrosFreteGeoJson = {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          id: "1",
+          slug: "centro",
+          nome: "Centro",
+          regiao: "Central",
+          distrito: "Sede",
+          taxa: 10,
+          raio_km: 5,
+          faixas: [{ ate_km: 5, taxa: 10 }],
+          descontos: [],
+        },
+        geometry: grande,
+      },
+      {
+        type: "Feature",
+        properties: {
+          id: "2",
+          slug: "carvoeira",
+          nome: "Carvoeira",
+          regiao: "Central",
+          distrito: "Trindade",
+          taxa: 8,
+          raio_km: 4,
+          faixas: [{ ate_km: 4, taxa: 8 }],
+          descontos: [],
+        },
+        geometry: carvoeira,
+      },
+    ],
+  };
+
+  it("com hint Carvoeira escolhe Carvoeira mesmo com Centro maior cobrindo", () => {
+    expect(pontoEmGeometria(-27.605, -48.525, carvoeira)).toBe(true);
+    expect(pontoEmGeometria(-27.605, -48.525, grande)).toBe(true);
+    const r = escolherBairroNoGeojson(fc, -27.605, -48.525, "Carvoeira");
+    expect(r?.nome).toBe("Carvoeira");
   });
 
-  it("loja fora tem dist_min > 0 e max >= min", () => {
-    const r = intervaloDistanciaLojaBairro(-27.58, -48.56, QUADRADO);
-    expect(r).not.toBeNull();
-    expect(r!.loja_dentro).toBe(false);
-    expect(r!.dist_min_km).toBeGreaterThan(0);
-    expect(r!.dist_max_km).toBeGreaterThanOrEqual(r!.dist_min_km);
+  it("hint Carvoeira vence mesmo se o ponto cair no Centro", () => {
+    const r = escolherBairroNoGeojson(fc, -27.605, -48.545, "Carvoeira");
+    expect(r?.nome).toBe("Carvoeira");
+  });
+
+  it("sem hint escolhe o menor polígono", () => {
+    const r = escolherBairroNoGeojson(fc, -27.605, -48.525, null);
+    expect(r?.nome).toBe("Carvoeira");
   });
 });

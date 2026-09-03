@@ -33,6 +33,7 @@ import {
   taxasDosBairrosGeojson,
 } from "../../lib/deliveryBairros";
 import {
+  distanciaKm as distanciaKmCoords,
   formatarDistanciaEntrega,
   taxaMinimaConfig,
   type DeliveryConfig,
@@ -732,6 +733,7 @@ export function DeliveryCheckout() {
         enderecoAtivo.latitude!,
         enderecoAtivo.longitude!,
         subtotal,
+        { bairroHint: enderecoAtivo.bairro },
       );
       if (!ativo) return;
       setAvaliandoFrete(false);
@@ -842,23 +844,28 @@ export function DeliveryCheckout() {
       const atualizado = {
         ...formEndereco,
         cep: cepLimpo,
-        ...dados,
-        latitude: null as number | null,
-        longitude: null as number | null,
+        rua: dados.rua,
+        bairro: dados.bairro,
+        cidade: dados.cidade,
+        uf: dados.uf,
+        latitude: dados.latitude,
+        longitude: dados.longitude,
       };
 
-      // Geocodifica com o que veio do CEP (+ número se já preenchido)
-      try {
-        const coords = await geocodificarEndereco({
-          ...atualizado,
-          numero: formEndereco.numero || "1",
-        });
-        if (coords) {
-          atualizado.latitude = coords.latitude;
-          atualizado.longitude = coords.longitude;
+      // Se BrasilAPI não trouxe coords, geocodifica (sem inventar número "1")
+      if (atualizado.latitude == null || atualizado.longitude == null) {
+        try {
+          const coords = await geocodificarEndereco({
+            ...atualizado,
+            numero: formEndereco.numero || "",
+          });
+          if (coords) {
+            atualizado.latitude = coords.latitude;
+            atualizado.longitude = coords.longitude;
+          }
+        } catch {
+          // CEP ok mesmo se o mapa falhar; coords podem vir ao informar o número
         }
-      } catch {
-        // CEP ok mesmo se o mapa falhar; coords podem vir ao informar o número
       }
 
       setFormEndereco(atualizado);
@@ -887,9 +894,20 @@ export function DeliveryCheckout() {
         ...formEndereco,
         numero: numero.trim(),
       });
-      if (coords) {
-        setFormEndereco((f) => ({ ...f, ...coords }));
-      }
+      if (!coords) return;
+      setFormEndereco((f) => {
+        if (f.latitude != null && f.longitude != null) {
+          const d = distanciaKmCoords(
+            f.latitude,
+            f.longitude,
+            coords.latitude,
+            coords.longitude,
+          );
+          // Nominatim às vezes pula para o Centro; mantém o ponto do CEP.
+          if (d > 1.2) return f;
+        }
+        return { ...f, ...coords };
+      });
     } catch {
       // silencioso — validação no pagar
     }
@@ -1217,6 +1235,7 @@ export function DeliveryCheckout() {
         enderecoAtivo.latitude,
         enderecoAtivo.longitude,
         subtotal,
+        { bairroHint: enderecoAtivo.bairro },
       );
       if (!avaliacao.ok) {
         setFreteMsg(avaliacao.erro);
@@ -2214,8 +2233,8 @@ export function DeliveryCheckout() {
               )}
               {!avaliandoFrete && !freteMsg && (
                 <p className="text-sm text-zinc-600">
-                  {bairroFreteNome
-                    ? `Entrega para ${bairroFreteNome} · `
+                  {(bairroFreteNome || enderecoAtivo.bairro?.trim())
+                    ? `Entrega para ${bairroFreteNome || enderecoAtivo.bairro} · `
                     : ""}
                   Frete: R$ {taxaFrete.toFixed(2).replace(".", ",")}
                   {descontoCarrinhoFrete > 0

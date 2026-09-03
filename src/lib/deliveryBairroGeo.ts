@@ -34,6 +34,48 @@ function pontoEmAnel(lat: number, lng: number, anel: number[][]): boolean {
   return inside;
 }
 
+/** True se o ponto está no polígono (anel exterior; furos ignorados). */
+export function pontoEmGeometria(
+  lat: number,
+  lng: number,
+  geometry: { type: string; coordinates: unknown },
+): boolean {
+  const aneis = extrairAneisGeometria(geometry);
+  // Em Polygon/MultiPolygon, o 1º anel de cada polígono é o exterior.
+  if (geometry.type === "Polygon") {
+    return aneis[0] ? pontoEmAnel(lat, lng, aneis[0]) : false;
+  }
+  if (geometry.type === "MultiPolygon") {
+    const multi = geometry.coordinates as number[][][][];
+    return multi.some((poly) => {
+      const exterior = poly[0];
+      return exterior ? pontoEmAnel(lat, lng, exterior) : false;
+    });
+  }
+  return aneis.some((anel, idx) => {
+    // fallback: só anéis em índice par costumam ser exteriores
+    if (idx % 2 !== 0) return false;
+    return pontoEmAnel(lat, lng, anel);
+  });
+}
+
+/** Compara nomes de bairro (CEP vs oficial), ignorando acento/case. */
+export function normalizarNomeBairro(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function nomesBairroCompativeis(a: string, b: string): boolean {
+  const na = normalizarNomeBairro(a);
+  const nb = normalizarNomeBairro(b);
+  if (!na || !nb) return false;
+  return na === nb || na.includes(nb) || nb.includes(na);
+}
+
 function distPontoSegmentoKm(
   p: Pos,
   aLng: number,

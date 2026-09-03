@@ -72,6 +72,19 @@ export function DeliveryEndereco() {
   const [referencia, setReferencia] = useState(
     estado.referencia || rascunho?.referencia || "",
   );
+  const coordsCep = (() => {
+    const lat = estado.latitude ?? rascunho?.latitude ?? null;
+    const lng = estado.longitude ?? rascunho?.longitude ?? null;
+    if (
+      lat != null &&
+      lng != null &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng)
+    ) {
+      return { latitude: lat, longitude: lng };
+    }
+    return null;
+  })();
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -106,14 +119,15 @@ export function DeliveryEndereco() {
 
     try {
       setSalvando(true);
-      const coords = await geocodificarEndereco({
-        rua: base.rua,
-        numero: base.numero,
-        bairro: base.bairro,
-        cidade: base.cidade,
-        uf: base.uf,
-        cep: base.cep,
-      });
+      const coords =
+        (await geocodificarEndereco({
+          rua: base.rua,
+          numero: base.numero,
+          bairro: base.bairro,
+          cidade: base.cidade,
+          uf: base.uf,
+          cep: base.cep,
+        })) ?? coordsCep;
 
       const rascunhoCompleto: RascunhoEnderecoDelivery = {
         ...base,

@@ -429,15 +429,56 @@ export async function excluirEndereco(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Busca endereço via ViaCEP + geocode Nominatim (OpenStreetMap). */
+export {
+  geocodificarEndereco,
+  coordsPorCepBrasilApi,
+  formatarCepComHifen,
+  nominatimHitAceitavel,
+} from "./geocodeEndereco";
+
+/** Busca endereço: BrasilAPI (com coords) → ViaCEP. */
 export async function buscarCep(cep: string): Promise<{
   rua: string;
   bairro: string;
   cidade: string;
   uf: string;
+  latitude: number | null;
+  longitude: number | null;
 } | null> {
   const limpo = cep.replace(/\D/g, "");
   if (limpo.length !== 8) return null;
+
+  // 1) BrasilAPI v2 — texto + coordenadas do trecho
+  try {
+    const res = await fetch(`https://brasilapi.com.br/api/cep/v2/${limpo}`);
+    if (res.ok) {
+      const data = (await res.json()) as {
+        street?: string;
+        neighborhood?: string;
+        city?: string;
+        state?: string;
+        location?: {
+          coordinates?: { latitude?: string; longitude?: string };
+        };
+      };
+      const lat = Number(data.location?.coordinates?.latitude);
+      const lng = Number(data.location?.coordinates?.longitude);
+      if (data.city || data.street || data.neighborhood) {
+        return {
+          rua: data.street || "",
+          bairro: data.neighborhood || "",
+          cidade: data.city || "",
+          uf: data.state || "",
+          latitude: Number.isFinite(lat) ? lat : null,
+          longitude: Number.isFinite(lng) ? lng : null,
+        };
+      }
+    }
+  } catch {
+    // cai no ViaCEP
+  }
+
+  // 2) ViaCEP (sem coords)
   const res = await fetch(`https://viacep.com.br/ws/${limpo}/json/`);
   const data = await res.json();
   if (data.erro) return null;
@@ -446,110 +487,7 @@ export async function buscarCep(cep: string): Promise<{
     bairro: data.bairro || "",
     cidade: data.localidade || "",
     uf: data.uf || "",
+    latitude: null,
+    longitude: null,
   };
-}
-
-type NominatimHit = { lat: string; lon: string };
-
-const NOMINATIM_HEADERS = {
-  Accept: "application/json",
-  // Política de uso do Nominatim exige identificar o app
-  "User-Agent": "VellutatoCardapioDigital/1.0 (delivery)",
-};
-
-async function nominatimBusca(
-  params: Record<string, string>,
-): Promise<{ latitude: number; longitude: number } | null> {
-  const qs = new URLSearchParams({
-    format: "json",
-    limit: "1",
-    addressdetails: "0",
-    countrycodes: "br",
-    ...params,
-  });
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?${qs.toString()}`,
-    { headers: NOMINATIM_HEADERS },
-  );
-  if (!res.ok) return null;
-  const data = (await res.json()) as NominatimHit[];
-  if (!data?.[0]?.lat || !data?.[0]?.lon) return null;
-  const latitude = Number(data[0].lat);
-  const longitude = Number(data[0].lon);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return { latitude, longitude };
-}
-
-/**
- * Geocodifica endereço no Brasil.
- * Usa busca estruturada do Nominatim (mais precisa) e fallbacks progressivos.
- */
-export async function geocodificarEndereco(opts: {
-  rua: string;
-  numero: string;
-  bairro: string;
-  cidade: string;
-  uf: string;
-  cep: string;
-}): Promise<{ latitude: number; longitude: number } | null> {
-  const rua = (opts.rua || "").trim();
-  const numero = (opts.numero || "").trim();
-  const bairro = (opts.bairro || "").trim();
-  const cidade = (opts.cidade || "").trim();
-  const uf = (opts.uf || "").trim().toUpperCase().slice(0, 2);
-  const cep = (opts.cep || "").replace(/\D/g, "");
-
-  if (!cidade && !cep) {
-    throw new Error("Informe cidade ou CEP para localizar o endereço.");
-  }
-  if (!rua && !cep) {
-    throw new Error("Informe a rua ou o CEP para localizar o endereço.");
-  }
-
-  // 1) Estruturado: rua + número + cidade + UF + CEP
-  if (rua && cidade) {
-    const street = [numero, rua].filter(Boolean).join(" ").trim();
-    const hit = await nominatimBusca({
-      street,
-      city: cidade,
-      ...(uf ? { state: uf } : {}),
-      ...(cep.length === 8 ? { postalcode: cep } : {}),
-      country: "Brazil",
-    });
-    if (hit) return hit;
-  }
-
-  // 2) Estruturado sem número (ponto médio da rua)
-  if (rua && cidade) {
-    const hit = await nominatimBusca({
-      street: rua,
-      city: cidade,
-      ...(uf ? { state: uf } : {}),
-      ...(cep.length === 8 ? { postalcode: cep } : {}),
-      country: "Brazil",
-    });
-    if (hit) return hit;
-  }
-
-  // 3) Texto livre só com partes preenchidas (evita ", , , Brasil")
-  const partes = [rua, numero, bairro, cidade, uf, cep, "Brasil"].filter(
-    (p) => Boolean(p && String(p).trim()),
-  );
-  if (partes.length >= 2) {
-    const hit = await nominatimBusca({ q: partes.join(", ") });
-    if (hit) return hit;
-  }
-
-  // 4) Só CEP (centroide aproximado do código postal)
-  if (cep.length === 8) {
-    const hit = await nominatimBusca({
-      postalcode: cep,
-      country: "Brazil",
-      ...(cidade ? { city: cidade } : {}),
-      ...(uf ? { state: uf } : {}),
-    });
-    if (hit) return hit;
-  }
-
-  return null;
 }
