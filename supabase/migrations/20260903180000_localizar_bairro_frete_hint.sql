@@ -82,19 +82,6 @@ $$;
 grant execute on function public.localizar_bairro_frete(double precision, double precision, text)
   to anon, authenticated;
 
--- Assinatura de 2 args continua válida (hint null)
-create or replace function public.localizar_bairro_frete(
-  p_lat double precision,
-  p_lng double precision
-)
-returns jsonb
-language sql
-stable
-security definer
-set search_path = public, extensions
-as $$
-  select public.localizar_bairro_frete(p_lat, p_lng, null::text);
-$$;
-
-grant execute on function public.localizar_bairro_frete(double precision, double precision)
-  to anon, authenticated;
+-- Uma só assinatura: 2 args + default do 3º. A sobrecarga de 2 args
+-- deixava a chamada ambígua (is not unique).
+drop function if exists public.localizar_bairro_frete(double precision, double precision);

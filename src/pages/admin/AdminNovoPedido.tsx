@@ -57,9 +57,12 @@ import {
 } from "../../lib/lojaStatus";
 import {
   criarPedidoCompleto,
-  ErroNegocioCheckout,
   type ItemPedidoCompleto,
 } from "../../lib/pedidos";
+import {
+  ErroNegocioCheckout,
+  ErroTecnicoCheckout,
+} from "../../lib/errosCliente";
 import { supabase } from "../../lib/supabase";
 import {
   formatarTelefoneBr,
@@ -729,9 +732,14 @@ export function AdminNovoPedido() {
       toast.success(`Pedido #${resultado.sequencia_pedido} criado`);
       navigate("/admin/pedidos");
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (e instanceof ErroNegocioCheckout) toast.error(msg);
-      else toast.error(msg || "Falha ao criar pedido");
+      if (e instanceof ErroNegocioCheckout) {
+        toast.error(e.message);
+      } else if (e instanceof ErroTecnicoCheckout) {
+        toast.error(e.tecnico || e.message);
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(msg || "Falha ao criar pedido");
+      }
     } finally {
       setEnviando(false);
     }

@@ -130,6 +130,7 @@ type PedidoBrutoImpressao = {
     complemento?: string | null;
     referencia?: string | null;
   } | null;
+  clientes?: { total_pedidos?: number | null } | null;
   pedido_itens?: Array<{
     quantidade?: number | null;
     observacoes?: string | null;
@@ -283,6 +284,16 @@ export function rotuloAgendamentoComanda(
   if (modalidade === "retirada") return `AGENDADO RETIRADA ${hora}`;
   if (modalidade === "entrega") return `AGENDADO ENTREGA ${hora}`;
   return `AGENDADO PARA ${hora}`;
+}
+
+/** Qtd. de pedidos do cliente na loja (inclui o atual). Sem cadastro → null. */
+export function rotuloQtdPedidosCliente(
+  totalPedidos: number | null | undefined,
+): string | null {
+  const qtd = Number(totalPedidos);
+  if (!Number.isFinite(qtd) || qtd < 1) return null;
+  if (qtd === 1) return "PRIMEIRO PEDIDO";
+  return `${qtd}º PEDIDO DO CLIENTE`;
 }
 
 export function rotuloPagamentoComanda(
@@ -521,6 +532,7 @@ interface DadosComanda {
   ehEntrega: boolean;
   endereco: PedidoBrutoImpressao["endereco_json"];
   taxaEntrega: number;
+  qtdPedidosClienteRotulo: string | null;
 }
 
 function derivarDadosComanda(pedido: PedidoBrutoImpressao): DadosComanda {
@@ -594,6 +606,9 @@ function derivarDadosComanda(pedido: PedidoBrutoImpressao): DadosComanda {
     ehEntrega: pedido.origem === "delivery" && pedido.modalidade === "entrega",
     endereco: pedido.endereco_json ?? null,
     taxaEntrega: Number(pedido.taxa_entrega || 0),
+    qtdPedidosClienteRotulo: rotuloQtdPedidosCliente(
+      pedido.clientes?.total_pedidos,
+    ),
   };
 }
 
@@ -849,6 +864,10 @@ function conteudoCampo(id: CampoImpressaoId, ctx: CtxConfig): string[] {
     case "cliente_telefone":
       return dados.telefone
         ? envolver(`Tel: ${dados.telefone}`, "", largura)
+        : [];
+    case "cliente_qtd_pedidos":
+      return dados.qtdPedidosClienteRotulo
+        ? [dados.qtdPedidosClienteRotulo]
         : [];
     case "local":
       return envolver(`Local: ${dados.local}`, "", largura);

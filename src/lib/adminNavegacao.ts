@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AlertTriangle,
   BarChart3,
   Bike,
   Calculator,
@@ -151,6 +152,11 @@ export const SECOES_NAVEGACAO_ADMIN: readonly SecaoNavAdmin[] = [
       { to: "/admin/funcionamento", rotulo: "Funcionamento", icone: Clock },
       { to: "/admin/delivery", rotulo: "Delivery", icone: Bike },
       { to: "/admin/chat", rotulo: "Chat", icone: MessageCircle },
+      {
+        to: "/admin/erros-clientes",
+        rotulo: "Erros clientes",
+        icone: AlertTriangle,
+      },
     ],
   },
   {

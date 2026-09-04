@@ -110,6 +110,62 @@ export type Database = {
           },
         ]
       }
+      erros_cliente: {
+        Row: {
+          acao: string
+          canal: string
+          cliente_id: string | null
+          codigo: string | null
+          criado_em: string
+          id: string
+          mensagem_tecnica: string
+          props: Json
+          resolvido_em: string | null
+          resolvido_por: string | null
+          sessao_id: string | null
+          status: string
+          url: string | null
+        }
+        Insert: {
+          acao: string
+          canal: string
+          cliente_id?: string | null
+          codigo?: string | null
+          criado_em?: string
+          id?: string
+          mensagem_tecnica: string
+          props?: Json
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          sessao_id?: string | null
+          status?: string
+          url?: string | null
+        }
+        Update: {
+          acao?: string
+          canal?: string
+          cliente_id?: string | null
+          codigo?: string | null
+          criado_em?: string
+          id?: string
+          mensagem_tecnica?: string
+          props?: Json
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          sessao_id?: string | null
+          status?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "erros_cliente_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categorias: {
         Row: {
           criado_em: string
@@ -2331,7 +2387,7 @@ export type Database = {
       }
       listar_bairros_frete_geojson: { Args: never; Returns: Json }
       localizar_bairro_frete: {
-        Args: { p_lat: number; p_lng: number }
+        Args: { p_lat: number; p_lng: number; p_bairro_hint?: string | null }
         Returns: Json
       }
       loja_aberta_agora: { Args: never; Returns: Json }

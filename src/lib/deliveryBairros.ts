@@ -229,6 +229,7 @@ export async function localizarBairroFrete(
   const { data, error } = await supabase.rpc("localizar_bairro_frete", {
     p_lat: lat,
     p_lng: lng,
+    p_bairro_hint: hint || null,
   });
   if (error) {
     console.error("[BAIRROS] localizar:", error.message);

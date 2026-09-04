@@ -73,7 +73,7 @@ import {
 import { dataKeyDeIso, rotuloSlot } from "../../lib/lojaAgendamento";
 import type { StatusLoja } from "../../lib/lojaStatus";
 import { SeletorHorarioPedido } from "../../components/SeletorHorarioPedido";
-import { ErroNegocioCheckout } from "../../lib/pedidos";
+import { mensagemToastCliente } from "../../lib/errosCliente";
 import { somarDeltasCombo, type EscolhaCombo } from "../../lib/combos";
 import {
   lembrarClienteAnalytics,
@@ -1445,8 +1445,7 @@ export function DeliveryCheckout() {
         canal: "delivery",
         props: { motivo: "criar_pedido", erro: msg },
       });
-      if (e instanceof ErroNegocioCheckout) toast.error(msg);
-      else toast.error(msg || "Falha ao criar pedido");
+      toast.error(mensagemToastCliente(e));
       setRedirecionandoPagamento(false);
     } finally {
       setEnviando(false);

@@ -5,7 +5,9 @@ import {
   rotuloModalidadeComanda,
   rotuloOrigemComanda,
   rotuloPagamentoComanda,
+  rotuloQtdPedidosCliente,
 } from "./comandaImpressao";
+import { configPadrao, criarBloco } from "./impressaoConfig";
 
 describe("rótulos da comanda", () => {
   it("origem e modalidade delivery/retirada", () => {
@@ -36,6 +38,13 @@ describe("rótulos da comanda", () => {
       "AGENDADO ENTREGA 18:30",
     );
     expect(rotuloAgendamentoComanda(null)).toBeNull();
+  });
+
+  it("qtd. de pedidos do cliente", () => {
+    expect(rotuloQtdPedidosCliente(1)).toBe("PRIMEIRO PEDIDO");
+    expect(rotuloQtdPedidosCliente(5)).toBe("5º PEDIDO DO CLIENTE");
+    expect(rotuloQtdPedidosCliente(0)).toBeNull();
+    expect(rotuloQtdPedidosCliente(null)).toBeNull();
   });
 });
 
@@ -123,5 +132,55 @@ describe("montarComandaImpressao — destaques", () => {
 
     expect(comanda.texto_comanda).toContain("AGENDADO RETIRADA 18:30");
     expect(comanda.agendamento_rotulo).toBe("AGENDADO RETIRADA 18:30");
+  });
+
+  it("campo cliente_qtd_pedidos no layout configurável", () => {
+    const config = configPadrao();
+    const bloco = criarBloco("campo");
+    bloco.campo = "cliente_qtd_pedidos";
+    config.via_cozinha.blocos = [bloco];
+    config.via_cliente.ativa = false;
+
+    const primeiro = montarComandaImpressao(
+      {
+        id: "p4",
+        sequencia_pedido: 1,
+        origem: "delivery",
+        cliente_nome: "Ana",
+        total: 10,
+        clientes: { total_pedidos: 1 },
+        pedido_itens: [
+          {
+            quantidade: 1,
+            preco_unitario: 10,
+            modo_consumo: "levar",
+            produtos: { nome: "Cookie" },
+          },
+        ],
+      },
+      config,
+    );
+    expect(primeiro.vias[0]?.texto).toContain("PRIMEIRO PEDIDO");
+
+    const recorrente = montarComandaImpressao(
+      {
+        id: "p5",
+        sequencia_pedido: 2,
+        origem: "delivery",
+        cliente_nome: "Ana",
+        total: 10,
+        clientes: { total_pedidos: 4 },
+        pedido_itens: [
+          {
+            quantidade: 1,
+            preco_unitario: 10,
+            modo_consumo: "levar",
+            produtos: { nome: "Cookie" },
+          },
+        ],
+      },
+      config,
+    );
+    expect(recorrente.vias[0]?.texto).toContain("4º PEDIDO DO CLIENTE");
   });
 });

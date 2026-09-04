@@ -27,7 +27,8 @@ import {
   type CupomCliente,
 } from "../lib/clientes";
 import { anexarCuponsPedido, validarCupom } from "../lib/cupons";
-import { criarPedidoCompleto, ErroNegocioCheckout } from "../lib/pedidos";
+import { criarPedidoCompleto } from "../lib/pedidos";
+import { mensagemToastCliente } from "../lib/errosCliente";
 import {
   buscarDisponibilidadeEncomendaLote,
   buscarEncomendasRestantesNoDiaLote,
@@ -610,11 +611,7 @@ export function CarrinhoLateral({
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       console.error("[ERRO CRÍTICO - CHECKOUT]", mensagem);
-      toast.error(
-        erro instanceof ErroNegocioCheckout
-          ? mensagem
-          : "Erro ao processar o pedido. Tente novamente.",
-      );
+      toast.error(mensagemToastCliente(erro));
     } finally {
       setEnviando(false);
     }

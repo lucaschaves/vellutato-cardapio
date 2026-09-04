@@ -24,6 +24,7 @@ import { GerenciamentoCombos } from "@/pages/admin/GerenciamentoCombos";
 import { GerenciamentoCupons } from "@/pages/admin/GerenciamentoCupons";
 import { GerenciamentoDelivery } from "@/pages/admin/GerenciamentoDelivery";
 import { GerenciamentoDespesas } from "@/pages/admin/GerenciamentoDespesas";
+import { GerenciamentoErrosCliente } from "@/pages/admin/GerenciamentoErrosCliente";
 import { GerenciamentoFuncionamento } from "@/pages/admin/GerenciamentoFuncionamento";
 import { GerenciamentoIfood } from "@/pages/admin/GerenciamentoIfood";
 import { GerenciamentoImpressao } from "@/pages/admin/GerenciamentoImpressao";
@@ -209,6 +210,10 @@ const router = createBrowserRouter([
       { path: "/admin/ifood", element: <GerenciamentoIfood /> },
       { path: "/admin/impressao", element: <GerenciamentoImpressao /> },
       { path: "/admin/chat", element: <GerenciamentoChatDelivery /> },
+      {
+        path: "/admin/erros-clientes",
+        element: <GerenciamentoErrosCliente />,
+      },
       {
         path: "/admin/vendas-cruzadas",
         element: <GerenciamentoVendasCruzadas />,

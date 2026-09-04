@@ -1,4 +1,8 @@
-import { ErroNegocioCheckout } from "./pedidos";
+import {
+  ErroTecnicoCheckout,
+  lancarErroRpcPedido,
+  reportarErroCliente,
+} from "./errosCliente";
 import { supabase } from "./supabase";
 import type { ItemPedidoCompleto } from "./pedidos";
 
@@ -69,15 +73,10 @@ export async function criarPedidoDelivery(
   });
 
   if (error) {
-    const prefixosNegocio =
-      /^(LOJA_FECHADA|LOJA_CHEIA|FORA_AREA|DELIVERY_INDISPONIVEL|AGENDAMENTO_INVALIDO|CUPOM_INVALIDO|SUBTOTAL_INVALIDO|TOTAL_INVALIDO|TAXA_INVALIDA|ENCOMENDA_INDISPONIVEL|ENCOMENDA_INVALIDA):\s*/;
-    const ehNegocio =
-      prefixosNegocio.test(error.message) ||
-      error.message.includes("Estoque insuficiente") ||
-      error.message.includes("Estoque pronto insuficiente");
-    const mensagem = error.message.replace(prefixosNegocio, "");
-    if (ehNegocio) throw new ErroNegocioCheckout(mensagem);
-    throw new Error(mensagem);
+    lancarErroRpcPedido(error, "criar_pedido", {
+      clienteId: pedido.cliente_id,
+      props: { modalidade: pedido.modalidade },
+    });
   }
 
   return data as { pedido_id: string; sequencia_pedido: number };
@@ -180,10 +179,24 @@ export async function iniciarCheckoutAsaas(
   );
 
   if (data?.erro || error) {
-    throw new Error(await mensagemErroFunction(data, error));
+    const tecnico = await mensagemErroFunction(data, error);
+    reportarErroCliente({
+      acao: "checkout_asaas",
+      mensagemTecnica: tecnico,
+      clienteId: opts?.clienteId,
+      props: { pedido_id: pedidoId },
+    });
+    throw new ErroTecnicoCheckout(tecnico);
   }
   if (!data?.checkout_url) {
-    throw new Error("Link de pagamento não retornado pelo Asaas");
+    const tecnico = "Link de pagamento não retornado pelo Asaas";
+    reportarErroCliente({
+      acao: "checkout_asaas",
+      mensagemTecnica: tecnico,
+      clienteId: opts?.clienteId,
+      props: { pedido_id: pedidoId },
+    });
+    throw new ErroTecnicoCheckout(tecnico);
   }
   return {
     checkout_id: data.checkout_id as string,

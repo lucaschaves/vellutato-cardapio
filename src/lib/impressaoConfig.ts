@@ -11,6 +11,7 @@ export type CampoImpressaoId =
   | "pagamento_destaque"
   | "cliente_nome"
   | "cliente_telefone"
+  | "cliente_qtd_pedidos"
   | "local"
   | "endereco_entrega"
   | "taxa_entrega"
@@ -100,6 +101,7 @@ export const CAMPO_LABEL: Record<CampoImpressaoId, string> = {
   pagamento_destaque: "Status de pagamento",
   cliente_nome: "Nome do cliente",
   cliente_telefone: "Telefone do cliente",
+  cliente_qtd_pedidos: "Qtd. de pedidos do cliente",
   local: "Local / Mesa / Identificador",
   endereco_entrega: "Endereço de entrega (só entrega)",
   taxa_entrega: "Taxa de entrega (só entrega)",

@@ -32,6 +32,7 @@ const SELECT_PEDIDO_IMPRESSAO = `
   id, sequencia_pedido, origem, modalidade, identificador, cliente_nome, cliente_celular,
   status, criado_em, total, valor_total, desconto_aplicado, impresso,
   status_pagamento, taxa_entrega, endereco_json, agendado_para,
+  clientes ( total_pedidos ),
   pedido_itens (
     id, quantidade, observacoes, preco_unitario, modo_consumo,
     produtos ( nome ),

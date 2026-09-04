@@ -1,4 +1,7 @@
+import { lancarErroRpcPedido } from "./errosCliente";
 import { supabase } from "./supabase";
+
+export { ErroNegocioCheckout } from "./errosCliente";
 
 export interface ItemPedidoCompleto {
   produto_id: string;
@@ -32,9 +35,6 @@ export interface NovoPedidoCompleto {
   agendado_para?: string | null;
 }
 
-/** Erro de negócio (loja fechada, estoque etc.): a mensagem é amigável e pode ir direto pro cliente. */
-export class ErroNegocioCheckout extends Error {}
-
 /**
  * Cria o pedido inteiro (pedido + itens + adicionais + combos + estoque +
  * cupom) numa única transação no banco. Falhou qualquer etapa, nada é gravado.
@@ -57,17 +57,10 @@ export async function criarPedidoCompleto(
   });
 
   if (error) {
-    // Prefixos usados pela função SQL para erros esperados de negócio
-    const ehNegocio =
-      /^(LOJA_FECHADA|LOJA_CHEIA|ENCOMENDA_INDISPONIVEL|ENCOMENDA_INVALIDA):/.test(error.message) ||
-      error.message.includes("Estoque insuficiente") ||
-      error.message.includes("Estoque pronto insuficiente");
-    const mensagem = error.message.replace(
-      /^(LOJA_FECHADA|LOJA_CHEIA|ENCOMENDA_INDISPONIVEL|ENCOMENDA_INVALIDA):\s*/,
-      "",
-    );
-    if (ehNegocio) throw new ErroNegocioCheckout(mensagem);
-    throw new Error(mensagem);
+    lancarErroRpcPedido(error, "criar_pedido", {
+      clienteId: pedido.cliente_id,
+      props: { origem: pedido.origem },
+    });
   }
 
   return data as { pedido_id: string; sequencia_pedido: number };

@@ -25,6 +25,8 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
         importScripts: ["/sw-push.js"],
+        // Bundle principal já passa de 2 MiB; sem isso o build do SW falha.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
   ],

@@ -50,6 +50,7 @@ const PEDIDO_EXEMPLO = {
   identificador: "Delivery",
   cliente_nome: "Maria Silva",
   cliente_celular: "(11) 99999-8888",
+  clientes: { total_pedidos: 1 },
   criado_em: new Date().toISOString(),
   /** Exemplo agendado — aparece como faixa “AGENDADO ENTREGA HH:MM” no cupom */
   agendado_para: new Date(
