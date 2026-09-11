@@ -1,3 +1,4 @@
+import { mensagemNomeIncompleto } from "./nomePessoa";
 import { supabase } from "./supabase";
 import { normalizarTelefoneParaSalvar } from "./telefone";
 
@@ -199,7 +200,8 @@ export async function upsertClienteAuth(opts: {
   cpf?: string | null;
 }): Promise<ClienteDelivery> {
   const nome = opts.nome.trim();
-  if (!nome) throw new Error("Nome obrigatório.");
+  const erroNome = mensagemNomeIncompleto(nome);
+  if (erroNome) throw new Error(erroNome);
 
   const celular = opts.celular
     ? normalizarTelefoneParaSalvar(opts.celular)
@@ -299,7 +301,8 @@ export async function garantirClienteCheckout(opts: {
   email?: string | null;
 }): Promise<ClienteDelivery> {
   const nome = opts.nome.trim();
-  if (!nome) throw new Error("Informe seu nome.");
+  const erroNome = mensagemNomeIncompleto(nome);
+  if (erroNome) throw new Error(erroNome);
 
   const celular = normalizarTelefoneParaSalvar(opts.celular);
   if (celular.length < 10) {

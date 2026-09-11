@@ -10,6 +10,7 @@ import {
   formatarCpf,
   upsertClienteAuth,
 } from "../../lib/deliveryCliente";
+import { mensagemNomeIncompleto } from "../../lib/nomePessoa";
 import { formatarTelefoneBr, telefoneDigitosCompleto } from "../../lib/telefone";
 
 type Etapa = "telefone" | "dados";
@@ -94,8 +95,9 @@ export function DeliveryCadastro() {
       toast.warning("Informe um celular válido.");
       return;
     }
-    if (!nome.trim()) {
-      toast.warning("Informe seu nome.");
+    const erroNome = mensagemNomeIncompleto(nome);
+    if (erroNome) {
+      toast.warning(erroNome);
       return;
     }
     if (!cpfValido(cpf)) {
@@ -136,7 +138,7 @@ export function DeliveryCadastro() {
             ? "Informe o telefone para localizar um cadastro existente ou criar um novo."
             : clienteEncontrado
               ? "Confirme ou atualize os dados do seu cadastro."
-              : "Precisamos do seu nome e CPF para finalizar pedidos."}
+              : "Precisamos do seu nome completo e CPF para finalizar pedidos."}
         </p>
       </div>
 
@@ -186,10 +188,13 @@ export function DeliveryCadastro() {
             </button>
           </div>
           <div>
-            <label className="text-xs font-semibold text-zinc-500">Nome</label>
+            <label className="text-xs font-semibold text-zinc-500">
+              Nome completo
+            </label>
             <Input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
+              placeholder="Nome e sobrenome"
               autoFocus
             />
           </div>

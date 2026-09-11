@@ -27,6 +27,7 @@ import {
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
+import { mensagemNomeIncompleto, nomeCompletoValido } from "../../lib/nomePessoa";
 import {
   avaliarEntregaDelivery,
   listarBairrosFreteGeojson,
@@ -998,7 +999,7 @@ export function DeliveryCheckout() {
     telefoneConsultado &&
       !buscandoCliente &&
       telefoneDigitosCompleto(guestTelefone) &&
-      guestNome.trim() &&
+      nomeCompletoValido(guestNome) &&
       (!precisaEmailPagamento || emailValido) &&
       (!precisaCpfPagamento || cpfOk),
   );
@@ -1299,8 +1300,9 @@ export function DeliveryCheckout() {
       toast.error("Informe um telefone válido com DDD.");
       return;
     }
-    if (!guestNome.trim()) {
-      toast.error("Informe seu nome.");
+    const erroNome = mensagemNomeIncompleto(guestNome);
+    if (erroNome) {
+      toast.error(erroNome);
       return;
     }
     if (
@@ -1965,11 +1967,16 @@ export function DeliveryCheckout() {
                       </label>
                       <Input
                         id="checkout-nome"
-                        placeholder="Como devemos te chamar"
+                        placeholder="Nome e sobrenome"
                         value={guestNome}
                         autoComplete="name"
                         onChange={(e) => setGuestNome(e.target.value)}
                       />
+                      {guestNome.trim() && !nomeCompletoValido(guestNome) && (
+                        <p className="text-xs text-red-600">
+                          Informe nome e sobrenome.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <label

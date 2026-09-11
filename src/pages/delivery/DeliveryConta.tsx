@@ -28,6 +28,7 @@ import {
   type EnderecoCliente,
 } from "../../lib/deliveryCliente";
 import { buscarDeliveryConfig } from "../../lib/deliveryConfig";
+import { mensagemNomeIncompleto } from "../../lib/nomePessoa";
 import {
   buscarSaldoPontos,
   listarExtratoPontos,
@@ -282,8 +283,9 @@ export function DeliveryConta() {
   };
 
   const criarCadastroConta = async () => {
-    if (!loginNome.trim()) {
-      toast.error("Informe seu nome.");
+    const erroNome = mensagemNomeIncompleto(loginNome);
+    if (erroNome) {
+      toast.error(erroNome);
       return;
     }
     if (
@@ -487,7 +489,7 @@ export function DeliveryConta() {
               <Campo label="Nome completo" htmlFor="conta-nome-novo">
                 <Input
                   id="conta-nome-novo"
-                  placeholder="Como devemos te chamar"
+                  placeholder="Nome e sobrenome"
                   value={loginNome}
                   autoComplete="name"
                   onChange={(e) => setLoginNome(e.target.value)}

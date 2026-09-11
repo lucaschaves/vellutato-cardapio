@@ -22,6 +22,15 @@ function somenteDigitos(valor: unknown): string {
   return typeof valor === "string" ? valor.replace(/\D/g, "") : "";
 }
 
+/** Asaas rejeita cliente com um único nome — exige nome e sobrenome. */
+function nomeCompletoValido(nome: unknown): boolean {
+  const partes = String(nome || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return partes.length >= 2 && partes.every((p) => p.length >= 2);
+}
+
 function enderecoAsaasCompleto(e: EnderecoSnap | null | undefined): boolean {
   if (!e) return false;
   const cep = somenteDigitos(e.cep);
@@ -193,6 +202,9 @@ function mensagemAmigavelAsaas(mensagens: string[], status?: number): string {
   if (/email/.test(texto)) {
     return "O e-mail informado não foi aceito. Verifique e tente novamente.";
   }
+  if (/\bname\b|nome/.test(texto)) {
+    return "Informe nome e sobrenome para o pagamento.";
+  }
   if (/customerdata|cliente/.test(texto)) {
     return "Os dados do cliente estão incompletos ou inválidos.";
   }
@@ -345,6 +357,17 @@ Deno.serve(async (req) => {
         {
           erro:
             "E-mail do cliente é obrigatório para o pagamento. Faça login com Google ou complete o cadastro.",
+        },
+        400,
+      );
+    }
+
+    if (!nomeCompletoValido(pedido.cliente_nome)) {
+      return json(
+        {
+          erro: "Informe nome e sobrenome para o pagamento.",
+          codigo: "NOME_INCOMPLETO",
+          campo: "name",
         },
         400,
       );
