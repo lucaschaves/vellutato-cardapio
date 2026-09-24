@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  coordsCepConfiaveisParaBairro,
   formatarCepComHifen,
   nominatimHitAceitavel,
+  pontoProximoDoBairro,
 } from "./geocodeEndereco";
 
 describe("formatarCepComHifen", () => {
@@ -66,5 +68,69 @@ describe("nominatimHitAceitavel", () => {
         place_rank: 14,
       }),
     ).toBe(false);
+  });
+});
+
+/** Polígono aproximado do Cacupé (Norte da Ilha). */
+const CACUPE_GEOM = {
+  type: "Polygon",
+  coordinates: [
+    [
+      [-48.535, -27.545],
+      [-48.515, -27.545],
+      [-48.515, -27.520],
+      [-48.535, -27.520],
+      [-48.535, -27.545],
+    ],
+  ],
+};
+
+const FEATURES_CACUPE = [
+  {
+    properties: { nome: "Cacupé" },
+    geometry: CACUPE_GEOM,
+  },
+];
+
+describe("coordsCepConfiaveisParaBairro (bug 88050 / frete Cacupé)", () => {
+  it("rejeita âncora BrasilAPI no Centro quando bairro é Cacupé", () => {
+    // Coordenadas que a BrasilAPI devolve para 88050-xxx
+    expect(
+      coordsCepConfiaveisParaBairro(
+        -27.59667,
+        -48.54917,
+        "Cacupé",
+        FEATURES_CACUPE,
+      ),
+    ).toBe(false);
+  });
+
+  it("aceita ponto dentro do Cacupé", () => {
+    expect(
+      coordsCepConfiaveisParaBairro(
+        -27.5309,
+        -48.5244,
+        "Cacupé",
+        FEATURES_CACUPE,
+      ),
+    ).toBe(true);
+  });
+
+  it("aceita se não há feature do bairro (não invalida)", () => {
+    expect(
+      coordsCepConfiaveisParaBairro(-27.59667, -48.54917, "Cacupé", []),
+    ).toBe(true);
+  });
+});
+
+describe("pontoProximoDoBairro", () => {
+  it("Centro não está próximo do Cacupé", () => {
+    expect(pontoProximoDoBairro(-27.59667, -48.54917, CACUPE_GEOM)).toBe(
+      false,
+    );
+  });
+
+  it("ponto no Cacupé está próximo", () => {
+    expect(pontoProximoDoBairro(-27.5309, -48.5244, CACUPE_GEOM)).toBe(true);
   });
 });

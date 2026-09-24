@@ -1,13 +1,25 @@
+import {
+  intervaloDistanciaLojaBairro,
+  nomesBairroCompativeis,
+  pontoEmGeometria,
+} from "./deliveryBairroGeo";
 import { distanciaKm } from "./deliveryFrete";
 
 /**
  * Geocodificação de endereços BR para frete delivery.
- * Preferência: BrasilAPI (CEP com coords) → Nominatim (rua/número),
- * nunca aceitar centroide de cidade.
+ * Preferência: Nominatim (rua/número/bairro) → CEP confiável.
+ * BrasilAPI às vezes devolve centroide da cidade (ex.: 88050 → Centro
+ * em vez de Cacupé/Santo Antônio) — essas coords são descartadas.
  */
 
 /** Nominatim longe demais do CEP = pulou para outro bairro (ex.: Centro). */
-const DIST_MAX_NOMINATIM_VS_CEP_KM = 1.2;
+export const DIST_MAX_NOMINATIM_VS_CEP_KM = 1.2;
+
+/**
+ * Âncora do CEP longe demais do polígono do bairro = coords ruins
+ * (BrasilAPI “Centro” para CEP do Norte da Ilha).
+ */
+export const DIST_MAX_ANCORA_VS_BAIRRO_KM = 3;
 
 export type Coords = { latitude: number; longitude: number };
 
@@ -28,6 +40,13 @@ type NominatimHit = {
   type?: string;
   place_rank?: number;
   display_name?: string;
+};
+
+type GeomBairro = { type: string; coordinates: unknown };
+
+type FeatureBairro = {
+  properties?: { nome?: string } | null;
+  geometry: GeomBairro;
 };
 
 const NOMINATIM_HEADERS = {
@@ -120,11 +139,87 @@ async function nominatimBusca(
 }
 
 /**
+ * True se o ponto está no polígono do bairro ou a até `maxKm` da borda.
+ * Detecta âncora BrasilAPI no Centro quando o CEP é Cacupé/Santo Antônio.
+ */
+export function pontoProximoDoBairro(
+  lat: number,
+  lng: number,
+  geometry: GeomBairro,
+  maxKm = DIST_MAX_ANCORA_VS_BAIRRO_KM,
+): boolean {
+  if (pontoEmGeometria(lat, lng, geometry)) return true;
+  const dist = intervaloDistanciaLojaBairro(lat, lng, geometry);
+  return dist != null && dist.dist_min_km <= maxKm;
+}
+
+export function acharGeometriaBairro(
+  features: FeatureBairro[],
+  bairro: string,
+): GeomBairro | null {
+  const hint = (bairro || "").trim();
+  if (!hint || !features.length) return null;
+  const feat = features.find((f) =>
+    nomesBairroCompativeis(f.properties?.nome || "", hint),
+  );
+  return feat?.geometry ?? null;
+}
+
+/**
+ * Valida lat/lng do CEP contra o bairro informado (texto ViaCEP/BrasilAPI).
+ * Se o ponto não bate com o polígono, as coords são lixo (ex.: Centro).
+ */
+export function coordsCepConfiaveisParaBairro(
+  lat: number,
+  lng: number,
+  bairro: string,
+  features: FeatureBairro[],
+): boolean {
+  const geom = acharGeometriaBairro(features, bairro);
+  if (!geom) return true; // sem mapa do bairro → não invalida
+  return pontoProximoDoBairro(lat, lng, geom);
+}
+
+let cacheBairros: FeatureBairro[] | null = null;
+
+/** GeoJSON estático dos bairros oficiais (Floripa). */
+export async function carregarFeaturesBairrosFloripa(): Promise<
+  FeatureBairro[]
+> {
+  if (cacheBairros) return cacheBairros;
+  try {
+    const res = await fetch("/geo/floripa-bairros.geojson");
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      features?: FeatureBairro[];
+    };
+    cacheBairros = Array.isArray(data.features) ? data.features : [];
+    return cacheBairros;
+  } catch {
+    return [];
+  }
+}
+
+/** Só para testes — limpa o cache do GeoJSON. */
+export function _resetCacheBairrosFloripaParaTestes(): void {
+  cacheBairros = null;
+}
+
+/**
  * BrasilAPI CEP v2 — costuma trazer lat/lng do trecho (melhor que Nominatim só-CEP).
+ * Em várias faixas (ex.: 88050) devolve o centroide da cidade — use
+ * `sanitizarCoordsCep` antes de gravar no endereço.
  */
 export async function coordsPorCepBrasilApi(
   cep: string,
-): Promise<(Coords & { rua?: string; bairro?: string; cidade?: string; uf?: string }) | null> {
+): Promise<
+  (Coords & {
+    rua?: string;
+    bairro?: string;
+    cidade?: string;
+    uf?: string;
+  }) | null
+> {
   const limpo = cep.replace(/\D/g, "");
   if (limpo.length !== 8) return null;
   try {
@@ -155,13 +250,42 @@ export async function coordsPorCepBrasilApi(
   }
 }
 
+/**
+ * Zera lat/lng do CEP se não bater com o bairro (evita frete “barato” no Centro).
+ */
+export async function sanitizarCoordsCep(opts: {
+  latitude: number | null;
+  longitude: number | null;
+  bairro: string;
+}): Promise<{ latitude: number | null; longitude: number | null }> {
+  const { latitude, longitude, bairro } = opts;
+  if (
+    latitude == null ||
+    longitude == null ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    !bairro.trim()
+  ) {
+    return { latitude, longitude };
+  }
+
+  const features = await carregarFeaturesBairrosFloripa();
+  if (!features.length) return { latitude, longitude };
+
+  if (coordsCepConfiaveisParaBairro(latitude, longitude, bairro, features)) {
+    return { latitude, longitude };
+  }
+
+  return { latitude: null, longitude: null };
+}
+
 function ruaSemApostrofo(rua: string): string {
   return rua.replace(/[''`´]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
  * Geocodifica endereço no Brasil.
- * Com número: tenta ponto na rua; senão CEP (BrasilAPI → Nominatim postcode).
+ * Com número: tenta ponto na rua; senão CEP (só se confiável vs bairro).
  */
 export async function geocodificarEndereco(
   opts: EnderecoParaGeocode,
@@ -185,22 +309,50 @@ export async function geocodificarEndereco(
     ? Array.from(new Set([rua, ruaSemApostrofo(rua)].filter(Boolean)))
     : [];
 
-  const ancoraCep =
+  const features = bairro ? await carregarFeaturesBairrosFloripa() : [];
+  const geomBairro = bairro ? acharGeometriaBairro(features, bairro) : null;
+
+  const brasilApi =
     cep.length === 8 ? await coordsPorCepBrasilApi(cep) : null;
 
-  const pertoDoCep = (hit: Coords): boolean => {
-    if (!ancoraCep) return true;
-    return (
-      distanciaKm(
-        ancoraCep.latitude,
-        ancoraCep.longitude,
+  const ancoraConfiavel =
+    brasilApi &&
+    (!bairro ||
+      !features.length ||
+      coordsCepConfiaveisParaBairro(
+        brasilApi.latitude,
+        brasilApi.longitude,
+        bairro,
+        features,
+      ))
+      ? brasilApi
+      : null;
+
+  const hitAceito = (hit: Coords): boolean => {
+    // Com polígono do bairro: só aceita ponto na região (evita Centro).
+    if (geomBairro) {
+      return pontoProximoDoBairro(
         hit.latitude,
         hit.longitude,
-      ) <= DIST_MAX_NOMINATIM_VS_CEP_KM
-    );
+        geomBairro,
+      );
+    }
+    // Com âncora CEP confiável: Nominatim precisa ficar perto dela.
+    if (ancoraConfiavel) {
+      return (
+        distanciaKm(
+          ancoraConfiavel.latitude,
+          ancoraConfiavel.longitude,
+          hit.latitude,
+          hit.longitude,
+        ) <= DIST_MAX_NOMINATIM_VS_CEP_KM
+      );
+    }
+    // Sem mapa nem âncora: melhor Nominatim do que nada.
+    return true;
   };
 
-  // 1) Estruturado: rua + número (sem postalcode — CEP BR confunde o Nominatim)
+  // 1) Estruturado: rua + número
   if (numero && cidade) {
     for (const r of ruas) {
       const hit = await nominatimBusca({
@@ -209,29 +361,11 @@ export async function geocodificarEndereco(
         ...(uf ? { state: uf } : {}),
         country: "Brazil",
       });
-      if (hit && pertoDoCep(hit)) return hit;
+      if (hit && hitAceito(hit)) return hit;
     }
   }
 
-  // 2) Estruturado: só rua
-  if (cidade) {
-    for (const r of ruas) {
-      const hit = await nominatimBusca({
-        street: r,
-        city: cidade,
-        ...(uf ? { state: uf } : {}),
-        country: "Brazil",
-      });
-      if (hit && pertoDoCep(hit)) return hit;
-    }
-  }
-
-  // 3) BrasilAPI — coords do trecho do CEP (não deixa Nominatim pular p/ Centro)
-  if (ancoraCep) {
-    return { latitude: ancoraCep.latitude, longitude: ancoraCep.longitude };
-  }
-
-  // 4) Texto livre (bairro + cidade + CEP; rua costuma falhar no OSM)
+  // 2) Texto livre com bairro (prioritário quando CEP veio no Centro)
   const tentativasQ: string[] = [];
   if (rua) {
     tentativasQ.push(
@@ -248,9 +382,9 @@ export async function geocodificarEndereco(
       );
     }
   }
-  if (bairro || cep) {
+  if (bairro && cidade) {
     tentativasQ.push(
-      [bairro, cidade, uf, cepHifen || cep, "Brasil"]
+      [bairro, cidade, uf, "Brasil"]
         .filter((p) => Boolean(p && String(p).trim()))
         .join(", "),
     );
@@ -258,7 +392,28 @@ export async function geocodificarEndereco(
   for (const q of tentativasQ) {
     if (!q || q.split(",").length < 2) continue;
     const hit = await nominatimBusca({ q });
-    if (hit) return hit;
+    if (hit && hitAceito(hit)) return hit;
+  }
+
+  // 3) Estruturado: só rua
+  if (cidade) {
+    for (const r of ruas) {
+      const hit = await nominatimBusca({
+        street: r,
+        city: cidade,
+        ...(uf ? { state: uf } : {}),
+        country: "Brazil",
+      });
+      if (hit && hitAceito(hit)) return hit;
+    }
+  }
+
+  // 4) BrasilAPI só se coords baterem com o bairro
+  if (ancoraConfiavel) {
+    return {
+      latitude: ancoraConfiavel.latitude,
+      longitude: ancoraConfiavel.longitude,
+    };
   }
 
   // 5) Nominatim postcode com hífen (sem city — city+CEP dígitos = centro da cidade)
@@ -267,12 +422,12 @@ export async function geocodificarEndereco(
       postalcode: cepHifen,
       country: "Brazil",
     });
-    if (hitHifen) return hitHifen;
+    if (hitHifen && hitAceito(hitHifen)) return hitHifen;
 
     const hitQ = await nominatimBusca({
       q: `${cepHifen}, Brasil`,
     });
-    if (hitQ) return hitQ;
+    if (hitQ && hitAceito(hitQ)) return hitQ;
   }
 
   return null;

@@ -1,5 +1,6 @@
-import { mensagemNomeIncompleto } from "./nomePessoa";
+import { sanitizarCoordsCep } from "./geocodeEndereco";
 import { supabase } from "./supabase";
+import { mensagemNomeIncompleto } from "./nomePessoa";
 import { normalizarTelefoneParaSalvar } from "./telefone";
 
 export interface ClienteDelivery {
@@ -437,6 +438,7 @@ export {
   coordsPorCepBrasilApi,
   formatarCepComHifen,
   nominatimHitAceitavel,
+  sanitizarCoordsCep,
 } from "./geocodeEndereco";
 
 /** Busca endereço: BrasilAPI (com coords) → ViaCEP. */
@@ -467,13 +469,19 @@ export async function buscarCep(cep: string): Promise<{
       const lat = Number(data.location?.coordinates?.latitude);
       const lng = Number(data.location?.coordinates?.longitude);
       if (data.city || data.street || data.neighborhood) {
-        return {
-          rua: data.street || "",
-          bairro: data.neighborhood || "",
-          cidade: data.city || "",
-          uf: data.state || "",
+        const bairro = data.neighborhood || "";
+        const coords = await sanitizarCoordsCep({
           latitude: Number.isFinite(lat) ? lat : null,
           longitude: Number.isFinite(lng) ? lng : null,
+          bairro,
+        });
+        return {
+          rua: data.street || "",
+          bairro,
+          cidade: data.city || "",
+          uf: data.state || "",
+          latitude: coords.latitude,
+          longitude: coords.longitude,
         };
       }
     }
