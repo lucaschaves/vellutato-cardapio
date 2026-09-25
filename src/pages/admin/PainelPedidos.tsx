@@ -58,7 +58,7 @@ interface ItemPedido {
 interface Pedido {
   id: string;
   sequencia_pedido: number;
-  origem: "mesa" | "balcao" | "totem" | "delivery" | "ifood";
+  origem: "mesa" | "balcao" | "totem" | "delivery" | "ifood" | "evento";
   modalidade?: "entrega" | "retirada" | null;
   status_pagamento?: string | null;
   identificador: string;
@@ -552,20 +552,24 @@ export function PainelPedidos() {
 
   // Separação em colunas (Kanban) — agendados primeiro, por horário
   const [agoraTick, setAgoraTick] = useState(() => Date.now());
+  const [fila, setFila] = useState<"operacao" | "eventos">("operacao");
   useEffect(() => {
     const id = window.setInterval(() => setAgoraTick(Date.now()), 30_000);
     return () => window.clearInterval(id);
   }, []);
 
-  const pendentes = pedidos
+  const pedidosFila = pedidos.filter((p) =>
+    fila === "eventos" ? p.origem === "evento" : p.origem !== "evento",
+  );
+  const pendentes = pedidosFila
     .filter((p) => p.status === "pendente" && p.agendado_para)
     .slice()
     .sort(compararPedidosKds);
-  const emProducao = pedidos
+  const emProducao = pedidosFila
     .filter((p) => p.status === "em_producao")
     .slice()
     .sort(compararPedidosKds);
-  const prontos = pedidos
+  const prontos = pedidosFila
     .filter((p) => p.status === "pronto")
     .slice()
     .sort(compararPedidosKds);
@@ -602,6 +606,22 @@ export function PainelPedidos() {
                 : "Realtime desconectado"}
             </button>
           )}
+          <div className="flex rounded-lg overflow-hidden border border-amber-200 text-sm font-semibold">
+            <button
+              type="button"
+              className={`px-3 py-2 ${fila === "operacao" ? "bg-zinc-900 text-white" : "bg-white"}`}
+              onClick={() => setFila("operacao")}
+            >
+              Produção
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-2 ${fila === "eventos" ? "bg-amber-500 text-white" : "bg-white"}`}
+              onClick={() => setFila("eventos")}
+            >
+              Eventos
+            </button>
+          </div>
           <span className="text-sm bg-cookie-primary text-white px-4 py-2 rounded-lg font-medium">
             Total Ativos: {pedidos.length}
           </span>

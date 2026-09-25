@@ -279,7 +279,9 @@ export function FeedProdutos() {
         setDispEncomenda(mapaDisp);
 
         const produtosDoBanco = todos.filter(
-          (p) => !produtoEstaEsgotado(p, mapaDisp[p.id]),
+          (p) =>
+            !(p as { canal_evento?: boolean }).canal_evento &&
+            !produtoEstaEsgotado(p, mapaDisp[p.id]),
         );
 
         const categoriasComItens = (dataCat || [])

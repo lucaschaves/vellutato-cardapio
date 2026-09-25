@@ -1672,6 +1672,7 @@ export type Database = {
           desconto_frete: number
           distancia_km: number | null
           endereco_json: Json | null
+          evento_json: Json | null
           id: string
           identificador: string
           impresso: boolean
@@ -1706,6 +1707,7 @@ export type Database = {
           desconto_frete?: number
           distancia_km?: number | null
           endereco_json?: Json | null
+          evento_json?: Json | null
           id?: string
           identificador: string
           impresso?: boolean
@@ -1740,6 +1742,7 @@ export type Database = {
           desconto_frete?: number
           distancia_km?: number | null
           endereco_json?: Json | null
+          evento_json?: Json | null
           id?: string
           identificador?: string
           impresso?: boolean
@@ -1908,7 +1911,15 @@ export type Database = {
           adicional_maximo: number | null
           adicional_obrigatorio: boolean
           ativo: boolean
+          canal_evento: boolean
           categoria_id: string
+          evento_descontos: Json
+          evento_dias_antecedencia: number
+          evento_limite_caixas_dia: number | null
+          evento_max_sabores: number
+          evento_min_sabores: number
+          evento_sabores: Json
+          evento_unidades_caixa: number | null
           controlar_estoque: boolean
           criado_em: string
           descricao: string | null
@@ -1941,7 +1952,15 @@ export type Database = {
           adicional_maximo?: number | null
           adicional_obrigatorio?: boolean
           ativo?: boolean
+          canal_evento?: boolean
           categoria_id: string
+          evento_descontos?: Json
+          evento_dias_antecedencia?: number
+          evento_limite_caixas_dia?: number | null
+          evento_max_sabores?: number
+          evento_min_sabores?: number
+          evento_sabores?: Json
+          evento_unidades_caixa?: number | null
           controlar_estoque?: boolean
           criado_em?: string
           descricao?: string | null
@@ -1974,7 +1993,15 @@ export type Database = {
           adicional_maximo?: number | null
           adicional_obrigatorio?: boolean
           ativo?: boolean
+          canal_evento?: boolean
           categoria_id?: string
+          evento_descontos?: Json
+          evento_dias_antecedencia?: number
+          evento_limite_caixas_dia?: number | null
+          evento_max_sabores?: number
+          evento_min_sabores?: number
+          evento_sabores?: Json
+          evento_unidades_caixa?: number | null
           controlar_estoque?: boolean
           criado_em?: string
           descricao?: string | null
@@ -2288,6 +2315,28 @@ export type Database = {
         Args: { p_pedido_id: string }
         Returns: undefined
       }
+      criar_pedido_evento: {
+        Args: {
+          p_cliente_celular: string
+          p_cliente_id: string
+          p_cliente_nome: string
+          p_cpf: string
+          p_data_retirada: string
+          p_desconto: number
+          p_horario: string
+          p_identificador: string
+          p_itens: Json
+          p_percentual_entrada: number
+          p_quem_retira: string
+          p_subtotal: number
+          p_total: number
+        }
+        Returns: Json
+      }
+      caixas_evento_reservadas: {
+        Args: { p_data: string; p_produto_id: string }
+        Returns: number
+      }
       criar_pedido_completo: {
         Args: {
           p_agendado_para?: string | null
@@ -2448,7 +2497,13 @@ export type Database = {
     Enums: {
       disponibilidade_produto: "loja" | "levar" | "ambos"
       tipo_modalidade_pedido: "entrega" | "retirada"
-      tipo_origem_pedido: "mesa" | "balcao" | "delivery" | "totem" | "ifood"
+      tipo_origem_pedido:
+        | "mesa"
+        | "balcao"
+        | "delivery"
+        | "totem"
+        | "ifood"
+        | "evento"
       tipo_produto: "simples" | "combo"
       tipo_status_pagamento:
         | "nao_aplicavel"
@@ -2457,6 +2512,7 @@ export type Database = {
         | "na_loja"
         | "expirado"
         | "cancelado"
+        | "sinal"
       tipo_status_pedido:
         | "pendente"
         | "em_producao"
@@ -2595,7 +2651,14 @@ export const Constants = {
     Enums: {
       disponibilidade_produto: ["loja", "levar", "ambos"],
       tipo_modalidade_pedido: ["entrega", "retirada"],
-      tipo_origem_pedido: ["mesa", "balcao", "delivery", "totem", "ifood"],
+      tipo_origem_pedido: [
+        "mesa",
+        "balcao",
+        "delivery",
+        "totem",
+        "ifood",
+        "evento",
+      ],
       tipo_produto: ["simples", "combo"],
       tipo_status_pagamento: [
         "nao_aplicavel",
@@ -2604,6 +2667,7 @@ export const Constants = {
         "na_loja",
         "expirado",
         "cancelado",
+        "sinal",
       ],
       tipo_status_pedido: [
         "pendente",

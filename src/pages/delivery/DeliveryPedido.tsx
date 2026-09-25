@@ -107,6 +107,7 @@ export function DeliveryPedido() {
         }
         if (
           p.status_pagamento === "pago" ||
+          p.status_pagamento === "sinal" ||
           p.status_pagamento === "na_loja"
         ) {
           limparCarrinho();
@@ -150,7 +151,7 @@ export function DeliveryPedido() {
 
   useEffect(() => {
     if (!id || params.get("pago") !== "1") return;
-    if (pedido?.status_pagamento === "pago") return;
+    if (pedido?.status_pagamento === "pago" || pedido?.status_pagamento === "sinal") return;
 
     let cancelado = false;
     let tentativas = 0;
@@ -161,7 +162,10 @@ export function DeliveryPedido() {
         setConfirmandoPagamento(true);
         const res = await confirmarPagamentoAsaas(id);
         if (cancelado) return;
-        if (res.status_pagamento === "pago") {
+        if (
+          res.status_pagamento === "pago" ||
+          res.status_pagamento === "sinal"
+        ) {
           syncFeitoRef.current = true;
           track("payment_ok", {
             canal: "delivery",
@@ -199,7 +203,10 @@ export function DeliveryPedido() {
             const p = await buscarPedidoDelivery(id);
             if (cancelado) return;
             setPedido(p);
-            if (p.status_pagamento === "pago") {
+            if (
+              p.status_pagamento === "pago" ||
+              p.status_pagamento === "sinal"
+            ) {
               syncFeitoRef.current = true;
               limparCarrinho();
               window.clearInterval(intervalo);
@@ -328,7 +335,8 @@ export function DeliveryPedido() {
     return <p className="text-center py-16">Pedido não encontrado.</p>;
   }
 
-  const pagamentoConfirmado = pedido.status_pagamento === "pago";
+  const pagamentoConfirmado =
+    pedido.status_pagamento === "pago" || pedido.status_pagamento === "sinal";
   const aguardandoConfirmacao =
     params.get("pago") === "1" &&
     !pagamentoConfirmado &&
@@ -384,6 +392,44 @@ export function DeliveryPedido() {
     return extras.length > 0 ? `${base} (${extras.join(", ")})` : base;
   });
 
+  const linkWhatsappEntrega =
+    pedido.origem === "evento"
+      ? montarLinkWhatsappLoja(
+          whatsappNumero,
+          [
+            `Pedido #${pedido.sequencia_pedido} já pago na Vellutato.`,
+            `Quero combinar entrega em vez de retirada.`,
+            `Cliente: ${pedido.cliente_nome}`,
+            pedido.cliente_celular
+              ? `Telefone: ${formatarTelefoneDeSalvo(pedido.cliente_celular)}`
+              : "",
+            pedido.agendado_para
+              ? `Retirada combinada: ${new Intl.DateTimeFormat("pt-BR", {
+                  timeZone: "America/Sao_Paulo",
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }).format(new Date(pedido.agendado_para))}`
+              : "",
+            ...itens.map((item) => {
+              const nome = item.produtos?.nome || "Item";
+              const obs = item.observacoes?.trim()
+                ? ` — ${item.observacoes.trim()}`
+                : "";
+              return `${item.quantidade}x ${nome}${obs}`;
+            }),
+            `Total: ${Number(pedido.valor_total || pedido.total || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+            pedido.status_pagamento === "sinal"
+              ? "Pagamento: sinal de 50%. O restante fica na entrega/retirada."
+              : "Pagamento: 100% online.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        )
+      : null;
+
   const linkWhatsapp = montarLinkWhatsappLoja(
     whatsappNumero,
     textoWhatsappAcompanhamentoPedido({
@@ -427,7 +473,11 @@ export function DeliveryPedido() {
         <h1 className="text-2xl font-black">{statusExibido}</h1>
         <p className="text-sm text-zinc-500 capitalize">
           {pedido.modalidade} · pagamento:{" "}
-          {pagamentoConfirmado ? "pago" : pedido.status_pagamento}
+          {pagamentoConfirmado
+            ? pedido.status_pagamento === "sinal"
+              ? "sinal pago"
+              : "pago"
+            : pedido.status_pagamento}
         </p>
         {(() => {
           const previsao = textoPrevisaoPedido({
@@ -450,6 +500,23 @@ export function DeliveryPedido() {
             </p>
           );
         })()}
+        {pagamentoConfirmado && pedido.origem === "evento" && linkWhatsappEntrega && (
+          <div className="space-y-2 pt-1">
+            <p className="text-sm text-zinc-600">
+              A encomenda está confirmada para retirada. Se preferir entrega,
+              combine pelo WhatsApp.
+            </p>
+            <a
+              href={linkWhatsappEntrega}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 px-4 py-3 text-sm font-bold"
+            >
+              <MessageCircle size={16} />
+              Prefiro entrega — falar no WhatsApp
+            </a>
+          </div>
+        )}
         {aguardandoConfirmacao && (
           <p className="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">
             Pagamento recebido pelo Asaas — confirmando no sistema…

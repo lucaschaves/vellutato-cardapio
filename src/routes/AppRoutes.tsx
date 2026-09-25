@@ -58,6 +58,8 @@ import { DeliveryChat } from "../pages/delivery/DeliveryChat";
 import { DeliveryCheckout } from "../pages/delivery/DeliveryCheckout";
 import { DeliveryConta } from "../pages/delivery/DeliveryConta";
 import { DeliveryEndereco } from "../pages/delivery/DeliveryEndereco";
+import { DeliveryEventos } from "../pages/delivery/DeliveryEventos";
+import { DeliveryEventosCheckout } from "../pages/delivery/DeliveryEventosCheckout";
 import { DeliveryHome } from "../pages/delivery/DeliveryHome";
 import { DeliveryItem } from "../pages/delivery/DeliveryItem";
 import { DeliveryLayout } from "../pages/delivery/DeliveryLayout";
@@ -159,6 +161,8 @@ const router = createBrowserRouter([
       { index: true, element: <InicioDelivery /> },
       { path: "item/:id", element: <DeliveryItem /> },
       { path: "checkout", element: <DeliveryCheckout /> },
+      { path: "eventos", element: <DeliveryEventos /> },
+      { path: "eventos/checkout", element: <DeliveryEventosCheckout /> },
       { path: "conta", element: <DeliveryConta /> },
       { path: "pedidos", element: <DeliveryPedidos /> },
       { path: "pedido/:id", element: <DeliveryPedido /> },

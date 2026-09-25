@@ -56,8 +56,9 @@ export interface EnderecoPedidoKds {
 export interface PedidoKds {
   id: string;
   sequencia_pedido: number;
-  origem: "mesa" | "balcao" | "totem" | "delivery" | "ifood";
+  origem: "mesa" | "balcao" | "totem" | "delivery" | "ifood" | "evento";
   modalidade?: "entrega" | "retirada" | null;
+  status_pagamento?: string | null;
   identificador: string;
   cliente_id?: string | null;
   cliente_nome: string;
@@ -172,6 +173,28 @@ function ehCanalIfoodOuDelivery(pedido: PedidoKds): boolean {
 
 function TagsPedidoKds({ pedido }: { pedido: PedidoKds }) {
   const tags: ReactNode[] = [];
+
+  if (pedido.origem === "evento") {
+    tags.push(
+      <span
+        key="evento"
+        className="shrink-0 text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-900"
+      >
+        Evento
+      </span>,
+    );
+  }
+
+  if (pedido.status_pagamento === "sinal") {
+    tags.push(
+      <span
+        key="sinal"
+        className="shrink-0 text-[0.625rem] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800"
+      >
+        Sinal 50%
+      </span>,
+    );
+  }
 
   if (ehCanalIfoodOuDelivery(pedido)) {
     tags.push(

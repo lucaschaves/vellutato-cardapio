@@ -51,7 +51,9 @@ Deno.serve(async (req) => {
       return json({ ok: true, ignored: event });
     }
 
-    let pedidoQuery = supabase.from("pedidos").select("id, status_pagamento");
+    let pedidoQuery = supabase
+      .from("pedidos")
+      .select("id, status_pagamento, origem, evento_json");
 
     if (externalRef) {
       pedidoQuery = pedidoQuery.eq("id", externalRef);
@@ -71,14 +73,18 @@ Deno.serve(async (req) => {
       return json({ ok: true, ignored: "pedido_nao_encontrado" });
     }
 
-    if (pedido.status_pagamento === "pago") {
+    if (pedido.status_pagamento === "pago" || pedido.status_pagamento === "sinal") {
       return json({ ok: true, already: true });
     }
+
+    const evento = pedido.evento_json as { percentual_entrada?: number } | null;
+    const sinal =
+      pedido.origem === "evento" && Number(evento?.percentual_entrada) === 50;
 
     const { error: updErr } = await supabase
       .from("pedidos")
       .update({
-        status_pagamento: "pago",
+        status_pagamento: sinal ? "sinal" : "pago",
         status: "pendente",
         asaas_payment_id: payment?.id || null,
       })

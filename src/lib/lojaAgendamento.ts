@@ -466,6 +466,58 @@ export async function listarDiasAgendamento(
   };
 }
 
+/** Horários de 15 min de um dia, dentro do funcionamento cadastrado. */
+export async function horariosRetiradaNoDia(
+  dataKey: string,
+): Promise<{ opcoes: string[]; aviso: string | null }> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataKey)) {
+    return { opcoes: [], aviso: "Informe a data da retirada." };
+  }
+
+  const [status, horarios] = await Promise.all([
+    buscarStatusLoja(),
+    buscarHorariosLoja(),
+  ]);
+  const p = partesAgoraSp(new Date(`${dataKey}T12:00:00-03:00`));
+  const horario = horarios.find((h) => h.dia_semana === p.dow) ?? null;
+  if (!horario?.aberto) {
+    return { opcoes: [], aviso: "A loja não abre neste dia." };
+  }
+
+  const lim = limitesMinutosDia({
+    horario,
+    atrasoAbertura: Math.max(0, status?.atraso_primeiro_agendamento_min ?? 15),
+    preparo: Math.max(0, status?.tempo_preparo_min ?? 0),
+    ref: new Date(),
+    ano: p.ano,
+    mes: p.mes,
+    dia: p.dia,
+    naoAntesMs: null,
+  });
+  if (!lim || (!lim.atravessa && lim.minInicio >= lim.fechaMin)) {
+    return { opcoes: [], aviso: "Não há horários disponíveis neste dia." };
+  }
+
+  const slots = gerarSlotsNoDia({
+    ano: p.ano,
+    mes: p.mes,
+    dia: p.dia,
+    dow: p.dow,
+    minInicioDia: lim.minInicio,
+    fechaMin: lim.fechaMin,
+    atravessaMeiaNoite: lim.atravessa,
+  });
+  const abre = horario.abre.slice(0, 5);
+  const fecha = horario.fecha.slice(0, 5);
+  return {
+    opcoes: slots.map((iso) => hhmmDeIso(iso)).filter(Boolean),
+    aviso:
+      slots.length === 0
+        ? `A loja funciona das ${abre} às ${fecha}, mas não há horário livre neste dia.`
+        : `Funcionamento: ${abre} às ${fecha}`,
+  };
+}
+
 /** Monta ISO a partir de dataKey (YYYY-MM-DD) + HH:MM, arredondando p/ 15 min. */
 export function montarIsoAgendamento(
   dataKey: string,

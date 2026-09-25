@@ -270,7 +270,9 @@ export function DeliveryHome() {
           }
         }
         const prods = brutos.filter(
-          (p) => !produtoEstaEsgotado(p, mapaDisp[p.id]),
+          (p) =>
+            !(p as { canal_evento?: boolean }).canal_evento &&
+            !produtoEstaEsgotado(p, mapaDisp[p.id]),
         );
         setProdutos(prods);
         const cats = ((catRes.data || []) as Categoria[])

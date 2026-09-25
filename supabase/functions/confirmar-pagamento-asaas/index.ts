@@ -60,14 +60,18 @@ Deno.serve(async (req) => {
 
     const { data: pedido, error } = await supabase
       .from("pedidos")
-      .select("id, status_pagamento, asaas_checkout_id, asaas_payment_id")
+      .select("id, status_pagamento, asaas_checkout_id, asaas_payment_id, origem, evento_json")
       .eq("id", pedidoId)
       .single();
 
     if (error || !pedido) return json(req, { erro: "Pedido não encontrado" }, 404);
 
-    if (pedido.status_pagamento === "pago") {
-      return json(req, { ok: true, status_pagamento: "pago", ja_pago: true });
+    if (pedido.status_pagamento === "pago" || pedido.status_pagamento === "sinal") {
+      return json(req, {
+        ok: true,
+        status_pagamento: pedido.status_pagamento,
+        ja_pago: true,
+      });
     }
 
     if (pedido.status_pagamento !== "aguardando") {
@@ -116,10 +120,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    const evento = pedido.evento_json as { percentual_entrada?: number } | null;
+    const sinal =
+      pedido.origem === "evento" && Number(evento?.percentual_entrada) === 50;
+    const statusPagamento = sinal ? "sinal" : "pago";
+
     const { error: updErr } = await supabase
       .from("pedidos")
       .update({
-        status_pagamento: "pago",
+        status_pagamento: statusPagamento,
         status: "pendente",
         asaas_payment_id: paga.id || pedido.asaas_payment_id || null,
       })
@@ -144,7 +153,7 @@ Deno.serve(async (req) => {
 
     return json(req, {
       ok: true,
-      status_pagamento: "pago",
+      status_pagamento: statusPagamento,
       sincronizado: true,
       payment_id: paga.id,
     });

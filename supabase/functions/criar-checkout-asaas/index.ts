@@ -291,7 +291,7 @@ Deno.serve(async (req) => {
         `
         id, sequencia_pedido, total, valor_total, status_pagamento, origem,
         cliente_nome, cliente_celular, cpf_nota, asaas_checkout_id, cliente_id,
-        endereco_json, modalidade,
+        endereco_json, modalidade, evento_json,
         clientes ( email )
       `,
       )
@@ -305,8 +305,8 @@ Deno.serve(async (req) => {
     if (pedido.status_pagamento !== "aguardando") {
       return json({ erro: "Pedido não está aguardando pagamento" }, 400);
     }
-    if (pedido.origem && pedido.origem !== "delivery") {
-      return json({ erro: "Checkout só é permitido para pedidos delivery" }, 400);
+    if (pedido.origem && pedido.origem !== "delivery" && pedido.origem !== "evento") {
+      return json({ erro: "Checkout só é permitido para pedidos delivery ou eventos" }, 400);
     }
     const clienteBody = bodyIn?.cliente_id;
     if (clienteBody && uuidValido(clienteBody) && pedido.cliente_id) {
@@ -337,7 +337,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    const valor = Number(pedido.valor_total ?? pedido.total ?? 0);
+    let valor = Number(pedido.valor_total ?? pedido.total ?? 0);
+    const evento = pedido.evento_json as { percentual_entrada?: number } | null;
+    if (
+      pedido.origem === "evento" &&
+      Number(evento?.percentual_entrada) === 50
+    ) {
+      valor = Number((valor * 0.5).toFixed(2));
+    }
     if (valor <= 0) return json({ erro: "Valor inválido" }, 400);
 
     const clienteRel = pedido.clientes as

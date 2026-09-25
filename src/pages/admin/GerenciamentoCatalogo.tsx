@@ -35,6 +35,13 @@ import {
   type RegraEncomendaDiaEditavel,
   type TemplateEncomenda,
 } from "../../lib/encomendaProgramada";
+import {
+  CamposProdutoEvento,
+  FORM_EVENTO_VAZIO,
+  formEventoDeProduto,
+  formEventoParaPayload,
+  type FormEventoProduto,
+} from "../../components/admin/CamposProdutoEvento";
 
 interface Categoria {
   id: string;
@@ -122,6 +129,7 @@ export function GerenciamentoCatalogo() {
     "",
   );
   const [encomendaProgramada, setEncomendaProgramada] = useState(false);
+  const [evento, setEvento] = useState<FormEventoProduto>(FORM_EVENTO_VAZIO);
   const [encomendaTemplateId, setEncomendaTemplateId] = useState("");
   const [estoqueProntoHoje, setEstoqueProntoHoje] = useState("0");
   const [personalizarRegrasProduto, setPersonalizarRegrasProduto] =
@@ -253,6 +261,7 @@ export function GerenciamentoCatalogo() {
         setFichaEmbDelivery(data.ficha_embalagem_delivery_id ?? "");
         setFichaEmbLevar(data.ficha_embalagem_levar_rapido_id ?? "");
         setEncomendaProgramada(Boolean(data.encomenda_programada));
+        setEvento(formEventoDeProduto(data));
         setEncomendaTemplateId(
           data.encomenda_template_id ?? TEMPLATE_ENCOMENDA_PADRAO_ID,
         );
@@ -303,6 +312,7 @@ export function GerenciamentoCatalogo() {
     setMedidaValor("");
     setMedidaUnidade("");
     setEncomendaProgramada(false);
+    setEvento(FORM_EVENTO_VAZIO);
     setEncomendaTemplateId(TEMPLATE_ENCOMENDA_PADRAO_ID);
     setEstoqueProntoHoje("0");
     setPersonalizarRegrasProduto(false);
@@ -398,10 +408,15 @@ export function GerenciamentoCatalogo() {
 
       if (
         !Number.isFinite(precoNumerico) ||
-        !Number.isFinite(precoDeliveryNumerico) ||
-        !Number.isFinite(precoIfoodNumerico)
+        (!evento.canal &&
+          (!Number.isFinite(precoDeliveryNumerico) ||
+            !Number.isFinite(precoIfoodNumerico)))
       ) {
-        toast.error("Informe preços válidos para loja, delivery e iFood.");
+        toast.error(
+          evento.canal
+            ? "Informe o preço da caixa."
+            : "Informe preços válidos para loja, delivery e iFood.",
+        );
         setSalvando(false);
         return;
       }
@@ -424,39 +439,68 @@ export function GerenciamentoCatalogo() {
         medidaUnidadeDb = medidaUnidade;
       }
 
+      if (evento.canal) {
+        const cfg = formEventoParaPayload(evento);
+        if (!cfg.evento_sabores.length) {
+          toast.error("Informe ao menos um sabor na caixa de evento.");
+          setSalvando(false);
+          return;
+        }
+        if (cfg.evento_min_sabores > cfg.evento_max_sabores) {
+          toast.error("O mínimo de sabores não pode ser maior que o máximo.");
+          setSalvando(false);
+          return;
+        }
+      }
+
+      const produtoEvento = evento.canal;
       const payload = {
         nome,
         descricao,
         preco: precoNumerico,
-        preco_delivery: precoDeliveryNumerico,
-        preco_ifood: precoIfoodNumerico,
-        preco_promocional: precoPromoNumerico,
-        em_promocao: emPromocao && precoPromoNumerico != null,
-        destaque,
+        preco_delivery: produtoEvento ? precoNumerico : precoDeliveryNumerico,
+        preco_ifood: produtoEvento ? precoNumerico : precoIfoodNumerico,
+        preco_promocional: produtoEvento ? null : precoPromoNumerico,
+        em_promocao: produtoEvento
+          ? false
+          : emPromocao && precoPromoNumerico != null,
+        destaque: produtoEvento ? false : destaque,
         categoria_id: categoriaId,
         imagem_url: imagemUrl,
         video_url: videoUrl,
-        controlar_estoque:
-          controlarEstoque ||
-          (tipo === "simples" && encomendaProgramada),
-        quantidade_estoque:
-          controlarEstoque && !encomendaProgramada
+        controlar_estoque: produtoEvento
+          ? false
+          : controlarEstoque || (tipo === "simples" && encomendaProgramada),
+        quantidade_estoque: produtoEvento
+          ? 0
+          : controlarEstoque && !encomendaProgramada
             ? parseInt(quantidadeEstoque, 10)
             : 0,
         ativo,
-        tipo,
-        disponibilidade,
-        medida_valor: medidaValorNum,
-        medida_unidade: medidaUnidadeDb,
-        ficha_produto_id: tipo === "combo" ? null : fichaProdutoId || null,
-        ficha_embalagem_viagem_id: fichaEmbViagem || null,
-        ficha_embalagem_delivery_id: fichaEmbDelivery || null,
-        ficha_embalagem_levar_rapido_id: fichaEmbLevar || null,
-        encomenda_programada: tipo === "simples" ? encomendaProgramada : false,
-        encomenda_template_id:
-          tipo === "simples" && encomendaProgramada
+        tipo: produtoEvento ? "simples" : tipo,
+        disponibilidade: produtoEvento ? "levar" : disponibilidade,
+        medida_valor: produtoEvento ? null : medidaValorNum,
+        medida_unidade: produtoEvento ? null : medidaUnidadeDb,
+        ficha_produto_id:
+          produtoEvento || tipo !== "combo" ? fichaProdutoId || null : null,
+        ficha_embalagem_viagem_id: produtoEvento ? null : fichaEmbViagem || null,
+        ficha_embalagem_delivery_id: produtoEvento
+          ? null
+          : fichaEmbDelivery || null,
+        ficha_embalagem_levar_rapido_id: produtoEvento
+          ? null
+          : fichaEmbLevar || null,
+        encomenda_programada: produtoEvento
+          ? false
+          : tipo === "simples"
+            ? encomendaProgramada
+            : false,
+        encomenda_template_id: produtoEvento
+          ? null
+          : tipo === "simples" && encomendaProgramada
             ? templateIdEfetivo(encomendaTemplateId)
             : null,
+        ...formEventoParaPayload(evento),
       };
 
       let produtoIdSalvo = produtoEditandoId;
@@ -583,6 +627,22 @@ export function GerenciamentoCatalogo() {
         className="grid grid-cols-1 md:grid-cols-2 gap-8"
       >
         <div className="space-y-5">
+          <CamposProdutoEvento
+            valor={evento}
+            onChange={(proximo) => {
+              setEvento(proximo);
+              if (proximo.canal) {
+                setTipo("simples");
+                setDestaque(false);
+                setEmPromocao(false);
+                setControlarEstoque(false);
+                setEncomendaProgramada(false);
+              }
+            }}
+          />
+
+          {!evento.canal && (
+          <>
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
               Tipo
@@ -624,10 +684,12 @@ export function GerenciamentoCatalogo() {
               <option value="levar">Só para levar</option>
             </select>
           </div>
+          </>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
-              Nome do Produto
+              {evento.canal ? "Nome da caixa" : "Nome do Produto"}
             </label>
             <input
               required
@@ -652,11 +714,29 @@ export function GerenciamentoCatalogo() {
               placeholder="Ex: Cookie crocante # Recheio de Nutella # 90g"
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Use <span className="font-bold">#</span> para quebrar a linha na
-              exibição do cardápio.
+              {evento.canal
+                ? "Texto curto que aparece na vitrine de eventos."
+                : <>Use <span className="font-bold">#</span> para quebrar a linha na
+              exibição do cardápio.</>}
             </p>
           </div>
 
+          {evento.canal ? (
+            <div>
+              <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+                Preço da caixa (R$)
+              </label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                min="0"
+                value={preco}
+                onChange={(e) => setPreco(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg border dark:bg-[#1a1815] dark:border-gray-700 outline-none focus:ring-2 focus:ring-cookie-primary"
+              />
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1 dark:text-gray-300">
@@ -705,6 +785,7 @@ export function GerenciamentoCatalogo() {
               />
             </div>
           </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
@@ -723,6 +804,7 @@ export function GerenciamentoCatalogo() {
             </select>
           </div>
 
+          {!evento.canal && (
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
               Medida (peso / volume)
@@ -758,6 +840,7 @@ export function GerenciamentoCatalogo() {
               quiser exibir.
             </p>
           </div>
+          )}
 
           {tipo !== "combo" && (
             <div className="space-y-3 rounded-lg border border-gray-100 p-4 dark:border-gray-800">
@@ -795,6 +878,7 @@ export function GerenciamentoCatalogo() {
                   </p>
                 );
               })()}
+              {!evento.canal && (
               <div className="grid gap-2 sm:grid-cols-3">
                 {(
                   [
@@ -822,6 +906,7 @@ export function GerenciamentoCatalogo() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           )}
           {tipo === "combo" && (
@@ -831,6 +916,7 @@ export function GerenciamentoCatalogo() {
             </p>
           )}
 
+          {!evento.canal && (
           <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 space-y-4">
             <div className="flex items-center justify-between">
               <span className="font-medium dark:text-gray-300">
@@ -887,11 +973,12 @@ export function GerenciamentoCatalogo() {
               </label>
             </div>
           </div>
+          )}
 
           <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 space-y-4">
             <div className="flex items-center justify-between">
               <span className="font-medium dark:text-gray-300">
-                Visível no cardápio?
+                {evento.canal ? "Visível em Eventos?" : "Visível no cardápio?"}
               </span>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -904,6 +991,8 @@ export function GerenciamentoCatalogo() {
               </label>
             </div>
 
+            {!evento.canal && (
+            <>
             <div className="flex items-center justify-between">
               <span className="font-medium dark:text-gray-300">
                 Controlar estoque?
@@ -936,8 +1025,10 @@ export function GerenciamentoCatalogo() {
                 />
               </motion.div>
             )}
+            </>
+            )}
 
-            {tipo === "simples" && (
+            {!evento.canal && tipo === "simples" && (
               <>
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
                   <span className="font-medium dark:text-gray-300">
@@ -1098,6 +1189,7 @@ export function GerenciamentoCatalogo() {
             )}
           </div>
 
+          {!evento.canal && (
           <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50 dark:bg-[#1a1815]/50 relative transition-colors hover:border-cookie-primary min-h-[160px]">
             <input
               type="file"
@@ -1136,6 +1228,7 @@ export function GerenciamentoCatalogo() {
               </div>
             )}
           </div>
+          )}
 
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex gap-3 text-sm text-yellow-800 dark:text-yellow-200">
             <AlertCircle className="shrink-0" size={20} />
